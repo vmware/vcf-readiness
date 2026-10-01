@@ -1,0 +1,99 @@
+# Ignore generated reports, debug logs, HCL cache, and PyInstaller output
+reports/*.html
+*.html
+!docs/infographic.html
+vcf_assess_debug.log
+all.json
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+bin/
+logs/
+*.spec
+.DS_Store
+.venv/
+venv/
+*.egg-info/
+.coverage
+.pytest_cache/
+Distribution-VCF-Readiness.zip
+vestigial/offline_bundles_historical/
+vestigial/duplicate_scripts_nested/
+
+# VCF Ops Management Pack compiled bundles
+*.pak
+
+# Build & packaging staging directories
+.build_win_stage/
+.offline_dist_stage/
+.workspace_metadata.json
+
+# Lab assets and run artifacts
+lab/
+internal/
+.internal/
+
+# Session / AI planning / internal design specs — never commit
+HANDOFF.md
+Handoff*.md
+handoffs/
+.cursor/
+TODO_FIXME_HACK.md
+TODO*.md
+FIXME*.md
+HACK*.md
+DESIGN_*.md
+TECH_DEBT_REVIEW.md
+FEATURE_SELECTION_*.md
+docs/plans/archive/
+docs/plans/*.md
+!docs/plans/TEMPLATE.md
+!docs/plans/fleet-report-scale-plan.md
+docs/PRESENTATION_LESSONS_LEARNED.md
+
+# Internal operations runbooks, build guides, and specifications
+docs/WINDOWS_AUTOMATION.md
+docs/OPERATIONS_RUNBOOK.md
+docs/report-customization.md
+docs/LAB_JUMP_BOX.md
+docs/MF_HCL_PARSING_AND_BCG_LOGIC_SPEC.md
+docs/Bug-Fixes/
+docs/ai_refactor/
+
+# Internal lab / build automation scripts and tools
+run_remote_scan.sh
+scripts/generate_lab_inventory.py
+scripts/remote_lab_smoke.sh
+scripts/remote_log_tool.sh
+scripts/run_remote_scan.sh
+scripts/set_bmc_credentials.sh
+scripts/setup_lab_jump_host.sh
+scripts/setup_win2022_build_host.ps1
+tools/lab_fleet_smoke.py
+tools/inspect_scans.py
+tools/cleanup_artifacts.py
+tools/compare_scans.py
+tools/Dump-Redfish1-2.sh
+tools/generate_three_run_report.py
+tools/.vcommunity_export_state.json
+
+# Secrets and local environment overrides
+*.env
+.env*
+tests/fixtures/*.html
+
+# Session/secret persistence files (normally in ~, ignore if ever copied into the tree)
+.vcf-readiness-session.json
+.vcf-readiness-profiles.json
+.vcf-readiness-secrets.json
+
+# Credential CSV templates must never carry real values; real inventories are local-only
+samples/**/iDRACs.local.csv
+
+# Encrypted credential vault (never commit, even if copied into the tree)
+*.vault
+credentials.vault
+.vcf-readiness/
+

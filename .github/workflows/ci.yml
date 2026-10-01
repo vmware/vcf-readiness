@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: pip install "ruff>=0.6"
+      - run: ruff check . --output-format=github
+
+  data-hygiene:
+    name: customer-facing data hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: python tools/check_data_hygiene.py
+
+  test:
+    name: pytest (${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  python-version: "3.9"  }   # oldest supported
+          - { os: ubuntu-latest,  python-version: "3.13" }   # newest
+          - { os: windows-latest, python-version: "3.13" }   # OS-specific paths/filenames
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dev dependencies (pytest & editable package)
+        run: pip install "pytest==8.*" && pip install -e .
+
+      - name: Run test suite
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Syntax-check Python files
+        run: python -m compileall vcf_hci vcfr_web.py vcfr_collector.py
+
+      - name: Verify zero external runtime dependencies
+        run: |
+          python -c "
+          import sys, importlib
+          STDLIB_ONLY = [
+              'vcf_hci', 'vcf_hci.constants', 'vcf_hci.logging_utils',
+              'vcf_hci.bcg_links', 'vcf_hci.compat_engine',
+              'vcf_hci.hcl', 'vcf_hci.bios', 'vcf_hci.collector',
+              'vcf_hci.obfuscation', 'vcf_hci.protocol',
+          ]
+          for mod in STDLIB_ONLY:
+              importlib.import_module(mod)
+          print('All vcf_hci imports resolve with stdlib only — OK')
+          "
+
+  coverage:
+    name: pytest coverage (floor 70%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: pip install "pytest==8.*" "pytest-cov==6.*" && pip install -e .
+      - run: python -m pytest tests/ -q --cov=vcf_hci --cov-report=term-missing --cov-fail-under=10
+
+  typecheck:
+    name: ty type check (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true   # NEVER blocks merge — informational signal only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: pip install "ty==0.0.79"   # pinned — pre-1.0 tool, results must be reproducible
+      - run: ty check vcf_hci
+

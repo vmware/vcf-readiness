@@ -1,0 +1,51 @@
+CPU Series,Cores/Threads,CPUID Info,CPUIDs,Supported Releases
+"AMD EPYC 7001 Series","32c/64t","17.01","0x00800F10","ESXi 9.1"
+"AMD EPYC 7002/7Fx2/7Hx2 Series","64c/128t","17.31","0x00830F10","ESXi 9.1"
+"AMD EPYC 7003/7003X Series","64C/128T","19.01","0x00A00F11,0x00A00F12","ESXi 9.1"
+"AMD EPYC 8004 Series","64c/128t","19.A0","0x00A10F11,0x00AA0F02","ESXi 9.1"
+"AMD EPYC 9004 Series","128c/256t","19.11
+19.A0","0x00A10F11,0x00A10F12,0x00AA0F02","ESXi 9.1"
+"AMD EPYC 9005 Series","192c/384t","1A.2
+1A.11","0x00B00F21,0x00B10F10","ESXi 9.1"
+"AMD Ryzen Embedded V1000 Series","4c/8t","17.11","0x00810F10","ESXi 9.1"
+"Intel Atom C3000 Series","16c/16t","6.5F","0x000506F0","ESXi 9.1"
+"Intel Core i3/i5/i7-1100GRE Processor Series","","6.8C
+6.8D","0x000806C1,0x000806C2","ESXi 9.1"
+"Intel Xeon 6500P/6700P (Granite Rapids-SP) Series","86c/172t","6.AD.1","0x000A06D1","ESXi 9.1"
+"Intel Xeon 6700P 4-Socket (Granite Rapids-SP) Series","-","6.AD.1","0x000A06D1","ESXi 9.1"
+"Intel Xeon 6900P (Granite Rapids-AP) Series","","6
+AD
+1","0x000A06D1","ESXi 9.1"
+"Intel Xeon CPU Max 9400 (Sapphire-Rapids-HBM) Series","56c/112t","6.8F.8","0x000806F8","ESXi 9.1"
+"Intel Xeon D-1700 (Ice-Lake-D) Series ","20c/40t","6.6C.1","0x000606C1","ESXi 9.1"
+"Intel Xeon D-2700 (Ice-Lake-D) Series ","20c/40t","6.6C.1","0x000606C1","ESXi 9.1"
+"Intel Xeon E-2100 Series","6c/112t","6.9E.A","0x000906EA,0x000906EB,0x000906EC","ESXi 9.1"
+"Intel Xeon E-2200 (4 or 6-core) Series","6c/12t","6.9E.A","0x000906EA","ESXi 9.1"
+"Intel Xeon E-2200 (8-core) Series","8c/16t","6.9E.D","0x000906ED","ESXi 9.1"
+"Intel Xeon E-2300 Series","8c/16t","6.A7.1","0x000A0671","ESXi 9.1"
+"Intel Xeon E-2400/Xeon 6300 Series","12c/24t","6.B7.1","0x000B0671","ESXi 9.1"
+"Intel Xeon Gold 6100/5100
+ Silver 4100
+ Bronze 3100 (Skylake-SP) Series","28c/56t","6.55.4","0x00050654","ESXi 9.1"
+"Intel Xeon Gold 6200/5200 (Cascade-Lake-SP/Refresh) Series","28c/56t","6.55.7","0x00050657","ESXi 9.1"
+"Intel Xeon Gold 6300/5300 (Cooper-Lake-SP) Series","28c/56t","6.55.B","0x0005065B","ESXi 9.1"
+"Intel Xeon Gold 6300/5300 (Ice-Lake-SP) Series ","32c/64t","6.6A.6","0x000606A6","ESXi 9.1"
+"Intel Xeon Gold 6400/5400 (Sapphire-Rapids-SP) Series","60c/120t","6.8F.8","0x000806F8","ESXi 9.1"
+"Intel Xeon Gold 6500/5500 (Emerald Rapids-SP) Series","64c/128t","6.CF.2","0x000C06F2","ESXi 9.1"
+"Intel Xeon Platinum 8100 (Skylake-SP) Series","28c/56t","6.55.4","0x00050654","ESXi 9.1"
+"Intel Xeon Platinum 8200 (Cascade-Lake-SP) Series","28c/56t","6.55.7","0x00050657","ESXi 9.1"
+"Intel Xeon Platinum 8300 (Cooper-Lake-SP) Series","28c/56t","6.55.B","0x0005065B","ESXi 9.1"
+"Intel Xeon Platinum 8300 (Ice-Lake-SP) Series","40c/80t","6.6A.6","0x000606A6","ESXi 9.1"
+"Intel Xeon Platinum 8400 (Sapphire-Rapids-SP) Series","60c/120t","6.8F.8","0x000806F8","ESXi 9.1"
+"Intel Xeon Platinum 8500 (Emerald Rapids-SP) Series","64c/128t","6.CF.2","0x000C06F2","ESXi 9.1"
+"Intel Xeon Silver 4200
+ Bronze 3200 (Cascade-Lake-SP/Refresh) Series","28c/56t","6.55.7","0x00050657","ESXi 9.1"
+"Intel Xeon Silver 4300 (Ice-Lake-SP) Series","20c/32t","6.6A.6","0x000606A6","ESXi 9.1"
+"Intel Xeon Silver 4400
+ Bronze 3400 (Sapphire-Rapids-SP) Series","60c/120t","6.8F.8","0x000806F8","ESXi 9.1"
+"Intel Xeon Silver 4500
+ Bronze 3500 (Emerald Rapids-SP) Series","64c/128t","6.CF.2","0x000C06F2","ESXi 9.1"
+"Intel Xeon Silver 4500
+ Bronze 3500 (Sapphire-Rapids-EE LCC) Series","60c/120t","6.8F.8","0x000806F8","ESXi 9.1"
+"Intel Xeon W-11000 Processor Series","8c/16t","6.8C
+6.8D","0x000806C1,0x000806C2,0x000806D1","ESXi 9.1"

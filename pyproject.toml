@@ -1,0 +1,184 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "vcf-readiness"
+version = "9.8.0"
+description = "VCF / vSphere 9.1 Readiness Assessment Tool — Redfish-based hardware compatibility scanner"
+readme = "README.md"
+license = { text = "CA, Inc. Software License Agreement" }
+requires-python = ">=3.9"
+dependencies = []  # Zero external dependencies — stdlib only
+
+keywords = [
+    "vmware", "vcf", "vsan", "redfish", "bmc", "idrac", "ilo",
+    "hci", "hardware-assessment", "compatibility",
+]
+
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: System Administrators",
+    "Topic :: System Administration",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+vcf-assess = "vcf_hci.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/vmware/vcf-readiness"
+"Bug Tracker" = "https://github.com/vmware/vcf-readiness/issues"
+Documentation = "https://github.com/vmware/vcf-readiness/blob/main/docs/"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.5", "ruff>=0.6", "ty==0.0.79"]
+crypto = ["pycryptodomex>=3.20.0"]
+
+[tool.ruff]
+# py39 target: Ruff will not suggest/allow `X | Y` union syntax (repo hard constraint).
+target-version = "py39"
+line-length = 120
+extend-exclude = [
+    "vcf_hci/web/assets.py",      # generated/bundled — do not lint
+    "vcf_hci/web/docs_data.py",   # generated/bundled — do not lint
+    "vestigial",
+    "samples",
+    "dist",
+    "management_pack",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort (import ordering — autofixable)
+    "UP",        # pyupgrade (safe at py39 target)
+    "B",         # bugbear
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "RUF",       # ruff-native
+    "T20",       # flake8-print: bans print() — repo hard constraint in vcf_hci/
+    "TID",       # tidy-imports: powers banned-api below
+    "S110", "S112",  # try/except/pass|continue swallowing — security-ish, low noise
+]
+ignore = [
+    "E402",      # module-import-not-at-top-of-file (sys.path manipulation before local imports)
+    "E501",      # long lines: report generator has long HTML strings; revisit later
+    "E741",      # ambiguous variable names (l, O, I)
+    "UP006",     # non-pep585-annotation: repo uses typing.List/Dict for py39 compatibility
+    "UP007",     # non-pep604-annotation: repo forbids X | Y pipe union syntax (py39 constraint)
+    "UP035",     # deprecated-import: repo uses typing.List/Dict/Optional/Union
+    "UP045",     # non-pep604-annotation-optional: repo uses Optional[X], forbids X | None
+    "RUF001",    # ambiguous-unicode-character-string (intentional CLI/report glyphs: ✓, ✗, →, 🔒, –, etc.)
+    "RUF002",    # ambiguous-unicode-character-docstring
+    "RUF003",    # ambiguous-unicode-character-comment
+    "RUF012",    # mutable-class-default
+    "RUF013",    # implicit-optional
+    "RUF059",    # unused-unpacked-variable
+    "S110",      # try-except-pass (standard pattern for optional BMC endpoint probing)
+    "S112",      # try-except-continue
+    "SIM102",    # collapsible-if (nested ifs used for readability in hardware decoders)
+    "SIM105",    # contextlib.suppress — repo style uses explicit try/except
+    "SIM108",    # if-else-block-instead-of-if-exp (explicit if/else preferred over ternaries)
+    "SIM117",    # multiple-with-statements
+    "TID252",    # relative-imports (standard package intra-module imports)
+    "F841",      # unused-variable (temporary debug / unpack vars in collectors)
+    "B007",      # unused-loop-control-variable
+    "C414",      # unnecessary-double-cast-or-process
+    "RUF015",    # unnecessary-iterable-allocation-for-first-element
+    "RUF005",    # collection-literal-concatenation
+    "SIM101",    # duplicate-isinstance-call
+    "SIM115",    # open-file-with-context-handler
+    "RUF046",    # unnecessary-cast-to-int
+    "SIM116",    # if-else-block-instead-of-dict-lookup
+    "UP031",     # printf-string-formatting
+    "C416",      # unnecessary-comprehension
+    "RUF022",    # unsorted-dunder-all
+]
+
+# THE KEY SECTION: mechanical enforcement of the zero-runtime-dependency rule.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"requests".msg       = "vcf_hci is stdlib-only (see .cursorrules) — use urllib.request"
+"urllib3".msg        = "vcf_hci is stdlib-only — use urllib.request"
+"aiohttp".msg        = "vcf_hci is stdlib-only — use urllib.request + concurrent.futures"
+"pandas".msg         = "vcf_hci is stdlib-only — use csv/json"
+"jinja2".msg         = "vcf_hci is stdlib-only — use string templates in report/"
+"bs4".msg            = "vcf_hci is stdlib-only — use html.parser / re"
+"beautifulsoup4".msg = "vcf_hci is stdlib-only"
+"lxml".msg           = "vcf_hci is stdlib-only — use xml.etree.ElementTree"
+
+[tool.ruff.lint.per-file-ignores]
+# print() is allowed ONLY in CLI entry points, tests, and dev tooling — never in library modules.
+"vcfr_web.py"          = ["T20"]
+"vcfr_collector.py"    = ["T20"]
+"redfish_web.py"       = ["T20"]
+"redfish_collector.py" = ["T20"]
+"vcf_hci/cli.py"       = ["T20"]
+"vcf_hci/vault/__main__.py" = ["T20"]   # vault management CLI entry point
+"vcf_hci/web/server.py" = ["T20"]
+"tests/**"             = ["T20", "S"]
+"tools/**"             = ["T20"]
+"scripts/**"           = ["T20"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vcf_hci*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-q --tb=line --no-header -rfE"
+markers = [
+    "replay: marks tests as offline replay tests using recorded Redfish dumps (deselect with '-m \"not replay\"')",
+    "live: marks tests requiring live BMC network access (deselect with '-m \"not live\"')",
+    "dell: marks tests for Dell PowerEdge platforms",
+    "hpe: marks tests for HPE ProLiant platforms",
+    "supermicro: marks tests for Supermicro platforms",
+    "cisco: marks tests for Cisco IMC platforms",
+    "lenovo: marks tests for Lenovo ThinkSystem platforms",
+    "intel: marks tests for Intel BMC platforms",
+]
+
+[tool.pyinstaller]
+# Build targets — run via build-web.sh or build-web.bat
+# macOS:   pyinstaller --onefile --collect-all vcf_hci vcfr_web.py
+# Windows: pyinstaller --onefile --collect-all vcf_hci vcfr_web.py
+
+[tool.coverage.run]
+source = ["vcf_hci"]
+omit = [
+    "vcf_hci/web/assets.py",      # generated/bundled UI assets
+    "vcf_hci/web/docs_data.py",   # generated/bundled docs
+    "vcf_hci/__main__.py",        # thin CLI shim
+]
+
+[tool.coverage.report]
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "except ImportError:",
+]
+
+[tool.ty.environment]
+python-version = "3.9"   # match the repo's runtime floor
+
+[tool.ty.src]
+include = ["vcf_hci"]
+exclude = [
+    "vcf_hci/web/assets.py",     # generated
+    "vcf_hci/web/docs_data.py",  # generated
+]
+
+
