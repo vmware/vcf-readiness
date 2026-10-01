@@ -97,3 +97,10 @@ samples/**/iDRACs.local.csv
 credentials.vault
 .vcf-readiness/
 
+# Scratch files and temporary archives
+:memory:
+*.zip
+!hcl/vcf_hcl_bundle_latest.zip
+!docs/scg.zip
+
+
