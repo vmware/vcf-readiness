@@ -313,7 +313,34 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         elif _is_healthy:
             _pcie_parts.append("<span style='color:#16a34a'>OK</span>")
 
-        if isinstance(_pcie_errs, (int, float)):
+        _p_errors = _d.get("pcie_errors")
+        if isinstance(_p_errors, dict):
+            _fat = _p_errors.get("fatal_errors") or 0
+            _non_fat = _p_errors.get("non_fatal_errors") or 0
+            _l0 = _p_errors.get("l0_to_recovery_count") or 0
+            _rep = _p_errors.get("replay_count") or 0
+            _rol = _p_errors.get("replay_rollover_count") or 0
+            _corr = _p_errors.get("correctable_errors") or 0
+
+            _err_items = []
+            if _fat > 0:
+                _err_items.append(f"<strong style='color:#dc2626'>Fatal: {_fat}</strong>")
+            if _l0 > 0:
+                _err_items.append(f"<strong style='color:#ca8a04'>Retrains: {_l0}</strong>")
+            if _rol > 0:
+                _err_items.append(f"<strong style='color:#ca8a04'>Rollovers: {_rol}</strong>")
+            if _rep > 0:
+                _err_items.append(f"Replays: {_rep}")
+            if _non_fat > 0:
+                _err_items.append(f"NonFatal: {_non_fat}")
+            if _corr > 0:
+                _err_items.append(f"Corr: {_corr}")
+
+            if _err_items:
+                _pcie_parts.append("<br><span style='font-size:0.8em'>" + " | ".join(_err_items) + "</span>")
+            else:
+                _pcie_parts.append("<br><span style='color:#16a34a;font-size:0.8em'>Errors: 0</span>")
+        elif isinstance(_pcie_errs, (int, float)):
             if _pcie_errs > 0:
                 _pcie_parts.append(f"<br>Errors: <strong style='color:#ca8a04'>{_pcie_errs}</strong>")
             else:

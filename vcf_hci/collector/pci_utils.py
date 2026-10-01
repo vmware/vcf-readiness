@@ -1359,3 +1359,189 @@ def pcie_has_gpu_candidates(pcie_cache: Union[list, dict]) -> bool:
     return False
 
 
+def normalize_pcie_errors(raw_errors: Any) -> Optional[dict]:
+    """Normalize PCIeErrors payload (dict, scalar, or nested) into a structured schema.
+
+    Standard DMTF Redfish PCIeErrors properties:
+      - CorrectableErrorCount: int | None
+      - L0ToRecoveryCount: int | None
+      - ReplayCount: int | None
+      - ReplayRolloverCount: int | None
+      - NonFatalErrorCount: int | None
+      - FatalErrorCount: int | None
+      - NAKReceivedCount: int | None
+      - NAKSentCount: int | None
+      - UnsupportedRequestCount: int | None
+
+    Normalized output schema:
+      {
+        "correctable_errors": Optional[int],
+        "l0_to_recovery_count": Optional[int],
+        "replay_count": Optional[int],
+        "replay_rollover_count": Optional[int],
+        "non_fatal_errors": Optional[int],
+        "fatal_errors": Optional[int],
+        "nak_received_count": Optional[int],
+        "nak_sent_count": Optional[int],
+        "unsupported_requests": Optional[int],
+        "total_errors": Optional[int],
+      }
+    """
+    if raw_errors is None:
+        return None
+
+    def _to_int(val: Any) -> Optional[int]:
+        if val is None or val == "" or str(val).strip().lower() in ("none", "null", "n/a"):
+            return None
+        try:
+            return int(float(val))
+        except (ValueError, TypeError):
+            return None
+
+    # Handle numeric scalar
+    if isinstance(raw_errors, (int, float)):
+        val = int(raw_errors)
+        return {
+            "correctable_errors": val,
+            "l0_to_recovery_count": None,
+            "replay_count": None,
+            "replay_rollover_count": None,
+            "non_fatal_errors": None,
+            "fatal_errors": None,
+            "nak_received_count": None,
+            "nak_sent_count": None,
+            "unsupported_requests": None,
+            "total_errors": val,
+        }
+
+    if isinstance(raw_errors, str):
+        v = _to_int(raw_errors)
+        if v is not None:
+            return {
+                "correctable_errors": v,
+                "l0_to_recovery_count": None,
+                "replay_count": None,
+                "replay_rollover_count": None,
+                "non_fatal_errors": None,
+                "fatal_errors": None,
+                "nak_received_count": None,
+                "nak_sent_count": None,
+                "unsupported_requests": None,
+                "total_errors": v,
+            }
+        return None
+
+    if not isinstance(raw_errors, dict):
+        return None
+
+    # If it's a dict, handle both DMTF PascalCase and lowercase/underscore variants
+    corr = _to_int(
+        raw_errors.get("CorrectableErrorCount")
+        if raw_errors.get("CorrectableErrorCount") is not None
+        else (
+            raw_errors.get("correctable_errors")
+            if raw_errors.get("correctable_errors") is not None
+            else (
+                raw_errors.get("CorrectableErrors")
+                if raw_errors.get("CorrectableErrors") is not None
+                else (
+                    raw_errors.get("PCIeCorrectableErrorCount")
+                    if raw_errors.get("PCIeCorrectableErrorCount") is not None
+                    else raw_errors.get("Correctable")
+                )
+            )
+        )
+    )
+    l0 = _to_int(
+        raw_errors.get("L0ToRecoveryCount")
+        if raw_errors.get("L0ToRecoveryCount") is not None
+        else (
+            raw_errors.get("l0_to_recovery_count")
+            if raw_errors.get("l0_to_recovery_count") is not None
+            else (
+                raw_errors.get("L0ToRecovery")
+                if raw_errors.get("L0ToRecovery") is not None
+                else raw_errors.get("RecoveryCount")
+            )
+        )
+    )
+    replay = _to_int(
+        raw_errors.get("ReplayCount")
+        if raw_errors.get("ReplayCount") is not None
+        else (
+            raw_errors.get("replay_count")
+            if raw_errors.get("replay_count") is not None
+            else raw_errors.get("Replays")
+        )
+    )
+    rollover = _to_int(
+        raw_errors.get("ReplayRolloverCount")
+        if raw_errors.get("ReplayRolloverCount") is not None
+        else (
+            raw_errors.get("replay_rollover_count")
+            if raw_errors.get("replay_rollover_count") is not None
+            else raw_errors.get("ReplayRollovers")
+        )
+    )
+    non_fatal = _to_int(
+        raw_errors.get("NonFatalErrorCount")
+        if raw_errors.get("NonFatalErrorCount") is not None
+        else (
+            raw_errors.get("non_fatal_errors")
+            if raw_errors.get("non_fatal_errors") is not None
+            else (
+                raw_errors.get("NonFatalErrors")
+                if raw_errors.get("NonFatalErrors") is not None
+                else raw_errors.get("NonFatal")
+            )
+        )
+    )
+    fatal = _to_int(
+        raw_errors.get("FatalErrorCount")
+        if raw_errors.get("FatalErrorCount") is not None
+        else (
+            raw_errors.get("fatal_errors")
+            if raw_errors.get("fatal_errors") is not None
+            else (
+                raw_errors.get("FatalErrors")
+                if raw_errors.get("FatalErrors") is not None
+                else raw_errors.get("Fatal")
+            )
+        )
+    )
+    nak_rx = _to_int(raw_errors.get("NAKReceivedCount") if raw_errors.get("NAKReceivedCount") is not None else raw_errors.get("nak_received_count"))
+    nak_tx = _to_int(raw_errors.get("NAKSentCount") if raw_errors.get("NAKSentCount") is not None else raw_errors.get("nak_sent_count"))
+    unsupp = _to_int(raw_errors.get("UnsupportedRequestCount") if raw_errors.get("UnsupportedRequestCount") is not None else raw_errors.get("unsupported_requests"))
+
+    explicit_total = _to_int(raw_errors.get("total_errors") if raw_errors.get("total_errors") is not None else raw_errors.get("TotalErrors"))
+
+    # If all fields are None and no explicit total, return None
+    all_fields = (corr, l0, replay, rollover, non_fatal, fatal, nak_rx, nak_tx, unsupp)
+    if all(f is None for f in all_fields) and explicit_total is None:
+        return None
+
+    if explicit_total is not None:
+        total = explicit_total
+    else:
+        err_candidates = [v for v in (corr, non_fatal, fatal) if v is not None]
+        if err_candidates:
+            total = sum(err_candidates)
+        else:
+            other_candidates = [v for v in (l0, rollover, replay) if v is not None]
+            total = sum(other_candidates) if other_candidates else 0
+
+    return {
+        "correctable_errors": corr,
+        "l0_to_recovery_count": l0,
+        "replay_count": replay,
+        "replay_rollover_count": rollover,
+        "non_fatal_errors": non_fatal,
+        "fatal_errors": fatal,
+        "nak_received_count": nak_rx,
+        "nak_sent_count": nak_tx,
+        "unsupported_requests": unsupp,
+        "total_errors": total,
+    }
+
+
+

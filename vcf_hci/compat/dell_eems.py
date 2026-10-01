@@ -421,6 +421,22 @@ KNOWN_DELL_EEMS_CODES: Dict[str, Dict[str, Any]] = {
         "explanation": "Fatal I/O bus error or PCIe Advanced Error Reporting (AER) uncorrectable error detected on bus component.",
         "remediation": "Reseat PCIe adapter card in slot; inspect slot pins and update adapter firmware. Replace defective card if fatal bus errors persist.",
     },
+    "PCI1360": {
+        "domain": "PCIe",
+        "severity": "Critical",
+        "vcf_impact": "VCF Blocker",
+        "is_vcf_blocker": True,
+        "explanation": "A bus fatal error was detected on a component at the specified PCIe slot.",
+        "remediation": "Reseat PCIe adapter in slot; clean gold slot fingers; inspect PCIe riser; update device firmware or replace defective PCIe adapter.",
+    },
+    "PCI1318": {
+        "domain": "PCIe",
+        "severity": "Critical",
+        "vcf_impact": "VCF Blocker",
+        "is_vcf_blocker": True,
+        "explanation": "A fatal error was detected on a PCIe component at a bus/device/function address.",
+        "remediation": "Inspect system SEL logs for the exact B/D/F; identify associated card, reseat or replace adapter.",
+    },
     # ── System Power & Redundancy ──
     "PWR0001": {
         "domain": "Power",

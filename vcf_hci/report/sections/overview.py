@@ -525,9 +525,20 @@ def render_alert_rollup(
 
     # Drive SMART
     _pop_drives_smart = [d for ctrl in storage for d in ctrl.get("drives", []) if d.get("populated", True)]
-    _smart_crit = sum(1 for d in _pop_drives_smart if d.get("failure_predicted") or (isinstance(d.get("endurance_remaining_pct"), (int, float)) and d.get("endurance_remaining_pct") < 20))
+    _smart_crit = sum(1 for d in _pop_drives_smart if (
+        d.get("failure_predicted")
+        or d.get("is_failing")
+        or ((d.get("pcie_errors") or {}).get("fatal_errors") or 0) > 0
+        or (isinstance(d.get("endurance_remaining_pct"), (int, float)) and d.get("endurance_remaining_pct") < 20)
+    ))
     def _smart_warn_check(d: dict) -> bool:
         _d_is_boot = bool(d.get("is_boot") or d.get("usage_role") == "Boot Drive" or "boot" in str(d.get("category", "")).lower() or any(k in str(d.get("model", "")).upper() for k in ["BOSS", "NS204I"]))
+        _p_errs = d.get("pcie_errors") or {}
+        _has_signal_warn = bool(
+            (_p_errs.get("l0_to_recovery_count") or 0) > 0
+            or (_p_errs.get("replay_rollover_count") or 0) > 0
+            or (_p_errs.get("replay_count") or 0) > 50
+        )
         return bool(
             (isinstance(d.get("endurance_remaining_pct"), (int, float)) and 20 <= d.get("endurance_remaining_pct") < 50)
             or (isinstance(d.get("unsafe_shutdowns"), (int, float)) and d.get("unsafe_shutdowns") > 0)
@@ -536,6 +547,7 @@ def render_alert_rollup(
             or d.get("thermal_throttled")
             or (d.get("single_lane_alert") and not _d_is_boot)
             or (d.get("pcie_downshifted") and not _d_is_boot)
+            or _has_signal_warn
             or bool(d.get("error_description"))
         )
     _smart_warn = sum(1 for d in _pop_drives_smart if _smart_warn_check(d))
@@ -545,6 +557,25 @@ def render_alert_rollup(
     elif _smart_warn:
         _rollup_items.append(("warning", f"⚠️ {_smart_warn} drive SMART warning(s)", "tab-health",
                                f"{_smart_warn} drive(s) with SMART warnings (unsafe shutdowns, media errors, or throttling)."))
+
+    # PCIe Link & Signal Integrity Rollup
+    _pcie_warns = (data.get("pcie_link_warnings") or []) if data else []
+    if _pcie_warns:
+        _has_crit_pcie = any("Fatal" in w or "Critical" in w for w in _pcie_warns)
+        if _has_crit_pcie:
+            _rollup_items.append((
+                "danger",
+                f"🔴 {len(_pcie_warns)} PCIe Signal / Link Fatal Alert(s)",
+                "tab-pcie",
+                _pcie_warns[0]
+            ))
+        else:
+            _rollup_items.append((
+                "warning",
+                f"⚠️ {len(_pcie_warns)} PCIe Signal / Link Degradation Alert(s)",
+                "tab-pcie",
+                _pcie_warns[0]
+            ))
 
     # BMC API Latency / Firmware Recommendation
     if data and host_has_redfish_latency(data):

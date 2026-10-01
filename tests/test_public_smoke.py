@@ -72,11 +72,12 @@ class TestPublicSmoke(unittest.TestCase):
 
     def test_bundled_docs_strict_public_alignment(self):
         """Verify bundled documentation in vcf_hci/web/docs_data.py strictly aligns with public release."""
-        from vcf_hci.web.docs_data import DOCS_DATA
         import re
 
+        from vcf_hci.web.docs_data import DOCS_DATA
+
         try:
-            from tools.export_public_repo import ROOT_FILES, DOCS_FILES, STRICT_BLACKLIST_PATTERNS
+            from tools.export_public_repo import DOCS_FILES, ROOT_FILES, STRICT_BLACKLIST_PATTERNS
             allowed_rel_paths = set(ROOT_FILES) | {f"docs/{f}" for f in DOCS_FILES}
             compiled_blacklists = [re.compile(p, re.I) for p in STRICT_BLACKLIST_PATTERNS]
         except ImportError:

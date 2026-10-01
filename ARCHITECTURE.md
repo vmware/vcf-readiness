@@ -1,7 +1,7 @@
 # Architecture Summary & Engineering Handoff
 
 **Project:** VCF / vSphere 9.1 Readiness Assessment Tool  
-**Version:** 9.8.0  
+**Version:** 9.8.1  
 **Primary Users:** VMware Sales Engineers (SEs), Solution Architects, IT Administrators  
 **Target Platform:** VMware Cloud Foundation 9.1 / vSphere 9.1 / vSAN ESA & OSA
 
@@ -692,6 +692,12 @@ The project has transitioned from legacy single-script and desktop GUI approache
 
 ## 17. Technical References & Acknowledgements
 
+### Project Thanks & Community Contributors
+- **Phong Le**: For answering 40,000 hardware HCL questions.
+- **Onur Yuzseven & Brock Peterson**: For the great vCommunity plugins ([GitHub: prydin/VCF-Operations-vCommunity](https://github.com/prydin/VCF-Operations-vCommunity), [Brock Peterson's vCommunity Management Pack Guide](https://www.brockpeterson.com/post/vcommunity-management-pack-for-vcf-operations)).
+- **Everyone at Spiceworks**: For making me realize the power of a good inventory, and the [Spiceworks Community](https://community.spiceworks.com/) forums for teaching me the evils of fake RAID.
+
+### Technical References & Third-Party Research
 - **Broadcom Compatibility Guide (BCG)**: [https://compatibilityguide.broadcom.com/](https://compatibilityguide.broadcom.com/)
 - **Michael Buraglio's Packet Buffer Reference**: [https://port-buffers.forwardingplane.net/](https://port-buffers.forwardingplane.net/) ([GitHub: buraglio/port-buffers](https://github.com/buraglio/port-buffers)) — Switch packet buffer sizes, queue architectures, and silicon specifications catalog.
 - **Jim Warner's UCSC Packet Buffer Research**: [https://people.ucsc.edu/~warner/buffer-wuz.html](https://people.ucsc.edu/~warner/buffer-wuz.html) ([ASIC Buffer History](https://people.ucsc.edu/~warner/Bufs/buf-hist.html)) — Switch ASIC buffer depths, memory segmentation, and shared memory research.

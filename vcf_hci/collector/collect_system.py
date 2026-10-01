@@ -557,12 +557,15 @@ class _SystemMixin(_CollectorBase):
             for _m in members:
                 _mid = str(_m.get("@odata.id", ""))
                 if re.search(r'/Video\.|/Accelerator\.|/GPU\.|\.GPU\.|\.Video\.', _mid, re.I):
+                    self._has_gpu_processors = True
                     continue
                 proc = self._get(_mid) or {}
                 if not proc:
                     continue
                 _ptype = str(proc.get("ProcessorType") or "").upper()
                 if _ptype and _ptype not in ("CPU", "DSP", "OEM", ""):
+                    if _ptype in ("GPU", "ACCELERATOR"):
+                        self._has_gpu_processors = True
                     continue
 
                 p_model = str(proc.get("Model") or "").strip()

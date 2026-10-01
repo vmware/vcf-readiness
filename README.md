@@ -27,7 +27,7 @@
 - [Architecture](#architecture)
 - [OEM \& Hardware Vendor Collaboration](#oem--hardware-vendor-collaboration)
 - [Broadcom References](#broadcom-references)
-- [Credits](#credits)
+- [Credits & Acknowledgements](#credits--acknowledgements)
 - [License](#license)
 
 ---
@@ -561,7 +561,15 @@ Please open a [GitHub Issue](https://github.com/vmware/vcf-readiness/issues/new?
 
 ---
 
-## Credits & Third-Party Software
+## Credits & Acknowledgements
+
+### Project Thanks & Acknowledgements
+
+- **Phong Le** — For answering 40,000 hardware HCL questions.
+- **Onur Yuzseven & Brock Peterson** — For the great vCommunity plugins ([GitHub: prydin/VCF-Operations-vCommunity](https://github.com/prydin/VCF-Operations-vCommunity), [Brock Peterson's vCommunity Management Pack Guide](https://www.brockpeterson.com/post/vcommunity-management-pack-for-vcf-operations)).
+- **Everyone at Spiceworks** — For making me realize the power of a good inventory, and the [Spiceworks Community](https://community.spiceworks.com/) forums for teaching me the evils of fake RAID.
+
+### Third-Party Software & Research
 
 - Browser UI styled with [Clarity Design System](https://clarity.design/) tokens (VMware/Broadcom, Apache-2.0 license). CSS is pre-bundled in `vcf_hci/web/assets.py` — no internet required at runtime. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - Switch buffer intelligence, ASIC mapping, and VOQ classification derived from the open research of **Michael Buraglio** and **Jim Warner**.

@@ -102,5 +102,7 @@ credentials.vault
 *.zip
 !hcl/vcf_hcl_bundle_latest.zip
 !docs/scg.zip
+.tmp.driveupload/
+
 
 

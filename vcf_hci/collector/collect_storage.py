@@ -56,7 +56,12 @@ else:
 logger = logging.getLogger("vcf_assess")
 
 
-from vcf_hci.collector.pci_utils import extract_pci_ids_from_dict, match_firmware_inventory_pci, match_pcie_cache
+from vcf_hci.collector.pci_utils import (
+    extract_pci_ids_from_dict,
+    match_firmware_inventory_pci,
+    match_pcie_cache,
+    normalize_pcie_errors,
+)
 from vcf_hci.constants import (
     DELL_MODEL_CHASSIS_DB,
     DELL_SKU_CHASSIS_DB,
@@ -392,6 +397,99 @@ class _StorageMixin(_CollectorBase):
         dp_up = {p.upper() for p in result["device_protocols"]}
         result["is_trimode"] = "NVME" in dp_up and bool(dp_up & {"SAS", "SATA"}) and not is_sw_raid
         return result
+
+    def _collect_ctrl_port_pcie_errors(self, ctrl: dict, sc_candidates: list) -> Tuple[Optional[dict], list]:
+        """Discover and aggregate PortMetrics PCIeErrors across controller ports."""
+        port_metrics_list = []
+        collected_errs = []
+        seen_port_uris: set = set()
+
+        # Check direct controller PCIeErrors or Metrics
+        for direct_obj in [ctrl] + (sc_candidates or []):
+            if not isinstance(direct_obj, dict):
+                continue
+            if "PCIeErrors" in direct_obj:
+                ne = normalize_pcie_errors(direct_obj["PCIeErrors"])
+                if ne:
+                    collected_errs.append(ne)
+            metrics_uri = (direct_obj.get("Metrics") or {}).get("@odata.id") if isinstance(direct_obj.get("Metrics"), dict) else None
+            if metrics_uri and metrics_uri not in seen_port_uris:
+                seen_port_uris.add(metrics_uri)
+                m_data = self._get(metrics_uri) or {}
+                if "PCIeErrors" in m_data:
+                    ne = normalize_pcie_errors(m_data["PCIeErrors"])
+                    if ne:
+                        collected_errs.append(ne)
+
+        # Look for Ports collection in ctrl or StorageControllers
+        port_refs = []
+        for obj in [ctrl] + (sc_candidates or []):
+            if not isinstance(obj, dict):
+                continue
+            p = obj.get("Ports")
+            if isinstance(p, dict) and p.get("@odata.id"):
+                port_refs.append(p.get("@odata.id"))
+            elif isinstance(p, list):
+                for item in p:
+                    if isinstance(item, dict) and item.get("@odata.id"):
+                        port_refs.append(item.get("@odata.id"))
+
+        for p_col_uri in port_refs:
+            if p_col_uri in seen_port_uris:
+                continue
+            seen_port_uris.add(p_col_uri)
+            port_members = self._get_members(p_col_uri, limit=8)
+            for pm in port_members:
+                pm_uri = pm.get("@odata.id") if isinstance(pm, dict) else (pm if isinstance(pm, str) else None)
+                if not pm_uri or pm_uri in seen_port_uris:
+                    continue
+                seen_port_uris.add(pm_uri)
+                p_data = self._get(pm_uri) or {}
+                m_uri = (p_data.get("Metrics") or {}).get("@odata.id") if isinstance(p_data.get("Metrics"), dict) else f"{pm_uri}/Metrics"
+                m_data = self._get(m_uri) or {}
+                p_errs = None
+                if "PCIeErrors" in m_data:
+                    p_errs = normalize_pcie_errors(m_data["PCIeErrors"])
+                elif "PCIeErrors" in p_data:
+                    p_errs = normalize_pcie_errors(p_data["PCIeErrors"])
+                if p_errs:
+                    collected_errs.append(p_errs)
+                    port_metrics_list.append({
+                        "port_id": p_data.get("Id") or pm_uri.split("/")[-1],
+                        "name": p_data.get("Name") or "Port",
+                        "uri": pm_uri,
+                        "pcie_errors": p_errs,
+                    })
+
+        if not collected_errs:
+            return None, port_metrics_list
+
+        agg = {
+            "correctable_errors": None,
+            "l0_to_recovery_count": None,
+            "replay_count": None,
+            "replay_rollover_count": None,
+            "non_fatal_errors": None,
+            "fatal_errors": None,
+            "nak_received_count": None,
+            "nak_sent_count": None,
+            "unsupported_requests": None,
+            "total_errors": 0,
+        }
+        for err in collected_errs:
+            for k in (
+                "correctable_errors", "l0_to_recovery_count", "replay_count",
+                "replay_rollover_count", "non_fatal_errors", "fatal_errors",
+                "nak_received_count", "nak_sent_count", "unsupported_requests",
+            ):
+                val = err.get(k)
+                if val is not None:
+                    agg[k] = (agg[k] or 0) + val
+            t = err.get("total_errors")
+            if t is not None:
+                agg["total_errors"] = (agg["total_errors"] or 0) + t
+
+        return agg, port_metrics_list
 
 
     def _parse_drive_details(self, *args: Any, **kwargs: Any) -> Optional[dict]:
@@ -893,6 +991,7 @@ class _StorageMixin(_CollectorBase):
                 has_lv = False
 
             bbu_info = self._parse_controller_bbu(ctrl)
+            ctrl_pcie_errs, ctrl_port_metrics = self._collect_ctrl_port_pcie_errors(ctrl, sc_candidates)
 
             ctrl_info = {
                 "id":                  ctrl_id,
@@ -909,6 +1008,8 @@ class _StorageMixin(_CollectorBase):
                 "pcie_lanes_in_use":   ctrl_pcie["pcie_lanes_in_use"],
                 "pcie_max_lanes":      ctrl_pcie["pcie_max_lanes"],
                 "pcie_gen":            ctrl_pcie["pcie_gen"],
+                "pcie_errors":         ctrl_pcie_errs,
+                "port_metrics":        ctrl_port_metrics,
                 "enclosures":          enclosures,
                 "drives":              [],
                 # BOSS-S1/S2 and NS204I are M.2 boot-device cards, not standard drive bays.

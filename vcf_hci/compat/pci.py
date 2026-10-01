@@ -5,6 +5,7 @@ from typing import Optional
 
 from ..collector.pci_utils import (
     normalize_pci_id,
+    normalize_pcie_errors,
     normalize_pcie_gen,
     normalize_pcie_width,
 )
@@ -319,7 +320,60 @@ def evaluate_pcie_link_health(adapter_info: dict) -> dict:
         and cur_g < effective_max_g
     )
 
-    degraded = width_degraded or speed_degraded
+    # Signal Integrity & Error Telemetry Evaluation
+    raw_errors = adapter_info.get("pcie_errors") or adapter_info.get("PCIeErrors")
+    pcie_errs = normalize_pcie_errors(raw_errors) if raw_errors else None
+
+    fatal_errors = (pcie_errs or {}).get("fatal_errors") or 0
+    non_fatal_errors = (pcie_errs or {}).get("non_fatal_errors") or 0
+    l0_retrains = (pcie_errs or {}).get("l0_to_recovery_count") or 0
+    replays = (pcie_errs or {}).get("replay_count") or 0
+    rollovers = (pcie_errs or {}).get("replay_rollover_count") or 0
+    correctable = (pcie_errs or {}).get("correctable_errors") or 0
+
+    if not pcie_errs and isinstance(adapter_info.get("pcie_bus_errors"), (int, float)):
+        correctable = int(adapter_info["pcie_bus_errors"])
+
+    signal_degraded = False
+    signal_severity = "ok"
+    signal_findings = []
+
+    if fatal_errors > 0:
+        signal_degraded = True
+        signal_severity = "critical"
+        signal_findings.append(f"{fatal_errors} PCIe Fatal Error(s)")
+
+    if non_fatal_errors > 0:
+        signal_degraded = True
+        if signal_severity != "critical":
+            signal_severity = "warning"
+        signal_findings.append(f"{non_fatal_errors} PCIe Non-Fatal Error(s)")
+
+    if l0_retrains > 0:
+        signal_degraded = True
+        if signal_severity != "critical":
+            signal_severity = "warning"
+        signal_findings.append(f"{l0_retrains} Link Retrain(s) [L0->Recovery]")
+
+    if rollovers > 0:
+        signal_degraded = True
+        if signal_severity != "critical":
+            signal_severity = "warning"
+        signal_findings.append(f"{rollovers} Replay Rollover(s)")
+
+    if replays > 50:
+        signal_degraded = True
+        if signal_severity != "critical":
+            signal_severity = "warning"
+        signal_findings.append(f"{replays} TLP Replay(s)")
+
+    if correctable > 100:
+        signal_degraded = True
+        if signal_severity != "critical":
+            signal_severity = "warning"
+        signal_findings.append(f"{correctable} Correctable Error(s)")
+
+    degraded = width_degraded or speed_degraded or signal_degraded
 
     card_name = (
         adapter_info.get("name")
@@ -335,7 +389,7 @@ def evaluate_pcie_link_health(adapter_info: dict) -> dict:
     remediation = ""
     badge = ""
 
-    if degraded:
+    if width_degraded or speed_degraded:
         curr_parts = []
         if cur_g is not None:
             curr_parts.append(f"Gen{cur_g}")
@@ -358,10 +412,34 @@ def evaluate_pcie_link_health(adapter_info: dict) -> dict:
         )
         badge = f"<span class='badge warning'>⚠️ PCIe Link Degraded ({curr_desc})</span>"
 
+    if signal_degraded:
+        sig_desc = ", ".join(signal_findings)
+        if finding:
+            finding += f"; Signal Integrity Degraded: {sig_desc}"
+            if signal_severity == "critical":
+                badge = "<span class='badge danger'>❌ PCIe Fatal Bus Error</span>"
+        else:
+            if signal_severity == "critical":
+                finding = f"Critical PCIe Bus Error on {card_name}: {sig_desc}"
+                remediation = "Immediate slot/riser inspection or hardware replacement required. Fatal PCIe errors cause bus halts or kernel PSOD."
+                badge = "<span class='badge danger'>❌ PCIe Fatal Bus Error</span>"
+            else:
+                finding = f"Degraded PCIe Signal Integrity on {card_name}: {sig_desc}"
+                remediation = "Inspect physical riser seating, clean gold slot contacts, inspect cables, or check for PCIe transmitter eye margin degradation."
+                badge = f"<span class='badge warning'>⚠️ PCIe Signal Degraded ({signal_findings[0]})</span>"
+
     return {
         "degraded": degraded,
         "width_degraded": width_degraded,
         "speed_degraded": speed_degraded,
+        "signal_degraded": signal_degraded,
+        "signal_severity": signal_severity,
+        "signal_details": signal_findings,
+        "retrain_count": l0_retrains,
+        "replay_count": replays,
+        "replay_rollover_count": rollovers,
+        "fatal_error_count": fatal_errors,
+        "correctable_error_count": correctable,
         "current_pcie_type": current_type_str,
         "max_pcie_type": max_type_str,
         "current_pcie_width": cur_w,

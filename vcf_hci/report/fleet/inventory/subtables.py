@@ -532,6 +532,36 @@ def _build_health_table(
                     "timestamp": "Link Degraded",
                 })
 
+            p_errs = d.get("pcie_errors")
+            if isinstance(p_errs, dict):
+                fat = p_errs.get("fatal_errors") or 0
+                l0 = p_errs.get("l0_to_recovery_count") or 0
+                rep = p_errs.get("replay_count") or 0
+                if fat > 0:
+                    host_alarms.append({
+                        "severity": "Critical",
+                        "subsystem": "Drive PCIe",
+                        "message": f"PCIe bus fatal error detected ({fat} fatal errors)",
+                        "target": target_str,
+                        "timestamp": "Bus Fatal",
+                    })
+                elif l0 > 0:
+                    host_alarms.append({
+                        "severity": "Warning",
+                        "subsystem": "Drive PCIe",
+                        "message": f"PCIe signal degraded ({l0} link retrains [L0->Recovery])",
+                        "target": target_str,
+                        "timestamp": f"{l0} retrains",
+                    })
+                elif rep > 50:
+                    host_alarms.append({
+                        "severity": "Warning",
+                        "subsystem": "Drive PCIe",
+                        "message": f"PCIe link degraded ({rep} TLP packet replays)",
+                        "target": target_str,
+                        "timestamp": f"{rep} replays",
+                    })
+
             me = d.get("media_errors") or (d.get("oem_metrics") or {}).get("drive_error_count")
             if isinstance(me, (int, float)) and me > 0:
                 host_alarms.append({
@@ -624,6 +654,17 @@ def _build_health_table(
                 "message": f"Partial Assessment: {p_reason}",
                 "target": "Redfish Scan",
                 "timestamp": "Incomplete",
+            })
+
+        # 7. PCIe Signal & Link Degradation Alarms
+        for p_warn in data.get("pcie_link_warnings") or []:
+            is_crit = "Fatal" in p_warn or "Critical" in p_warn
+            host_alarms.append({
+                "severity": "Critical" if is_crit else "Warning",
+                "subsystem": "PCIe Signal",
+                "message": p_warn,
+                "target": "PCIe Bus",
+                "timestamp": "Signal Degraded",
             })
 
         # Sort host alarms: Critical first, then Warning, then Info

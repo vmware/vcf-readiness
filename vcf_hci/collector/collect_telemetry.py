@@ -114,6 +114,68 @@ class _TelemetryMixin(_CollectorBase):
         }
 
 
+    def collect_pcie_telemetry(self) -> dict:
+        """Collect PCIe bus and switch port error telemetry from TelemetryService.
+
+        Inspects MetricReports for PCIe error metrics including:
+          - GPUPCIeCorrectableErrorCount
+          - PCIeSwitchPortReceiverErrs
+          - PCIeSwitchPortRecoveryDiagErrs (retraining counts)
+          - PCIeSwitchPortBadDTLPErrs, PCIeSwitchPortBadDLLPErrs
+          - LocalLinkIntegrityErrors
+        """
+        pcie_telem = {
+            "pcie_switch_receiver_errors": 0,
+            "pcie_switch_recovery_errors": 0,
+            "pcie_switch_bad_tlp_errors": 0,
+            "pcie_switch_bad_dllp_errors": 0,
+            "gpu_pcie_correctable_errors": 0,
+            "local_link_integrity_errors": 0,
+            "has_pcie_metrics": False,
+        }
+        if getattr(self, "_telemetry_service_supported", None) is False:
+            return pcie_telem
+
+        report_names = [
+            "/TelemetryService/MetricReports/GPUMetrics",
+            "/TelemetryService/MetricReports/GPUStatistics",
+            "/TelemetryService/MetricReports/AggregationMetrics",
+        ]
+        for r_name in report_names:
+            report = self._get(r_name, timeout=5, critical=False) or {}
+            if report.get("error"):
+                continue
+            for m in report.get("MetricValues", []):
+                mid = str(m.get("MetricId", ""))
+                val = m.get("MetricValue")
+                if val is None:
+                    continue
+                try:
+                    num_val = int(float(val))
+                except (ValueError, TypeError):
+                    continue
+
+                if "GPUPCIeCorrectable" in mid:
+                    pcie_telem["gpu_pcie_correctable_errors"] += num_val
+                    pcie_telem["has_pcie_metrics"] = True
+                elif "PCIeSwitchPortReceiverErrs" in mid:
+                    pcie_telem["pcie_switch_receiver_errors"] += num_val
+                    pcie_telem["has_pcie_metrics"] = True
+                elif "PCIeSwitchPortRecoveryDiagErrs" in mid:
+                    pcie_telem["pcie_switch_recovery_errors"] += num_val
+                    pcie_telem["has_pcie_metrics"] = True
+                elif "PCIeSwitchPortBadDTLPErrs" in mid:
+                    pcie_telem["pcie_switch_bad_tlp_errors"] += num_val
+                    pcie_telem["has_pcie_metrics"] = True
+                elif "PCIeSwitchPortBadDLLPErrs" in mid:
+                    pcie_telem["pcie_switch_bad_dllp_errors"] += num_val
+                    pcie_telem["has_pcie_metrics"] = True
+                elif "LocalLinkIntegrityErrors" in mid:
+                    pcie_telem["local_link_integrity_errors"] += num_val
+                    pcie_telem["has_pcie_metrics"] = True
+
+        return pcie_telem
+
     def collect_io_telemetry(self) -> dict:
         """PCIe root complex I/O bandwidth utilization (IOUsage).
 
@@ -147,8 +209,12 @@ class _TelemetryMixin(_CollectorBase):
             usage = self.oem_memory_usage(sys_data)
             if "IOBusUtil" in usage:
                 io_avg = usage["IOBusUtil"]
-        return {
+        res = {
             "io_current_pct": io_avg if io_avg is not None else "N/A",
             "io_peak_pct":    io_max if io_max is not None else "N/A",
         }
+        pcie_telem = self.collect_pcie_telemetry()
+        if pcie_telem.get("has_pcie_metrics"):
+            res["pcie_telemetry"] = pcie_telem
+        return res
 

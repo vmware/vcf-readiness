@@ -64,6 +64,7 @@ from vcf_hci.collector.pci_utils import (
     extract_pcie_functions,
     extract_pcie_link_status,
     match_pcie_cache,
+    normalize_pcie_errors,
     pcie_has_gpu_candidates,
 )
 
@@ -433,91 +434,182 @@ class _GPUMixin(_CollectorBase):
         return switches
 
 
+    def _extract_gpu_details(self, dev: dict, pcie_cache: Optional[list] = None) -> Optional[dict]:
+        """Extract normalized GPU dictionary including ProcessorMetrics and PCIeErrors."""
+        if not dev or not isinstance(dev, dict):
+            return None
+        model = dev.get("Model") or ""
+        raw_name = dev.get("Name") or ""
+        if model and (not raw_name or re.search(r'^(Video\.|GPU\.|Slot\.|Processor\b)', raw_name, re.I)):
+            name = model
+        elif raw_name:
+            name = raw_name
+        else:
+            name = model or "Unknown GPU"
+        mfr  = dev.get("Manufacturer") or ""
+
+        pci_info = extract_pci_ids_from_dict(dev, get_fn=self._get)
+        if not pci_info["pci_quad"] and pcie_cache:
+            pci_info = match_pcie_cache(dev, pcie_cache, get_fn=self._get)
+
+        # Strictly exclude network adapters / Mellanox DPUs from GPU accelerators
+        vid = str(pci_info.get("vendor_id") or dev.get("VendorId") or "").lower().replace("0x", "")
+        if vid == "15b3":  # Mellanox Technologies / NVIDIA Networking
+            return None
+
+        sub_vid = str(pci_info.get("subsystem_vendor_id") or dev.get("SubsystemVendorId") or "").lower().replace("0x", "")
+        if sub_vid == "15b3":
+            return None
+
+        name_up = name.upper()
+        mfr_up = mfr.upper()
+        if "MELLANOX" in name_up or "MELLANOX" in mfr_up or "CONNECTX" in name_up or "BLUEFIELD" in name_up:
+            return None
+        if any(k in name_up for k in (" NIC", "OCP NIC", "NETWORK ADAPTER", "ETHERNET ADAPTER")):
+            return None
+
+        fw   = str(dev.get("FirmwareVersion") or "").strip()
+        health = str((dev.get("Status") or {}).get("Health") or "").strip()
+
+        # Try to get VRAM from onboard Memory collection or CapacityMiB field
+        memory_gib = 0
+        mem_list = dev.get("Memory") or []
+        if isinstance(mem_list, list) and mem_list:
+            first_mem_link = mem_list[0].get("@odata.id") if isinstance(mem_list[0], dict) else None
+            if first_mem_link:
+                mem_obj = self._get(first_mem_link) or {}
+                cap_mib = mem_obj.get("CapacityMiB") or 0
+                try:
+                    memory_gib = round(int(cap_mib) / 1024, 1)
+                except (ValueError, TypeError):
+                    memory_gib = 0
+            else:
+                # Inline CapacityMiB on the accelerator object itself
+                cap_mib = dev.get("CapacityMiB") or dev.get("MemoryMiB") or 0
+                try:
+                    memory_gib = round(int(cap_mib) / 1024, 1)
+                except (ValueError, TypeError):
+                    memory_gib = 0
+        elif dev.get("CapacityMiB") or dev.get("MemoryMiB"):
+            cap_mib = dev.get("CapacityMiB") or dev.get("MemoryMiB") or 0
+            try:
+                memory_gib = round(int(cap_mib) / 1024, 1)
+            except (ValueError, TypeError):
+                memory_gib = 0
+
+        # Slot and PCIe interface detection
+        slot_label = ""
+        pcie_type = ""
+        lanes = None
+        slot = dev.get("Slot") or {}
+        if isinstance(slot, dict):
+            slot_loc = slot.get("Location") or {}
+            part_loc = slot_loc.get("PartLocation") or {}
+            s_ord = part_loc.get("LocationOrdinalValue")
+            if s_ord is not None:
+                slot_label = f"PCIe Slot {s_ord}"
+            pcie_type = slot.get("PCIeType") or ""
+            lanes = slot.get("Lanes")
+
+        dev_id = str(dev.get("Id") or "")
+        if not slot_label and ("Slot." in dev_id or "Slot" in dev_id):
+            slot_m = re.search(r"Slot\.?(\d+)", dev_id, re.I)
+            if slot_m:
+                slot_label = f"PCIe Slot {slot_m.group(1)}"
+
+        # Query Metrics / ProcessorMetrics / PCIeErrors
+        temp_c = None
+        pwr_w = None
+        raw_pcie_errs = dev.get("PCIeErrors")
+        m_link = (dev.get("Metrics") or dev.get("ProcessorMetrics") or {}).get("@odata.id")
+        if not m_link and dev.get("@odata.id") and "/Processors/" in str(dev.get("@odata.id")):
+            m_link = f"{dev.get('@odata.id')}/ProcessorMetrics"
+
+        if m_link:
+            pm_data = self._get(m_link, critical=False) or {}
+            if not pm_data.get("error"):
+                raw_pcie_errs = raw_pcie_errs or pm_data.get("PCIeErrors")
+                if pm_data.get("TemperatureCelsius") is not None:
+                    try:
+                        temp_c = float(pm_data.get("TemperatureCelsius"))
+                    except (ValueError, TypeError):
+                        pass
+                if pm_data.get("ConsumedPowerWatt") is not None:
+                    try:
+                        pwr_w = float(pm_data.get("ConsumedPowerWatt"))
+                    except (ValueError, TypeError):
+                        pass
+
+        pcie_errors = normalize_pcie_errors(raw_pcie_errs)
+        total_errs = pcie_errors.get("total_errors", 0) if pcie_errors else 0
+
+        return {
+            "name": name, "manufacturer": mfr, "id": dev.get("Id", ""),
+            "part_number": dev.get("PartNumber", "") or "",
+            "serial_number": dev.get("SerialNumber", "") or "",
+            "firmware": fw, "health": health, "memory_gib": memory_gib,
+            "slot_label": slot_label, "pcie_type": pcie_type, "lanes": lanes,
+            "downgraded": False, "downgrade_reason": "", "downgrade_badge": "",
+            "vendor_id": pci_info["vendor_id"], "device_id": pci_info["device_id"],
+            "subsystem_vendor_id": pci_info["subsystem_vendor_id"], "subsystem_id": pci_info["subsystem_id"],
+            "pci_quad": pci_info["pci_quad"], "pci_pair": pci_info["pci_pair"],
+            "pcie_errors": pcie_errors,
+            "pcie_bus_errors": total_errs,
+            "temperature_c": temp_c,
+            "power_watts": pwr_w,
+            "max_operating_temp_c": None,
+            "slowdown_temp_c": None,
+            "shutdown_temp_c": None,
+            "power_brake_status": "N/A",
+            "thermal_alert_status": "N/A",
+        }
+
     def collect_gpu_accelerators(self, pcie_cache: Optional[list] = None) -> list:
         """Discover GPU / hardware accelerators from PCIe device list or dedicated endpoint.
 
-        For each GPU found via the Redfish /Accelerators collection the method also
-        fetches live telemetry fields when available:
+        For each GPU found via Redfish collections (/Accelerators, /Processors, or /PCIeDevices)
+        the method also fetches live telemetry fields when available:
           firmware  — FirmwareVersion string (or "" if not exposed)
           health    — Status.Health  ("OK" / "Warning" / "Critical" / "")
           memory_gib — onboard VRAM in GiB from Memory[0].CapacityMiB (or 0)
-
-        The PCIe-cache fallback cannot supply those fields and leaves them as defaults.
+          pcie_errors — normalized PCIeErrors dictionary with replay and recovery counters
         """
         gpus = []
         if not self.chassis_uri and not self.sys_uri:
             return gpus
+
         if pcie_cache and not pcie_has_gpu_candidates(pcie_cache):
-            acc_members = self._get_members(f"{self.sys_uri}/Accelerators") if self.sys_uri else []
-            if not acc_members:
-                return gpus
-        # Try dedicated Accelerators endpoint (some vendors)
+            if not getattr(self, "_has_gpu_processors", False):
+                acc_members = self._get_members(f"{self.sys_uri}/Accelerators") if self.sys_uri else []
+                if not acc_members:
+                    return gpus
+
+        # 1. Try dedicated Accelerators endpoint (some vendors)
         if self.sys_uri:
             for m in self._get_members(f"{self.sys_uri}/Accelerators"):
                 dev = self._get(m.get("@odata.id"))
+                gpu_obj = self._extract_gpu_details(dev, pcie_cache)
+                if gpu_obj:
+                    gpus.append(gpu_obj)
+
+        # 2. Try Processors endpoint for GPU processors (Dell iDRAC Video.Slot.*, Supermicro, etc.)
+        if self.sys_uri:
+            seen_ids = {g.get("id") for g in gpus}
+            proc_members = self._get_members(f"{self.sys_uri}/Processors")
+            for m in proc_members:
+                m_uri = str(m.get("@odata.id", ""))
+                is_gpu_uri = bool(re.search(r'/Video\.|/Accelerator\.|/GPU\.|\.GPU\.|\.Video\.', m_uri, re.I))
+                if not is_gpu_uri and not getattr(self, "_has_gpu_processors", False):
+                    continue
+                dev = self._get(m_uri)
                 if not dev:
                     continue
-                name = dev.get("Name") or dev.get("Model") or "Unknown GPU"
-                mfr  = dev.get("Manufacturer") or ""
-
-                pci_info = extract_pci_ids_from_dict(dev, get_fn=self._get)
-                if not pci_info["pci_quad"] and pcie_cache:
-                    pci_info = match_pcie_cache(dev, pcie_cache, get_fn=self._get)
-
-                # Strictly exclude network adapters / Mellanox DPUs from GPU accelerators
-                vid = str(pci_info.get("vendor_id") or dev.get("VendorId") or "").lower().replace("0x", "")
-                if vid == "15b3":  # Mellanox Technologies / NVIDIA Networking
-                    continue
-
-                sub_vid = str(pci_info.get("subsystem_vendor_id") or dev.get("SubsystemVendorId") or "").lower().replace("0x", "")
-                if sub_vid == "15b3":
-                    continue
-
-                name_up = name.upper()
-                mfr_up = mfr.upper()
-                if "MELLANOX" in name_up or "MELLANOX" in mfr_up or "CONNECTX" in name_up or "BLUEFIELD" in name_up:
-                    continue
-                if any(k in name_up for k in (" NIC", "OCP NIC", "NETWORK ADAPTER", "ETHERNET ADAPTER")):
-                    continue
-
-                fw   = str(dev.get("FirmwareVersion") or "").strip()
-                health = str((dev.get("Status") or {}).get("Health") or "").strip()
-                # Try to get VRAM from onboard Memory collection or CapacityMiB field
-                memory_gib = 0
-                mem_list = dev.get("Memory") or []
-                if isinstance(mem_list, list) and mem_list:
-                    first_mem_link = mem_list[0].get("@odata.id") if isinstance(mem_list[0], dict) else None
-                    if first_mem_link:
-                        mem_obj = self._get(first_mem_link) or {}
-                        cap_mib = mem_obj.get("CapacityMiB") or 0
-                        try:
-                            memory_gib = round(int(cap_mib) / 1024, 1)
-                        except (ValueError, TypeError):
-                            memory_gib = 0
-                    else:
-                        # Inline CapacityMiB on the accelerator object itself
-                        cap_mib = dev.get("CapacityMiB") or dev.get("MemoryMiB") or 0
-                        try:
-                            memory_gib = round(int(cap_mib) / 1024, 1)
-                        except (ValueError, TypeError):
-                            memory_gib = 0
-                gpus.append({
-                    "name": name, "manufacturer": mfr, "id": dev.get("Id", ""),
-                    "part_number": dev.get("PartNumber", "") or "",
-                    "serial_number": dev.get("SerialNumber", "") or "",
-                    "firmware": fw, "health": health, "memory_gib": memory_gib,
-                    "slot_label": "", "pcie_type": "", "lanes": None,
-                    "downgraded": False, "downgrade_reason": "", "downgrade_badge": "",
-                    "vendor_id": pci_info["vendor_id"], "device_id": pci_info["device_id"],
-                    "subsystem_vendor_id": pci_info["subsystem_vendor_id"], "subsystem_id": pci_info["subsystem_id"],
-                    "pci_quad": pci_info["pci_quad"], "pci_pair": pci_info["pci_pair"],
-                    "temperature_c": None,
-                    "max_operating_temp_c": None,
-                    "slowdown_temp_c": None,
-                    "shutdown_temp_c": None,
-                    "power_brake_status": "N/A",
-                    "thermal_alert_status": "N/A",
-                })
+                ptype = str(dev.get("ProcessorType") or "").upper()
+                if ptype in ("GPU", "ACCELERATOR", "DSP") or is_gpu_uri:
+                    gpu_obj = self._extract_gpu_details(dev, pcie_cache)
+                    if gpu_obj and gpu_obj.get("id") not in seen_ids:
+                        seen_ids.add(gpu_obj.get("id"))
+                        gpus.append(gpu_obj)
         # Fallback: scan PCIe cache for GPU device class codes
         if not gpus and pcie_cache:
             gpu_keywords = ["DISPLAY", "3D", "GPU", "NVIDIA", "AMD RADEON", "TESLA",
@@ -600,7 +692,16 @@ class _GPUMixin(_CollectorBase):
                         "subsystem_id":        pci_info["subsystem_id"],
                         "pci_quad":            pci_info["pci_quad"],
                         "pci_pair":            pci_info["pci_pair"],
+                        "pcie_errors":         normalize_pcie_errors(
+                            dev.get("PCIeErrors") or (raw_dev.get("PCIeErrors") if isinstance(raw_dev, dict) else None)
+                        ),
+                        "pcie_bus_errors":     (
+                            normalize_pcie_errors(
+                                dev.get("PCIeErrors") or (raw_dev.get("PCIeErrors") if isinstance(raw_dev, dict) else None)
+                            ) or {}
+                        ).get("total_errors", 0),
                         "temperature_c":       None,
+                        "power_watts":         None,
                         "max_operating_temp_c": None,
                         "slowdown_temp_c":     None,
                         "shutdown_temp_c":     None,

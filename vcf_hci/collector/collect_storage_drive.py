@@ -4,7 +4,11 @@ VCF Readiness Tool — storage drive Redfish resource parsing.
 import re
 from typing import Any, Optional
 
-from vcf_hci.collector.pci_utils import extract_pci_ids_from_dict, match_pcie_cache
+from vcf_hci.collector.pci_utils import (
+    extract_pci_ids_from_dict,
+    match_pcie_cache,
+    normalize_pcie_errors,
+)
 from vcf_hci.constants import KB_TRIMODE
 from vcf_hci.hcl import detect_qlc_nvme
 from vcf_hci.logging_utils import get_nested
@@ -204,6 +208,7 @@ def parse_drive_details(
             "plp_capacitor_health":      None,
             "tbw_written":               None,
             "pcie_bus_errors":           None,
+            "pcie_errors":               None,
             "write_amplification":       None,
             "bad_nand_blocks":           None,
             "uncorrectable_read_errors": None,
@@ -690,10 +695,25 @@ def parse_drive_details(
         or hpe_oem.get("MaximumTemperatureCelsius")
     )
 
-    pcie_errs = (
-        drive_json.get("PCIeErrors") or drive_json.get("PCIeCorrectableErrorCount")
-        or metrics.get("PCIeErrors") or metrics.get("PCIeCorrectableErrors")
-        or dell_oem.get("PCIeErrors")
+    pcie_raw = None
+    for cand in (
+        drive_json.get("PCIeErrors"),
+        metrics.get("PCIeErrors"),
+        dell_oem.get("PCIeErrors"),
+        oem_metrics.get("pcie_errors"),
+        drive_json.get("PCIeCorrectableErrorCount"),
+        metrics.get("PCIeCorrectableErrors"),
+        metrics.get("PCIeCorrectableErrorCount"),
+        oem_metrics.get("pcie_bus_errors"),
+    ):
+        if cand is not None and cand != {}:
+            pcie_raw = cand
+            if isinstance(cand, dict):
+                break
+
+    pcie_errors_dict = normalize_pcie_errors(pcie_raw)
+    pcie_errs = pcie_errors_dict.get("total_errors") if pcie_errors_dict else (
+        int(pcie_raw) if isinstance(pcie_raw, (int, float)) else None
     )
     waf_val = (
         drive_json.get("WriteAmplificationFactor")
@@ -877,6 +897,7 @@ def parse_drive_details(
         "error_log_entries":         error_log_entries,
         "max_temperature_c":         max_temp_c,
         "pcie_bus_errors":           pcie_errs,
+        "pcie_errors":               pcie_errors_dict,
         "write_amplification":       waf_val,
         "bad_nand_blocks":           bad_nand,
         "uncorrectable_read_errors": uncorr_reads,

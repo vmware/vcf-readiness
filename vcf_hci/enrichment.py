@@ -488,7 +488,45 @@ def _enrich_single_host(
                     host_data.setdefault("pcie_link_warnings", []).append(finding)
                     host_data.setdefault("warnings", []).append(finding)
 
-    # 8. Storage Drive Firmware Evaluations
+    # 7d. GPU Accelerator PCIe Link & Signal Health Evaluation
+    gpus = host_data.get("gpu_accelerators")
+    if isinstance(gpus, list):
+        for gpu in gpus:
+            if not isinstance(gpu, dict):
+                continue
+            link_health = evaluate_pcie_link_health(gpu)
+            if link_health.get("degraded"):
+                finding = link_health["finding"]
+                gpu["pcie_link_eval"] = link_health
+                gpu["pcie_link_finding"] = finding
+                gpu["pcie_link_remediation"] = link_health["remediation"]
+                gpu["downgraded"] = True
+                gpu["downgrade_reason"] = finding
+                gpu["downgrade_badge"] = link_health["badge"]
+                if finding not in host_data.get("pcie_link_warnings", []):
+                    host_data.setdefault("pcie_link_warnings", []).append(finding)
+                    host_data.setdefault("warnings", []).append(finding)
+                if link_health.get("signal_severity") == "critical":
+                    host_data.setdefault("critical_findings", []).append(finding)
+
+    # 7e. TelemetryService PCIe Error Evaluation
+    io_tel = host_data.get("io_telemetry") or {}
+    pcie_tel = io_tel.get("pcie_telemetry") or {}
+    if isinstance(pcie_tel, dict):
+        rec_errs = pcie_tel.get("pcie_switch_recovery_errors") or 0
+        if rec_errs > 0:
+            finding = f"PCIe Switch Signal Degradation: {rec_errs} Switch Port Recovery/Retrain Error(s) detected via TelemetryService."
+            if finding not in host_data.get("pcie_link_warnings", []):
+                host_data.setdefault("pcie_link_warnings", []).append(finding)
+                host_data.setdefault("warnings", []).append(finding)
+        bad_tlp = pcie_tel.get("pcie_switch_bad_tlp_errors") or 0
+        if bad_tlp > 0:
+            finding = f"PCIe Switch Signal Degradation: {bad_tlp} Bad TLP Frame Error(s) detected via TelemetryService."
+            if finding not in host_data.get("pcie_link_warnings", []):
+                host_data.setdefault("pcie_link_warnings", []).append(finding)
+                host_data.setdefault("warnings", []).append(finding)
+
+    # 8. Storage Drive Firmware & PCIe Link Evaluations
     storage = host_data.get("storage_subsystem")
     if not isinstance(storage, list) and isinstance(host_data.get("storage"), dict):
         storage = host_data.get("storage", {}).get("controllers") or []
@@ -506,10 +544,41 @@ def _enrich_single_host(
 
         for ctrl in storage:
             if isinstance(ctrl, dict):
+                ctrl_link = evaluate_pcie_link_health(ctrl)
+                if ctrl_link.get("degraded"):
+                    c_finding = ctrl_link["finding"]
+                    ctrl["pcie_link_eval"] = ctrl_link
+                    ctrl["pcie_link_finding"] = c_finding
+                    ctrl["downgraded"] = True
+                    ctrl["downgrade_reason"] = c_finding
+                    ctrl["downgrade_badge"] = ctrl_link["badge"]
+                    if c_finding not in host_data.get("pcie_link_warnings", []):
+                        host_data.setdefault("pcie_link_warnings", []).append(c_finding)
+                        host_data.setdefault("warnings", []).append(c_finding)
+                    if ctrl_link.get("signal_severity") == "critical":
+                        host_data.setdefault("critical_findings", []).append(c_finding)
+
                 drives = ctrl.get("drives") or []
                 if isinstance(drives, list):
                     for drive in drives:
                         if isinstance(drive, dict):
+                            # Evaluate Drive PCIe Link & Signal Degradation
+                            if drive.get("pcie_errors") or drive.get("pcie_bus_errors") or drive.get("lanes") or drive.get("negotiated_lanes") or drive.get("max_lanes"):
+                                d_link = evaluate_pcie_link_health(drive)
+                                if d_link.get("degraded"):
+                                    drive["pcie_link_eval"] = d_link
+                                    drive["pcie_link_finding"] = d_link["finding"]
+                                    drive["downgraded"] = True
+                                    drive["downgrade_reason"] = d_link["finding"]
+                                    drive["downgrade_badge"] = d_link["badge"]
+                                    if d_link["finding"] not in host_data.get("pcie_link_warnings", []):
+                                        host_data.setdefault("pcie_link_warnings", []).append(d_link["finding"])
+                                        host_data.setdefault("warnings", []).append(d_link["finding"])
+                                    if d_link.get("signal_severity") == "critical":
+                                        drive["is_failing"] = True
+                                        drive["failure_reason"] = d_link["finding"]
+                                        host_data.setdefault("critical_findings", []).append(d_link["finding"])
+
                             d_model = str(drive.get("model") or drive.get("name") or "")
                             d_fw = str(drive.get("firmware") or "")
                             if d_model and d_fw and d_fw != "N/A":
