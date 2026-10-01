@@ -95,10 +95,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <button type="button" class="btn btn-sm btn-link" style="padding:0; margin-left:0.5rem; color:inherit; text-decoration:none;" onclick="document.getElementById('retryBanner').classList.add('hidden')">✕</button>
       </div>
       <div id="certTrustBanner" class="alert alert-info hidden" style="margin-top:0.5rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
-        <span>🔒 <strong><span id="certTrustCount">0</span> host(s)</strong> present TLS certificates.</span>
-        <div class="flex gap-xs" style="align-items:center;">
-          <button type="button" class="btn btn-sm btn-outline" id="reviewCertsBtn" style="color:inherit; border-color:currentColor;">Review Certificates</button>
-          <button type="button" class="btn btn-sm btn-primary" id="acceptAllCertsBtn">Accept All (Pin Thumbprints)</button>
+        <span id="certTrustBannerText">🔒 <strong><span id="certTrustCount">0</span> host(s)</strong> present TLS certificates.</span>
+        <div id="certTrustActions" class="flex gap-xs" style="align-items:center;">
+          <button type="button" class="btn btn-sm btn-outline" id="reviewCertsBtn" data-action="review-certs" style="color:inherit; border-color:currentColor;">Review Certificates</button>
+          <button type="button" class="btn btn-sm btn-primary" id="acceptAllCertsBtn" data-action="accept-all-certs">Accept All (Pin Thumbprints)</button>
         </div>
       </div>
       <div id="hostList" class="host-list mt-half hidden"></div>

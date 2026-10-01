@@ -1137,8 +1137,43 @@ JS_SCAN = """
   document.getElementById('runBtn').addEventListener('click', function() {
     var targets = document.getElementById('rangeInput').value.trim();
     // If hosts were discovered and some are checked, use those; else use the range text
-    var checkedHosts = Array.from(document.querySelectorAll('.host-chk:checked'))
-                            .map(function(c){ return c.dataset.ip; });
+    var checkedBoxes = Array.from(document.querySelectorAll('.host-chk:checked'));
+    var checkedHosts = checkedBoxes.map(function(c){ return c.dataset.ip; });
+
+    // Guard against stale probed hosts shadowing a changed rangeInput
+    if (targets && checkedHosts.length > 0) {
+      var isMismatched = false;
+      if (typeof _probedTargetRaw !== 'undefined' && _probedTargetRaw) {
+        if (targets !== _probedTargetRaw) {
+          isMismatched = true;
+        }
+      } else {
+        var targetTokens = targets.split(/[\\s,]+/).filter(Boolean);
+        var hasOverlap = checkedHosts.some(function(ip) { return targetTokens.indexOf(ip) !== -1; });
+        if (!hasOverlap) {
+          isMismatched = true;
+        }
+      }
+      if (isMismatched) {
+        checkedBoxes.forEach(function(c) { c.checked = false; });
+        checkedHosts = [];
+        var hostListEl = document.getElementById('hostList');
+        if (hostListEl) {
+          hide(hostListEl);
+          hostListEl.innerHTML = '';
+        }
+        var perHostEl = document.getElementById('perHostRows');
+        if (perHostEl) perHostEl.innerHTML = '';
+        var discStatusEl = document.getElementById('discStatus');
+        if (discStatusEl) discStatusEl.textContent = '';
+        if (typeof resetCertTrustBanner === 'function') {
+          resetCertTrustBanner(0);
+        }
+        var certBannerEl = document.getElementById('certTrustBanner');
+        if (certBannerEl) hide(certBannerEl);
+      }
+    }
+
     if (!targets && !checkedHosts.length) {
       alert('Enter a target range or run Probe Hosts first.');
       return;

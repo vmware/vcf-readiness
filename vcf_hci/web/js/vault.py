@@ -6,6 +6,7 @@ credential testing runner, encrypted credential vault UI, and Dell TechDirect ke
 JS_VAULT = """
   // ── Discovery & Certificate Trust (TOFU) ──────────────────────────────────
   var _discoveredHosts = [];
+  var _probedTargetRaw = '';
   var _pinnedThumbprints = {};
   var _modalCertsList = [];
 
@@ -97,7 +98,8 @@ JS_VAULT = """
       saveSession();
       updatePinnedCertUi();
       closeCertModal();
-      document.getElementById('discStatus').textContent = 'Pinned ' + count + ' certificate thumbprint(s).';
+      var ds = document.getElementById('discStatus');
+      if (ds) ds.textContent = 'Pinned ' + count + ' certificate thumbprint(s).';
     });
   }
 
@@ -116,48 +118,74 @@ JS_VAULT = """
       saveSession();
       updatePinnedCertUi();
       closeCertModal();
-      document.getElementById('discStatus').textContent = 'Pinned all ' + count + ' certificate thumbprint(s).';
+      var ds = document.getElementById('discStatus');
+      if (ds) ds.textContent = 'Pinned all ' + count + ' certificate thumbprint(s).';
     });
   }
 
-  var reviewCertsBtn = document.getElementById('reviewCertsBtn');
-  if (reviewCertsBtn) {
-    reviewCertsBtn.addEventListener('click', function() {
-      var list = [];
-      _discoveredHosts.forEach(function(h) {
-        if (h.cert_info && h.cert_info.sha256) {
-          var ci = Object.assign({}, h.cert_info);
-          ci.ip = h.ip;
-          list.push(ci);
-        }
-      });
-      openCertModal(list);
-    });
+  function resetCertTrustBanner(count) {
+    var certBanner = document.getElementById('certTrustBanner');
+    if (!certBanner) return;
+    certBanner.className = 'alert alert-info hidden';
+    certBanner.innerHTML = '<span id="certTrustBannerText">🔒 <strong><span id="certTrustCount">' + (count || 0) + '</span> host(s)</strong> present TLS certificates.</span>'
+      + '<div id="certTrustActions" class="flex gap-xs" style="align-items:center;">'
+      + '<button type="button" class="btn btn-sm btn-outline" id="reviewCertsBtn" data-action="review-certs" style="color:inherit; border-color:currentColor;">Review Certificates</button>'
+      + '<button type="button" class="btn btn-sm btn-primary" id="acceptAllCertsBtn" data-action="accept-all-certs">Accept All (Pin Thumbprints)</button>'
+      + '</div>';
   }
 
-  var acceptAllCertsBtn = document.getElementById('acceptAllCertsBtn');
-  if (acceptAllCertsBtn) {
-    acceptAllCertsBtn.addEventListener('click', function() {
-      var count = 0;
-      _discoveredHosts.forEach(function(h) {
-        if (h.cert_info && h.cert_info.sha256) {
-          _pinnedThumbprints[h.ip] = h.cert_info.sha256;
-          count++;
-        }
-      });
-      saveSession();
-      updatePinnedCertUi();
-      document.getElementById('discStatus').textContent = 'Pinned ' + count + ' certificate thumbprint(s).';
-      var certBanner = document.getElementById('certTrustBanner');
-      if (certBanner) {
-        certBanner.className = 'alert alert-success';
-        certBanner.innerHTML = '<span>✔ <strong>All ' + count + ' certificate thumbprints pinned</strong> for secure verification.</span>';
+  function handleReviewCerts() {
+    var list = [];
+    _discoveredHosts.forEach(function(h) {
+      if (h.cert_info && h.cert_info.sha256) {
+        var ci = Object.assign({}, h.cert_info);
+        ci.ip = h.ip;
+        list.push(ci);
       }
     });
+    openCertModal(list);
   }
+
+  function handleAcceptAllCerts() {
+    var count = 0;
+    _discoveredHosts.forEach(function(h) {
+      if (h.cert_info && h.cert_info.sha256) {
+        _pinnedThumbprints[h.ip] = h.cert_info.sha256;
+        count++;
+      }
+    });
+    saveSession();
+    updatePinnedCertUi();
+    var discStatus = document.getElementById('discStatus');
+    if (discStatus) discStatus.textContent = 'Pinned ' + count + ' certificate thumbprint(s).';
+    var certBanner = document.getElementById('certTrustBanner');
+    if (certBanner) {
+      certBanner.className = 'alert alert-success';
+      var textEl = document.getElementById('certTrustBannerText');
+      if (textEl) {
+        textEl.innerHTML = '✔ <strong>All ' + count + ' certificate thumbprints pinned</strong> for secure verification.';
+      } else {
+        certBanner.innerHTML = '<span>✔ <strong>All ' + count + ' certificate thumbprints pinned</strong> for secure verification.</span>';
+      }
+      var actionsEl = document.getElementById('certTrustActions');
+      if (actionsEl) hide(actionsEl);
+    }
+  }
+
+  document.addEventListener('click', function(e) {
+    var actionEl = e.target.closest('[data-action]');
+    if (!actionEl) return;
+    var action = actionEl.getAttribute('data-action');
+    if (action === 'review-certs') {
+      handleReviewCerts();
+    } else if (action === 'accept-all-certs') {
+      handleAcceptAllCerts();
+    }
+  });
 
   function renderHostList(hosts) {
     var list = document.getElementById('hostList');
+    if (!list) return;
     list.innerHTML = '';
     _discoveredHosts = hosts;
     var certHosts = [];
@@ -191,8 +219,19 @@ JS_VAULT = """
     var certBanner = document.getElementById('certTrustBanner');
     if (certBanner) {
       if (certHosts.length > 0) {
-        document.getElementById('certTrustCount').textContent = certHosts.length;
-        show(certBanner);
+        var countEl = document.getElementById('certTrustCount');
+        var bannerText = document.getElementById('certTrustBannerText');
+        var actionsEl = document.getElementById('certTrustActions');
+        if (!countEl || !bannerText || !actionsEl) {
+          resetCertTrustBanner(certHosts.length);
+          certBanner = document.getElementById('certTrustBanner');
+        } else {
+          countEl.textContent = certHosts.length;
+          bannerText.innerHTML = '🔒 <strong><span id="certTrustCount">' + certHosts.length + '</span> host(s)</strong> present TLS certificates.';
+          show(actionsEl);
+          certBanner.className = 'alert alert-info';
+        }
+        if (certBanner) show(certBanner);
       } else {
         hide(certBanner);
       }
@@ -204,34 +243,42 @@ JS_VAULT = """
   document.getElementById('discoverBtn').addEventListener('click', function() {
     var raw = document.getElementById('rangeInput').value.trim();
     if (!raw) { alert('Enter a target range first.'); return; }
-    show(document.getElementById('discSpinner'));
-    document.getElementById('discStatus').textContent = 'Probing…';
-    hide(document.getElementById('hostList'));
-    hide(document.getElementById('vpnWarning'));
+    var spinner = document.getElementById('discSpinner');
+    if (spinner) show(spinner);
+    var discStatus = document.getElementById('discStatus');
+    if (discStatus) discStatus.textContent = 'Probing…';
+    var hostList = document.getElementById('hostList');
+    if (hostList) hide(hostList);
+    var vpnWarn = document.getElementById('vpnWarning');
+    if (vpnWarn) hide(vpnWarn);
     post('/api/discover', {targets: raw})
       .then(function(r) {
-        hide(document.getElementById('discSpinner'));
+        if (spinner) hide(spinner);
         if (r.error) {
-          document.getElementById('discStatus').textContent = 'Error: ' + r.error;
+          if (discStatus) discStatus.textContent = 'Error: ' + r.error;
         } else {
-          document.getElementById('discStatus').textContent =
-            r.hosts.length + ' reachable host(s) found';
+          _probedTargetRaw = raw;
+          if (discStatus) {
+            discStatus.textContent =
+              r.hosts.length + ' reachable host(s) found';
+          }
           renderHostList(r.hosts);
           if (r.high_latency_detected) {
-            document.getElementById('vpnLatency').textContent = r.avg_latency_ms || '0';
-            show(document.getElementById('vpnWarning'));
+            var vpnLat = document.getElementById('vpnLatency');
+            if (vpnLat) vpnLat.textContent = r.avg_latency_ms || '0';
+            if (vpnWarn) show(vpnWarn);
             var thInp = document.getElementById('threadsInput');
             if (thInp && parseInt(thInp.value, 10) > 6) {
               thInp.value = '6';
             }
           } else {
-            hide(document.getElementById('vpnWarning'));
+            if (vpnWarn) hide(vpnWarn);
           }
         }
       })
       .catch(function(e) {
-        hide(document.getElementById('discSpinner'));
-        document.getElementById('discStatus').textContent = 'Probe failed: ' + e;
+        if (spinner) hide(spinner);
+        if (discStatus) discStatus.textContent = 'Probe failed: ' + e;
       });
   });
 
@@ -607,7 +654,44 @@ JS_VAULT = """
       show(el);
     });
   }
-  document.getElementById('rangeInput').addEventListener('change', updateVaultCoverage);
+  function clearStaleDiscoveredHosts() {
+    var curVal = (document.getElementById('rangeInput').value || '').trim();
+    if (_probedTargetRaw && curVal === _probedTargetRaw) {
+      return;
+    }
+    var hostChks = document.querySelectorAll('.host-chk');
+    if (hostChks.length > 0 || _probedTargetRaw || _discoveredHosts.length > 0) {
+      hostChks.forEach(function(c) { c.checked = false; });
+      var discStatus = document.getElementById('discStatus');
+      if (discStatus) discStatus.textContent = '';
+      var hostList = document.getElementById('hostList');
+      if (hostList) {
+        hide(hostList);
+        hostList.innerHTML = '';
+      }
+      var perHostRows = document.getElementById('perHostRows');
+      if (perHostRows) perHostRows.innerHTML = '';
+      resetCertTrustBanner(0);
+      var certBanner = document.getElementById('certTrustBanner');
+      if (certBanner) hide(certBanner);
+      var vpnWarn = document.getElementById('vpnWarning');
+      if (vpnWarn) hide(vpnWarn);
+      _discoveredHosts = [];
+      _probedTargetRaw = '';
+    }
+    if (typeof updateHostGates === 'function') {
+      updateHostGates();
+    }
+    if (typeof updateVaultCoverage === 'function') {
+      updateVaultCoverage();
+    }
+  }
+
+  document.getElementById('rangeInput').addEventListener('input', clearStaleDiscoveredHosts);
+  document.getElementById('rangeInput').addEventListener('change', function() {
+    clearStaleDiscoveredHosts();
+    updateVaultCoverage();
+  });
   document.getElementById('passwordInput').addEventListener('input', function() { if ($v('useVaultChk').checked) updateVaultCoverage(); });
   document.getElementById('hostList').addEventListener('change', updateVaultCoverage);
 
