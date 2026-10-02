@@ -276,6 +276,62 @@ def _cmd_edit(args, open_vault: Callable) -> int:
     return _with_vault(args, open_vault, run)
 
 
+def _cmd_pin_key(args, open_vault: Callable) -> int:
+    def run(vault) -> int:
+        profile = vault.get_jump_host(args.id)
+        if profile is None:
+            _err("no jump host with id %s" % args.id)
+            return EXIT_VAULT
+        existing_fp = profile.get("host_key_fingerprint")
+        if existing_fp and not getattr(args, "replace", False):
+            _err("jump host %s already has pinned host key (%s); use --replace to overwrite" % (args.id, existing_fp))
+            return EXIT_VAULT
+
+        from vcf_hci.remote.executor import probe_jump_host_key
+
+        host = profile.get("host") or ""
+        port = int(profile.get("port") or 22)
+        timeout = float(getattr(args, "timeout", 5.0) or 5.0)
+        res = probe_jump_host_key(host, port=port, timeout=timeout)
+        if not res.get("ok"):
+            _err("failed to probe host key for %s:%d: %s" % (host, port, res.get("error") or "unknown error"))
+            return EXIT_VAULT
+
+        ktype = res.get("key_type") or "SSH"
+        fp = res.get("fingerprint") or ""
+        pub_key = res.get("public_key") or ""
+        _out("Host: %s:%d" % (host, port))
+        _out("Key type: %s" % ktype)
+        _out("Fingerprint: %s" % fp)
+
+        expected_fp = getattr(args, "accept_fingerprint", None)
+        if expected_fp:
+            if expected_fp.strip() != fp.strip():
+                _err("fingerprint mismatch! Expected %s, probe returned %s" % (expected_fp.strip(), fp.strip()))
+                return EXIT_VAULT
+        else:
+            if not _interactive():
+                _err("no TTY and --accept-fingerprint not supplied; verify fingerprint out-of-band and re-run with --accept-fingerprint")
+                return EXIT_USAGE
+            sys.stdout.write("Pin this host key? [y/N]: ")
+            sys.stdout.flush()
+            ans = sys.stdin.readline().strip().lower()
+            if ans not in ("y", "yes"):
+                _err("pinning cancelled by user")
+                return EXIT_VAULT
+
+        vault.update_jump_host(args.id, {
+            "host_key": pub_key,
+            "host_key_fingerprint": fp,
+            "host_key_type": ktype,
+        })
+        vault.save()
+        _out("[ok] Pinned host key for %s (%s)." % (args.id, fp))
+        return EXIT_OK
+
+    return _with_vault(args, open_vault, run)
+
+
 def register_jump_commands(subparsers, open_vault: Callable) -> None:
     """Attach ``jump-host`` to the vault CLI parser."""
     parent = subparsers.add_parser(
@@ -303,6 +359,13 @@ def register_jump_commands(subparsers, open_vault: Callable) -> None:
 
     commands.add_parser("list", help="List jump hosts without secrets").set_defaults(
         fn=lambda args: _cmd_list(args, open_vault))
+
+    pin_key = commands.add_parser("pin-key", help="Probe and pin the SSH host key for a jump host")
+    pin_key.add_argument("--id", required=True, help="Jump host ID")
+    pin_key.add_argument("--accept-fingerprint", default=None, help="Verify and pin if probed fingerprint matches this value")
+    pin_key.add_argument("--replace", action="store_true", help="Replace existing pinned host key")
+    pin_key.add_argument("--timeout", type=float, default=5.0, help="Keyscan probe timeout in seconds")
+    pin_key.set_defaults(fn=lambda args: _cmd_pin_key(args, open_vault))
 
     edit = commands.add_parser("edit", help="Edit jump host settings and subnets without recreating it")
     edit.add_argument("--id", required=True, help="Jump host ID")

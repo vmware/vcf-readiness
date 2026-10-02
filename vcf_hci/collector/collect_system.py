@@ -177,6 +177,65 @@ def lookup_xeon_e5_e7_cores(model: str) -> Optional[Tuple[int, int]]:
     return None
 
 
+def lookup_cpu_memory_channels(cpu_model: str) -> int:
+    """Determine native memory channels per socket based on CPU architecture."""
+    if not cpu_model:
+        return 8
+    s = str(cpu_model).upper()
+
+    # 1. Embedded & Microserver CPUs (2 or 4 channels)
+    if re.search(r"\b(V1\d{3}|V2\d{3}|V3\d{3}|R1\d{3}|V1500B|V1807B|V3C64|R1606G)\b", s) or "RYZEN EMBEDDED" in s:
+        return 2
+    if re.search(r"\bEPYC\s*3\d{3}\b|\b(3101|3201|3251|3301|3401|3451)\b", s) or "EPYC EMBEDDED 3" in s:
+        return 4
+    if re.search(r"\bXEON\s+D[-\s]?(17|27|28|18)\d\d", s) or re.search(r"\bD-(17|27|28|18)\d\d", s) or "ICE LAKE-D" in s:
+        return 4
+    if re.search(r"\bXEON\s+D[-\s]?(15|16|21)\d\d", s) or re.search(r"\bD-(15|16|21)\d\d", s) or "BROADWELL-DE" in s:
+        return 2
+    if re.search(r"\bE3-1\d{3}", s) or re.search(r"\bXEON\s+E[-\s]?2[123]\d\d", s):
+        return 2
+    if any(k in s for k in ["DENVERTON", "SNOW RIDGE"]) or re.search(r"\bATOM\b|\bC3[3579]\d\d\b|\bP59?\d\d\b", s):
+        return 2
+
+    # 2. 12-channel platforms (AMD Turin/Genoa/Bergamo, Intel Xeon 6 6900)
+    if re.search(r"EPYC\s*9\d\d[45]|TURIN|GENOA|BERGAMOT|BERGAMO", s) or any(k in s for k in ["9004", "9005"]):
+        return 12
+    if re.search(r"\b69\d\d[PE]\b", s) or re.search(r"\bXEON\s*6\s*69\d\d\b", s) or any(k in s for k in ["6900P", "6900E", "XEON 6900", "GRANITE RAPIDS-AP"]):
+        return 12
+
+    # 3. 6-channel platforms (AMD Siena, Intel Cooper Lake, Cascade Lake, Skylake-SP)
+    if re.search(r"EPYC\s*8\d\d4|SIENA", s) or "8004" in s:
+        return 6
+    if re.search(r"\b[345689]2\d\d[+UYTRLSM]*\b", s) or "CASCADE" in s or "CASCADE LAKE" in s:
+        return 6
+    if re.search(r"\b[34568]1\d\d[+TFMP]*\b", s) or "SKYLAKE" in s:
+        return 6
+    if re.search(r"\b[568]3\d\dH\b", s) or "COOPER LAKE" in s:
+        return 6
+
+    # 4. 8-channel platforms (AMD Milan/Rome/Naples, Intel Xeon 6 6700/6500, Emerald, Sapphire, Ice Lake-SP)
+    if re.search(r"EPYC\s*7\d\d[123]|ROME|MILAN|NAPLES", s) or any(k in s for k in ["7001", "7002", "7003"]):
+        return 8
+    if re.search(r"\b6[57]\d\d[PE]\b", s) or re.search(r"\bXEON\s*6\s*6[57]\d\d\b", s) or any(k in s for k in ["6700P", "6700E", "6500P", "6500E", "XEON 6700", "XEON 6500", "GRANITE RAPIDS", "SIERRA FOREST"]):
+        return 8
+    if "EMERALD RAPIDS" in s or "EMERALD" in s or re.search(r"\b[34568]5\d\d[+VNYPUQFLS]*\b", s):
+        return 8
+    if any(k in s for k in ["SAPPHIRE RAPIDS", "SAPPHIRE"]) or re.search(r"\b[34568]4\d\d[+HMNPUVYQS]*\b", s):
+        return 8
+    if any(k in s for k in ["ICE LAKE"]) or re.search(r"\b[34568]3\d\d[+NSTUYPVQ]*\b", s):
+        return 8
+
+    # 5. 4-channel platforms (Pre-Skylake Xeon E5/E7 v1-v4)
+    if any(k in s for k in ["HASWELL", "BROADWELL", " V3 ", " V4 ", "E5-", "E7-"]):
+        return 4
+
+    # 6. Consumer fallbacks
+    if re.search(r"\b(CORE|CELERON|PENTIUM|RYZEN|ATHLON)\b", s):
+        return 2
+
+    return 8
+
+
 def _parse_iso_datetime(dt_str: str) -> Optional[datetime]:
     if not dt_str or not isinstance(dt_str, str):
         return None
@@ -534,7 +593,7 @@ class _SystemMixin(_CollectorBase):
         cpu_count = proc_summary.get("Count") or (data.get("Processors", {}).get("Count") if isinstance(data.get("Processors"), dict) else None) or 1
         cpu_verdict = ""
         arch_label = ""
-        channels_per_socket = 8
+        channels_per_socket = lookup_cpu_memory_channels(cpu_model)
         max_ram_speed_mhz = None
         max_pcie_lanes_per_socket = 0
 
@@ -653,6 +712,7 @@ class _SystemMixin(_CollectorBase):
                         or len(_fp_model) > len(cpu_model)
                     ):
                         cpu_model = _fp_model
+                channels_per_socket = lookup_cpu_memory_channels(cpu_model)
 
                 max_speed_mhz       = first_proc["max_speed_mhz"]
                 operating_speed_mhz = first_proc["operating_speed_mhz"]

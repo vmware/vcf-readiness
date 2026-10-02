@@ -64,27 +64,42 @@ JS_SCAN = """
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  function verdictBucket(h) {
+    var verdict = h.verdict || '';
+    var partial = !!h.partial_scan;
+    if (verdict.indexOf('Unsupported') !== -1) {
+      return {cls: 'badge-danger', label: verdict, bucket: 'unsupported', why: ''};
+    }
+    if (partial || !verdict || verdict === 'Unknown' || verdict.indexOf('Unverified') !== -1) {
+      var why = h.partial_reason || (h.partial_stage ? ('Timed out during ' + h.partial_stage) : ((!verdict || verdict === 'Unknown') ? 'CPU not verified' : verdict));
+      var label = partial ? 'Incomplete' : ((verdict && verdict !== 'Unknown') ? verdict : 'Incomplete');
+      return {cls: 'badge-warning', label: label, bucket: 'incomplete', why: why};
+    }
+    if (verdict.indexOf('Deprecated') !== -1) {
+      return {cls: 'badge-warning', label: verdict, bucket: 'deprecated', why: ''};
+    }
+    return {cls: 'badge-success', label: verdict, bucket: 'supported', why: ''};
+  }
+
   function addResultRow(h) {
     var tbody = document.getElementById('resultsBody');
-    var cls   = h.verdict && h.verdict.indexOf('Unsupported') !== -1 ? 'badge-danger' :
-                h.verdict && h.verdict.indexOf('Deprecated')  !== -1 ? 'badge-warning' : 'badge-success';
-    var label = h.verdict || 'Unknown';
+    var bucket = verdictBucket(h || {});
     var rem = h.remediation || {};
     var remTag = '';
     if (rem.status === 'fully_remediated') {
       var resSec = (rem.resolved_sections || []).join(', ');
       remTag = ' &nbsp;<span class="badge badge-success" style="font-weight:600;cursor:help" title="Recovered missing sections via targeted rescan: ' + esc(resSec) + '">🔄 Remediated</span>';
     } else if (h.partial_scan && rem.status === 'partially_remediated') {
-      var resSec = (rem.resolved_sections || []).join(', ');
+      var resSec2 = (rem.resolved_sections || []).join(', ');
       var remSec = (rem.remaining_sections || []).join(', ');
-      remTag = ' &nbsp;<span class="badge warning" style="font-weight:600;cursor:help" title="Partially remediated (recovered: ' + esc(resSec) + '; missing: ' + esc(remSec) + ')">⚠️ Partial (Remediated)</span>';
+      remTag = ' &nbsp;<span class="badge warning" style="font-weight:600;cursor:help" title="Partially remediated (recovered: ' + esc(resSec2) + '; missing: ' + esc(remSec) + ')">⚠️ Partial (Remediated)</span>';
     } else if (h.partial_scan) {
       var partialTooltip = h.partial_reason || (h.partial_stage ? 'Timed out during ' + h.partial_stage : 'Collection timed out');
       remTag = ' &nbsp;<span class="badge warning" style="font-weight:600;cursor:help" title="' + esc(partialTooltip) + '">⚠️ Partial (Incomplete)</span>';
     }
     var mainRpt = h.report || h.filename || '';
     if (!mainRpt && h.ip) {
-      mainRpt = 'vcf_readiness_' + h.ip.replace(/[^A-Za-z0-9_.-]/g, '_') + '.html';
+      mainRpt = 'vsphere_vsan_report_' + h.ip.replace(/[^A-Za-z0-9_.-]/g, '_') + '.html';
     }
     var obfRpt  = h.obf_report || h.obf_filename || '';
     var isRemotePending = _scanRunning && (_isRemoteScan || !!h.is_remote);
@@ -92,28 +107,32 @@ JS_SCAN = """
     if (isRemotePending) {
       links = '<span class="badge badge-subtle" title="Assessment complete on jump host. Report will automatically sync to your workstation once all targets finish." style="font-size:0.75rem;cursor:help;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;padding:3px 7px;border-radius:4px;">☁️ Remote (Sync pending)</span>';
     } else {
-      links = mainRpt ? '<a href="/reports/'+encodeURIComponent(mainRpt)+'" target="_blank">Open ↗</a>' : '—';
+      links = mainRpt ? '<a href="/reports/'+encodeURIComponent(mainRpt)+'" target="_blank" rel="noopener noreferrer">Open ↗</a>' : '—';
       if (obfRpt) {
-        links += ' &nbsp;<a href="/reports/'+encodeURIComponent(obfRpt)+'" target="_blank" title="Open obfuscated report copy" style="color:#7c3aed;font-weight:500">🔒 Obfuscated ↗</a>';
+        links += ' &nbsp;<a href="/reports/'+encodeURIComponent(obfRpt)+'" target="_blank" rel="noopener noreferrer" title="Open obfuscated report copy" style="color:#7c3aed;font-weight:500">🔒 Obfuscated ↗</a>';
       }
     }
+    var whyHtml = bucket.why ? '<span class="run-reason">' + esc(bucket.why) + '</span>' : '';
     var inner = '<td><strong>'+esc(h.hostname)+'</strong><br><small class="text-muted">'+esc(h.ip)+'</small></td>'
       + '<td>'+esc(h.vendor)+' '+esc(h.model)+remTag+'</td>'
-      + '<td><span class="badge '+cls+'">'+esc(label)+'</span></td>'
+      + '<td><span class="badge '+bucket.cls+'">'+esc(bucket.label)+'</span>'+whyHtml+'</td>'
       + '<td>'+links+'</td>';
 
     var existingRow = h.ip ? tbody.querySelector('tr[data-ip="' + esc(h.ip) + '"]') : null;
     if (existingRow) {
       existingRow._lastHostData = h;
+      existingRow.dataset.verdictBucket = bucket.bucket;
       existingRow.innerHTML = inner;
     } else {
       var tr = document.createElement('tr');
       if (h.ip) tr.dataset.ip = h.ip;
+      tr.dataset.verdictBucket = bucket.bucket;
       tr._lastHostData = h;
       tr.innerHTML = inner;
       tbody.appendChild(tr);
     }
     show(document.getElementById('resultsSection'));
+    if (typeof applyLocalResultsPage === 'function') applyLocalResultsPage();
   }
 
   var _lastScanOutdir = '';
@@ -363,7 +382,7 @@ JS_SCAN = """
     document.getElementById('runBtn').textContent = '▶  Run Assessment';
     var scanBtn = document.getElementById('importScanBtn');
     var sumBtn = document.getElementById('importSummaryBtn');
-    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '📁 Import Scan'; }
+    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '📁 Import prior scan'; }
     if (sumBtn) { sumBtn.disabled = false; sumBtn.textContent = '📁 Import Summary'; }
 
     if (d && d.results && Array.isArray(d.results) && d.results.length > 0) {
@@ -377,19 +396,27 @@ JS_SCAN = """
       });
     }
 
-    var v = d.vcf_readiness;
-    var totV = v ? ((v.supported || 0) + (v.deprecated || 0) + (v.unsupported || 0)) : 0;
-    if (!v || (totV === 0 && (d.n_ok || 0) > 0)) {
+    var v = d.vcf_readiness || {supported:0, deprecated:0, unsupported:0, incomplete:0};
+    var totV = (v.supported || 0) + (v.deprecated || 0) + (v.unsupported || 0) + (v.incomplete || 0);
+    if (totV === 0 && (d.n_ok || 0) > 0) {
       var rows = document.querySelectorAll('#resultsBody tr');
-      var sup = 0, dep = 0, unsup = 0;
+      var sup = 0, dep = 0, unsup = 0, inc = 0;
       rows.forEach(function(r) {
-        var txt = r.textContent || '';
-        if (txt.indexOf('Unsupported') !== -1) unsup++;
-        else if (txt.indexOf('Deprecated') !== -1) dep++;
-        else sup++;
+        var b = r.dataset.verdictBucket || '';
+        if (b === 'unsupported') unsup++;
+        else if (b === 'deprecated') dep++;
+        else if (b === 'incomplete') inc++;
+        else if (b === 'supported') sup++;
+        else {
+          var txt = r.textContent || '';
+          if (txt.indexOf('Unsupported') !== -1) unsup++;
+          else if (txt.indexOf('Incomplete') !== -1 || txt.indexOf('Unverified') !== -1) inc++;
+          else if (txt.indexOf('Deprecated') !== -1) dep++;
+          else sup++;
+        }
       });
-      if (sup + dep + unsup > 0) {
-        v = { supported: sup, deprecated: dep, unsupported: unsup };
+      if (sup + dep + unsup + inc > 0) {
+        v = { supported: sup, deprecated: dep, unsupported: unsup, incomplete: inc };
       }
     }
 
@@ -397,7 +424,7 @@ JS_SCAN = """
     if (d.scan_summary) {
       appendLog('[⏱️] ' + d.scan_summary);
     }
-    appendLog('[📊] VCF Readiness: ' + (v.supported || 0) + ' Supported, ' + (v.deprecated || 0) + ' Deprecated, ' + (v.unsupported || 0) + ' Unsupported');
+    appendLog('[📊] VCF Readiness: ' + (v.supported || 0) + ' Supported, ' + (v.deprecated || 0) + ' Deprecated, ' + (v.unsupported || 0) + ' Unsupported, ' + (v.incomplete || 0) + ' Incomplete');
     if (d.outdir) {
       appendLog('[📁] Output folder: ' + d.outdir);
     }
@@ -412,6 +439,8 @@ JS_SCAN = """
       document.getElementById('summarySupportedBadge').textContent = (v.supported || 0) + ' Supported';
       document.getElementById('summaryDeprecatedBadge').textContent = (v.deprecated || 0) + ' Deprecated';
       document.getElementById('summaryUnsupportedBadge').textContent = (v.unsupported || 0) + ' Unsupported';
+      var incBadge = document.getElementById('summaryIncompleteBadge');
+      if (incBadge) incBadge.textContent = (v.incomplete || 0) + ' Incomplete';
       var remBadge = document.getElementById('summaryRemediatedBadge');
       if (remBadge) {
         if (d.n_remediated && d.n_remediated > 0) {
@@ -590,6 +619,28 @@ JS_SCAN = """
     show(document.getElementById('exportSummaryJsonBtn'));
     show(document.getElementById('prerenderReportsBtn'));
     show(document.getElementById('postScanActions'));
+    var failBox = document.getElementById('summaryFailedList');
+    if (failBox) {
+      var seenFail = Object.create(null);
+      var failLines = [];
+      var failedForSummary = (typeof allFailedList !== 'undefined' && allFailedList) ? allFailedList : [];
+      failedForSummary.forEach(function(f) {
+        if (!f || !f.ip || seenFail[f.ip]) return;
+        seenFail[f.ip] = true;
+        var why = f.reason_label || f.detail || f.reason_code || 'Failed';
+        failLines.push('<div><strong>' + esc(f.ip) + '</strong> — ' + esc(why) + '</div>');
+      });
+      if (!failLines.length) {
+        failBox.innerHTML = '';
+        hide(failBox);
+      } else {
+        var more = failLines.length > 8 ? '<div class="text-muted">and ' + (failLines.length - 8) + ' more below</div>' : '';
+        failBox.innerHTML = '<strong>' + failLines.length + ' host(s) did not finish</strong>' + failLines.slice(0, 8).join('') + more;
+        show(failBox);
+      }
+    }
+    var summaryCard = document.getElementById('postScanSummaryCard');
+    if (summaryCard && summaryCard.scrollIntoView) summaryCard.scrollIntoView({behavior: 'smooth', block: 'start'});
     saveSession();
     if (_eventSource) { _eventSource.close(); _eventSource = null; }
   }
@@ -958,6 +1009,357 @@ JS_SCAN = """
     });
   }
 
+  // ── Cert pin gate before scan ────────────────────────────────────────────
+  var _pendingCertPinProceed = null;
+  var _certPinFetchGen = 0;
+  var _certPinCheckedHosts = [];
+  var _certPinRangeText = '';
+  var _certPinOverrideTargets = null;
+  var _certPinStartNote = '';
+
+  function tlsVerificationAlreadyOn() {
+    var ignoreEl = document.getElementById('ignoreTlsChk');
+    return !!(ignoreEl && !ignoreEl.checked);
+  }
+
+  function certPinTargetTokens(raw) {
+    return String(raw || '').split(/[\\s,]+/).filter(Boolean);
+  }
+
+  function certPinLooksLikeSingleIp(token) {
+    return /^\\d{1,3}(\\.\\d{1,3}){3}$/.test(token);
+  }
+
+  function discreteTargetHosts(checkedHosts, rangeText) {
+    if (checkedHosts && checkedHosts.length) return checkedHosts.slice();
+    var tokens = certPinTargetTokens(rangeText);
+    if (tokens.length && tokens.every(certPinLooksLikeSingleIp)) return tokens;
+    return null;
+  }
+
+  function certPinAlreadySatisfied(checkedHosts, rangeText) {
+    if (tlsVerificationAlreadyOn()) return true;
+    var discrete = discreteTargetHosts(checkedHosts, rangeText);
+    if (!discrete) return false;
+    for (var i = 0; i < discrete.length; i++) {
+      if (!_pinnedThumbprints[discrete[i]]) return false;
+    }
+    return true;
+  }
+
+  function closeCertPinModal() {
+    _certPinFetchGen++;
+    var modal = document.getElementById('certPinModal');
+    if (modal) hide(modal);
+    _pendingCertPinProceed = null;
+  }
+
+  function setCertPinStatus(msg) {
+    var el = document.getElementById('certPinStatus');
+    if (!el) return;
+    if (!msg) {
+      el.textContent = '';
+      hide(el);
+      return;
+    }
+    el.textContent = msg;
+    show(el);
+  }
+
+  function certsFromHosts(hosts, limitTo) {
+    var want = null;
+    if (limitTo && limitTo.length) {
+      want = {};
+      limitTo.forEach(function(ip) { want[ip] = true; });
+    }
+    var list = [];
+    (hosts || []).forEach(function(h) {
+      if (!h) return;
+      var ip = h.ip || h.host || '';
+      if (!ip) return;
+      if (want && !want[ip]) return;
+      if (_pinnedThumbprints[ip]) return;
+      var info = h.cert_info || h;
+      var thumb = info.sha256 || info.sha256_raw || '';
+      if (!thumb) return;
+      list.push({
+        ip: ip,
+        sha256: thumb,
+        subject_cn: info.subject_cn || info.subject || '',
+        is_self_signed: !!info.is_self_signed
+      });
+    });
+    return list;
+  }
+
+  function pinCoverage() {
+    var discrete = discreteTargetHosts(_certPinCheckedHosts, _certPinRangeText);
+    var rows = {};
+    document.querySelectorAll('#certPinList .cert-pin-chk').forEach(function(chk) {
+      rows[chk.getAttribute('data-ip')] = !!chk.checked;
+    });
+    if (!discrete) {
+      var anyChecked = false;
+      Object.keys(rows).forEach(function(ip) { if (rows[ip]) anyChecked = true; });
+      return {kind: 'range', absent: [], unchecked: [], anyChecked: anyChecked, rowCount: Object.keys(rows).length};
+    }
+    var absent = [];
+    var unchecked = [];
+    discrete.forEach(function(ip) {
+      if (_pinnedThumbprints[ip]) return;
+      if (!Object.prototype.hasOwnProperty.call(rows, ip)) absent.push(ip);
+      else if (!rows[ip]) unchecked.push(ip);
+    });
+    return {kind: 'discrete', absent: absent, unchecked: unchecked, anyChecked: unchecked.length === 0, rowCount: Object.keys(rows).length};
+  }
+
+  function refreshPinButton() {
+    var pinBtn = document.getElementById('pinCertsAndScanBtn');
+    if (!pinBtn) return;
+    var cov = pinCoverage();
+    pinBtn.disabled = false;
+    if (!cov.rowCount || cov.absent.length) {
+      pinBtn.textContent = cov.rowCount ? 'Fetch missing certificates' : 'Fetch and pin certificates';
+      pinBtn.dataset.mode = 'fetch';
+      return;
+    }
+    pinBtn.textContent = 'Pin selected and scan';
+    pinBtn.dataset.mode = 'pin';
+  }
+
+  function renderCertPinList(certs, errorMsg) {
+    var listEl = document.getElementById('certPinList');
+    var emptyEl = document.getElementById('certPinEmpty');
+    if (!listEl) return;
+    if (errorMsg) {
+      if (emptyEl) {
+        emptyEl.textContent = errorMsg;
+        show(emptyEl);
+      }
+    } else if (emptyEl) {
+      hide(emptyEl);
+    }
+    if (!certs || !certs.length) {
+      listEl.innerHTML = '';
+      hide(listEl);
+    } else {
+      listEl.innerHTML = certs.map(function(c) {
+        var badge = c.is_self_signed ? 'Self-signed' : 'CA-issued';
+        var meta = badge + (c.subject_cn ? ' · ' + c.subject_cn : '');
+        return '<label class="cert-pin-row">'
+          + '<input type="checkbox" class="cert-pin-chk" data-ip="' + esc(c.ip) + '" data-thumb="' + esc(c.sha256) + '" checked>'
+          + '<span class="cert-pin-ip">' + esc(c.ip) + '</span>'
+          + '<span class="cert-pin-meta">' + esc(meta) + '</span>'
+          + '<code class="vcf-thumbprint-code">' + esc(c.sha256) + '</code>'
+          + '</label>';
+      }).join('');
+      show(listEl);
+    }
+    refreshPinButton();
+  }
+
+  function applySelectedPins() {
+    var count = 0;
+    document.querySelectorAll('#certPinList .cert-pin-chk:checked').forEach(function(chk) {
+      var ip = chk.getAttribute('data-ip');
+      var thumb = chk.getAttribute('data-thumb');
+      if (ip && thumb) {
+        _pinnedThumbprints[ip] = thumb;
+        count++;
+      }
+    });
+    if (count) {
+      if (typeof saveSession === 'function') saveSession();
+      if (typeof updatePinnedCertUi === 'function') updatePinnedCertUi();
+    }
+    return count;
+  }
+
+  function hostsWithCerts(hosts) {
+    var list = [];
+    (hosts || []).forEach(function(h) {
+      if (!h) return;
+      var ip = h.ip || h.host || '';
+      var info = h.cert_info || h;
+      var thumb = info.sha256 || info.sha256_raw || '';
+      if (ip && thumb) list.push(ip);
+    });
+    return list;
+  }
+
+  function proceedIfAlreadyPinned(hosts) {
+    var withCerts = hostsWithCerts(hosts);
+    if (!withCerts.length) return false;
+    for (var i = 0; i < withCerts.length; i++) {
+      if (!_pinnedThumbprints[withCerts[i]]) return false;
+    }
+    var discrete = discreteTargetHosts(_certPinCheckedHosts, _certPinRangeText);
+    if (discrete) {
+      for (var j = 0; j < discrete.length; j++) {
+        if (!_pinnedThumbprints[discrete[j]]) return false;
+      }
+      finishCertPinChoice('[🔒] Certificates already pinned.');
+      return true;
+    }
+    _certPinOverrideTargets = withCerts.join(',');
+    finishCertPinChoice('[🔒] Certificates already pinned. Scanning those hosts only.');
+    return true;
+  }
+
+  function finishCertPinChoice(note) {
+    _certPinStartNote = note || '';
+    var fn = _pendingCertPinProceed;
+    closeCertPinModal();
+    if (typeof fn === 'function') fn();
+  }
+
+  function promptCertPinBeforeScan(checkedHosts, rangeText, onProceed) {
+    if (certPinAlreadySatisfied(checkedHosts, rangeText)) {
+      onProceed();
+      return;
+    }
+    var modal = document.getElementById('certPinModal');
+    if (!modal) {
+      var proceed = confirm('BMC TLS checks are off. The BMC password can be read on the path to these hosts. OK scans without certificate checks. Cancel stops.');
+      if (proceed) onProceed();
+      return;
+    }
+    _pendingCertPinProceed = onProceed;
+    _certPinCheckedHosts = (checkedHosts || []).slice();
+    _certPinRangeText = rangeText || '';
+    _certPinOverrideTargets = null;
+
+    var limit = _certPinCheckedHosts.length ? _certPinCheckedHosts : discreteTargetHosts(null, rangeText);
+    var known = certsFromHosts(_discoveredHosts || [], limit);
+    var textEl = document.getElementById('certPinText');
+    var discrete = discreteTargetHosts(_certPinCheckedHosts, _certPinRangeText);
+    if (textEl) {
+      textEl.textContent = known.length
+        ? 'These BMCs already presented certificates. Pin them and the scan checks later connections against that thumbprint. Self-signed iDRAC, iLO, and XCC certificates work this way.'
+        : 'Fetch the certificate each BMC presents, then pin it. Self-signed iDRAC, iLO, and XCC certificates work this way without a CA bundle.';
+    }
+    if (discrete) {
+      setCertPinStatus('Every listed host has to be pinned before the scan starts. Scan without certificate checks is the other choice.');
+    } else {
+      setCertPinStatus('Pin and scan contacts only the hosts listed here. Scan without certificate checks contacts the original range with verification off.');
+    }
+    if (!known.length && typeof _probedTargetRaw !== 'undefined' && _probedTargetRaw === _certPinRangeText) {
+      if (proceedIfAlreadyPinned(_discoveredHosts || [])) return;
+    }
+    renderCertPinList(known, '');
+    if (discrete) {
+      var cov = pinCoverage();
+      if (cov.absent.length && known.length) {
+        setCertPinStatus('No certificate yet for ' + cov.absent.slice(0, 6).join(', ') + (cov.absent.length > 6 ? '…' : '') + '. Fetch the missing ones, or scan without certificate checks.');
+      }
+    }
+    show(modal);
+  }
+
+  function fetchCertsForPin() {
+    var raw = (_certPinCheckedHosts && _certPinCheckedHosts.length)
+      ? _certPinCheckedHosts.join(',')
+      : (document.getElementById('rangeInput').value.trim() || _certPinRangeText);
+    if (!raw) {
+      alert('Enter a target range first.');
+      return;
+    }
+    var pinBtn = document.getElementById('pinCertsAndScanBtn');
+    if (pinBtn) {
+      pinBtn.disabled = true;
+      pinBtn.textContent = 'Contacting BMCs…';
+    }
+    var gen = ++_certPinFetchGen;
+    post('/api/discover', {targets: raw}).then(function(r) {
+      if (gen !== _certPinFetchGen || !_pendingCertPinProceed) return;
+      if (r.error) {
+        renderCertPinList([], r.error);
+        return;
+      }
+      if (Array.isArray(r.hosts)) {
+        _discoveredHosts = r.hosts;
+        var rangeEl = document.getElementById('rangeInput');
+        if (rangeEl && rangeEl.value.trim()) _probedTargetRaw = rangeEl.value.trim();
+      }
+      if (proceedIfAlreadyPinned(r.hosts || [])) return;
+      var limit = _certPinCheckedHosts.length ? _certPinCheckedHosts : null;
+      var certs = certsFromHosts(r.hosts || [], limit);
+      var note = certs.length ? '' : 'No HTTPS certificate came back. The hosts may be down, or they answered on HTTP only.';
+      renderCertPinList(certs, note);
+      var cov = pinCoverage();
+      if (cov.kind === 'discrete' && cov.absent.length) {
+        setCertPinStatus('No certificate for ' + cov.absent.length + ' host(s): ' + cov.absent.slice(0, 6).join(', ') + (cov.absent.length > 6 ? '…' : '') + '. Fetch again, or scan without certificate checks.');
+      }
+    }).catch(function(err) {
+      if (gen !== _certPinFetchGen || !_pendingCertPinProceed) return;
+      var msg = (err && err.message) ? err.message : String(err);
+      renderCertPinList([], 'Could not fetch certificates: ' + msg);
+    });
+  }
+
+  function onPinCertsAndScan() {
+    var pinBtn = document.getElementById('pinCertsAndScanBtn');
+    if (!pinBtn || pinBtn.dataset.mode !== 'pin') {
+      fetchCertsForPin();
+      return;
+    }
+    var cov = pinCoverage();
+    if (cov.kind === 'discrete' && (cov.absent.length || cov.unchecked.length)) {
+      if (cov.unchecked.length) {
+        setCertPinStatus('Select every listed certificate, or choose Scan without certificate checks.');
+      }
+      refreshPinButton();
+      return;
+    }
+    if (cov.kind === 'range' && !cov.anyChecked) {
+      setCertPinStatus('Select at least one certificate, or choose Scan without certificate checks.');
+      return;
+    }
+    var count = applySelectedPins();
+    if (!count) {
+      setCertPinStatus('Select at least one certificate, or choose Scan without certificate checks.');
+      return;
+    }
+    if (cov.kind === 'range') {
+      var ips = [];
+      document.querySelectorAll('#certPinList .cert-pin-chk:checked').forEach(function(chk) {
+        var ip = chk.getAttribute('data-ip');
+        if (ip) ips.push(ip);
+      });
+      _certPinOverrideTargets = ips.join(',');
+      finishCertPinChoice('[🔒] Pinned ' + count + ' certificate(s). Scanning those hosts only.');
+      return;
+    }
+    finishCertPinChoice('[🔒] Pinned ' + count + ' certificate(s).');
+  }
+
+  function onScanWithoutCertChecks() {
+    var count = applySelectedPins();
+    var note = '[!] Certificate checks are off for this scan. The BMC password is exposed to network interception.';
+    if (count) note = '[🔒] Pinned ' + count + ' certificate(s). ' + note;
+    _certPinOverrideTargets = null;
+    finishCertPinChoice(note);
+  }
+
+  var closeCertPinModalBtn = document.getElementById('closeCertPinModalBtn');
+  if (closeCertPinModalBtn) closeCertPinModalBtn.addEventListener('click', closeCertPinModal);
+  var certPinModalEl = document.getElementById('certPinModal');
+  if (certPinModalEl) {
+    certPinModalEl.addEventListener('click', function(e) {
+      if (e.target === certPinModalEl) closeCertPinModal();
+    });
+  }
+  var pinCertsAndScanBtn = document.getElementById('pinCertsAndScanBtn');
+  if (pinCertsAndScanBtn) pinCertsAndScanBtn.addEventListener('click', onPinCertsAndScan);
+  var scanWithoutCertChecksBtn = document.getElementById('scanWithoutCertChecksBtn');
+  if (scanWithoutCertChecksBtn) scanWithoutCertChecksBtn.addEventListener('click', onScanWithoutCertChecks);
+  var certPinListEl = document.getElementById('certPinList');
+  if (certPinListEl) {
+    certPinListEl.addEventListener('change', function(e) {
+      if (e.target && e.target.classList && e.target.classList.contains('cert-pin-chk')) refreshPinButton();
+    });
+  }
+
   // ── Active Scan Conflict Modal (Jump Host) ────────────────────────────────
   var _activeScanConflictScans = [];
   var _activeScanRestartFn = null;
@@ -1232,6 +1634,13 @@ JS_SCAN = """
     }
 
     promptMissingPasswordWarning(missingHosts, function() {
+      promptCertPinBeforeScan(checkedHosts, targets, function() {
+      if (_certPinOverrideTargets) {
+        finalTargets = _certPinOverrideTargets;
+        _certPinOverrideTargets = null;
+      }
+      var certPinNote = _certPinStartNote;
+      _certPinStartNote = '';
       var dellCreds = null;
       if (document.getElementById('dellEnabledChk').checked) {
         var did = document.getElementById('dellIdInput').value.trim();
@@ -1240,7 +1649,12 @@ JS_SCAN = """
       }
 
       document.getElementById('logBox').innerHTML = '';
+      if (certPinNote) appendLog(certPinNote);
       document.getElementById('resultsBody').innerHTML = '';
+      var resultsFilter = document.getElementById('resultsFilterInput');
+      if (resultsFilter) resultsFilter.value = '';
+      if (typeof _fleetFilterText !== 'undefined') _fleetFilterText = '';
+      if (typeof _fleetPageIndex !== 'undefined') _fleetPageIndex = 0;
       _failedHostsMap = Object.create(null);
       renderFailedHosts();
       _activeHosts = Object.create(null);
@@ -1367,6 +1781,8 @@ JS_SCAN = """
       } else {
         startScanRequest();
       }
+      });
+      // cert-pin gate
     });
   });
 

@@ -434,6 +434,31 @@ APP_CSS = """
       letter-spacing: 0.02em;
     }
 
+    /* ── BMC certificate pin gate ───────────────────────────────────── */
+    .cert-pin-list {
+      max-height: 240px;
+      overflow-y: auto;
+      margin-top: 0.75rem;
+      background: var(--vcf-bg-subtle);
+      border: 1px solid var(--vcf-border);
+      border-radius: var(--vcf-radius);
+    }
+    .cert-pin-row {
+      display: grid;
+      grid-template-columns: 1.25rem minmax(7.5rem, 10rem) 1fr;
+      gap: 0.15rem 0.55rem;
+      align-items: center;
+      padding: 0.5rem 0.7rem;
+      border-bottom: 1px solid var(--vcf-border);
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .cert-pin-row:last-child { border-bottom: none; }
+    .cert-pin-row input { grid-row: 1 / span 2; margin: 0; }
+    .cert-pin-ip { font-family: monospace; font-weight: 600; }
+    .cert-pin-meta { color: var(--vcf-text-muted); }
+    .cert-pin-row .vcf-thumbprint-code { grid-column: 2 / span 2; grid-row: 2; }
+
     /* ── Active in-flight scans box ─────────────────────────────────── */
     .active-scans-box {
       background: var(--vcf-card, #f8fafc);
@@ -694,4 +719,20 @@ APP_CSS = """
     .gap-xl { gap: 2rem; }
     .items-center { align-items: center; }
     .items-start { align-items: flex-start; }
+
+    .run-bar {
+      position: sticky;
+      bottom: 0;
+      z-index: 30;
+      background: var(--vcf-card);
+      padding-top: .35rem;
+      padding-bottom: .35rem;
+    }
+    .run-reason {
+      display: block;
+      font-size: .75rem;
+      color: var(--vcf-muted);
+      font-weight: 400;
+      margin-top: .15rem;
+    }
 """

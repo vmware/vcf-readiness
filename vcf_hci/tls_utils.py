@@ -8,6 +8,7 @@ Provides helpers for configuring SSL contexts for BMC connections:
   - Diagnostics for SSL handshake and certificate verification failures
 """
 
+import errno
 import hashlib
 import http.client
 import ipaddress
@@ -22,6 +23,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
+
+from vcf_hci.logging_utils import create_pinned_connection
 
 logger = logging.getLogger("vcf_assess")
 
@@ -292,7 +295,7 @@ def inspect_server_certificate(
 
     try:
         t_sock0 = time.monotonic()
-        with socket.create_connection((clean_host, port), timeout=timeout) as sock:
+        with create_pinned_connection((clean_host, port), timeout=timeout) as sock:
             t_sock1 = time.monotonic()
             res["tcp_rtt_ms"] = round((t_sock1 - t_sock0) * 1000.0, 2)
             t_tls0 = time.monotonic()
@@ -405,7 +408,7 @@ def measure_connection_rtt(
     for _ in range(samples):
         t0 = time.monotonic()
         try:
-            with socket.create_connection((clean_host, port), timeout=timeout):
+            with create_pinned_connection((clean_host, port), timeout=timeout):
                 t1 = time.monotonic()
                 latencies.append((t1 - t0) * 1000.0)
         except Exception as exc:
@@ -440,7 +443,7 @@ def measure_connection_rtt(
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         try:
-            with socket.create_connection((clean_host, port), timeout=timeout) as sock:
+            with create_pinned_connection((clean_host, port), timeout=timeout) as sock:
                 t_tls0 = time.monotonic()
                 with ctx.wrap_socket(sock, server_hostname=server_hostname or clean_host):
                     t_tls1 = time.monotonic()
@@ -460,8 +463,33 @@ def verify_peer_thumbprint(der_cert: bytes, expected_thumbprint: str) -> bool:
     return actual == expected
 
 
-class PinnedHTTPSConnection(http.client.HTTPSConnection):
-    """HTTPSConnection that validates peer certificate SHA-256 against a pinned thumbprint map."""
+class MetadataPinnedHTTPConnection(http.client.HTTPConnection):
+    """Dial a metadata-checked IP. self.host stays the name for the Host header."""
+
+    def connect(self) -> None:
+        self.sock = create_pinned_connection(
+            (self.host, self.port), self.timeout, self.source_address
+        )
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as exc:
+            if exc.errno != errno.ENOPROTOOPT:
+                raise
+        if self._tunnel_host:
+            self._tunnel()
+
+
+class MetadataPinnedHTTPSConnection(MetadataPinnedHTTPConnection, http.client.HTTPSConnection):
+    """Dial a metadata-checked IP and set SNI to the original host name."""
+
+    def connect(self) -> None:
+        MetadataPinnedHTTPConnection.connect(self)
+        server_hostname = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=server_hostname)
+
+
+class PinnedHTTPSConnection(MetadataPinnedHTTPSConnection):
+    """HTTPS connection that dials a checked address and validates a pinned thumbprint."""
 
     def __init__(
         self,
@@ -543,12 +571,40 @@ class SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
         )
 
 
+class MetadataPinnedHTTPHandler(urllib.request.HTTPHandler):
+    """urllib HTTP handler that dials a metadata-checked address."""
+
+    def http_open(self, req):
+        return self.do_open(MetadataPinnedHTTPConnection, req)
+
+
+class MetadataPinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    """urllib HTTPS handler that dials a metadata-checked address."""
+
+    def https_open(self, req):
+        return self.do_open(self._build_connection, req)
+
+    def _build_connection(self, host, timeout=300):
+        kwargs = {}
+        ctx = getattr(self, "_context", None)
+        if ctx is not None:
+            kwargs["context"] = ctx
+        check_host = getattr(self, "_check_hostname", None)
+        if check_host is not None:
+            kwargs["check_hostname"] = check_host
+        return MetadataPinnedHTTPSConnection(host, timeout=timeout, **kwargs)
+
+
 def build_bmc_opener(
     ssl_context: Optional[ssl.SSLContext] = None,
     pinned_thumbprints: Optional[Dict[str, str]] = None,
 ) -> urllib.request.OpenerDirector:
-    """Open a BMC URL and follow redirects only back to that same host."""
-    handlers = [SameHostRedirectHandler()]
+    """Open a BMC URL on a metadata-checked address.
+
+    Redirects stay on the same host. The Host header and TLS SNI stay the
+    name in the URL. The TCP peer is the literal from resolve_pinned_addresses.
+    """
+    handlers = [SameHostRedirectHandler(), MetadataPinnedHTTPHandler()]
     if pinned_thumbprints:
         handlers.append(
             PinnedThumbprintHTTPSHandler(
@@ -556,8 +612,8 @@ def build_bmc_opener(
                 context=ssl_context,
             )
         )
-    elif ssl_context is not None:
-        handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
+    else:
+        handlers.append(MetadataPinnedHTTPSHandler(context=ssl_context))
     return urllib.request.build_opener(*handlers)
 
 
@@ -570,7 +626,9 @@ def build_pinned_opener(
         pinned_thumbprints=pinned_thumbprints,
         context=ssl_context,
     )
-    return urllib.request.build_opener(SameHostRedirectHandler(), handler)
+    return urllib.request.build_opener(
+        SameHostRedirectHandler(), MetadataPinnedHTTPHandler(), handler
+    )
 
 
 class StdlibHTTPConnectionPool:
@@ -647,12 +705,12 @@ class StdlibHTTPConnectionPool:
                     port=self.port,
                     **kwargs,
                 )
-            return http.client.HTTPSConnection(
+            return MetadataPinnedHTTPSConnection(
                 self.host,
                 port=self.port,
                 **kwargs,
             )
-        return http.client.HTTPConnection(
+        return MetadataPinnedHTTPConnection(
             self.host,
             port=self.port,
             timeout=timeout,
@@ -779,7 +837,7 @@ class StdlibHTTPConnectionPool:
             "Host": self.host if self.port in (80, 443) else f"{self.host}:{self.port}",
             "Accept": "application/json",
             "Connection": "keep-alive",
-            "User-Agent": "VCF-HCI-Readiness-Tool/9.8.2",
+            "User-Agent": "VCF-HCI-Readiness-Tool/9.8.3",
         }
         if headers:
             req_headers.update(headers)

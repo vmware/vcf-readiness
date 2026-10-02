@@ -274,7 +274,7 @@ def render_header_and_banners(
         f'<div style="margin-top:.5rem">'
         f'<a href="{bcg_server_url}" target="_blank" class="btn-link" style="font-size:.85rem">🔗 BCG Server Search ↗</a>&nbsp;&nbsp;'
         f'<a href="{bcg_cpu_url}" target="_blank" class="btn-link" style="font-size:.85rem">🧠 BCG CPU Search ↗</a>'
-        f'{("&nbsp;&nbsp;" + f"""<a href="redfish_explorer_{_ip}.html" target="_blank" class="btn-link" style="font-size:.85rem;color:var(--accent,#38bdf8);font-weight:600;border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect raw Redfish API payloads for this server">🧭 Redfish Explorer ↗</a>""") if _ip else ""}'
+        f'{("&nbsp;&nbsp;" + f"""<a href="redfish_explorer_{_h(_ip)}.html" target="_blank" class="btn-link" style="font-size:.85rem;color:var(--accent,#38bdf8);font-weight:600;border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect raw Redfish API payloads for this server">🧭 Redfish Explorer ↗</a>""") if _ip else ""}'
         f'</div>'
         f'</div>'
         f'</div>'

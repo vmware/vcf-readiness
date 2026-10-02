@@ -52,6 +52,9 @@ def diagnose_jump_error(error_str: str, host: str = "") -> Dict[str, str]:
     elif "host key verification failed" in err_lower:
         category = "host_key"
         troubleshooting = "Remote host key verification failed. The server's host key has changed or does not match the pinned fingerprint. Verify the server identity and update the pinned host key in vault settings."
+    elif "host key" in err_lower and ("not pinned" in err_lower or "unpinned" in err_lower):
+        category = "host_key_unpinned"
+        troubleshooting = "Remote jump host SSH key is not pinned. Pin the host key in the vault or confirmation dialog before connecting."
     elif "older than 3.9" in err_lower or ("not found" in err_lower and "python" in err_lower):
         category = "python_version"
         troubleshooting = "Remote jump host requires Python 3.9 or higher to run the readiness collector."
@@ -188,6 +191,8 @@ class JumpApiMixin(_ApiMixinBase):
                 profile["username"] = body["username"]
             if body.get("host"):
                 profile["host"] = body["host"]
+            if body.get("host_key"):
+                profile["host_key"] = body["host_key"]
             if body.get("port"):
                 try:
                     profile["port"] = int(body["port"])
@@ -203,6 +208,8 @@ class JumpApiMixin(_ApiMixinBase):
             except VaultError as exc:
                 self._send_json({"ok": False, "error": str(exc), "troubleshooting": "Check form inputs."}, 400)
                 return
+            if body.get("host_key"):
+                profile["host_key"] = body["host_key"]
         elif jump_id:
             self._send_json({
                 "ok": False,
@@ -218,7 +225,7 @@ class JumpApiMixin(_ApiMixinBase):
             }, 400)
             return
 
-        from vcf_hci.remote.executor import RemoteExecError, preflight_jump
+        from vcf_hci.remote.executor import HostKeyRequiredError, RemoteExecError, preflight_jump
         target_host = str(profile.get("host") or jump_id)
         if target_host and is_cloud_metadata_target(target_host):
             self._send_json({
@@ -230,8 +237,36 @@ class JumpApiMixin(_ApiMixinBase):
             return
         target_user = str(profile.get("username") or "")
         target_id = str(jump_id or profile.get("id") or "").strip()
+        if not profile.get("host_key"):
+            target_port = int(profile.get("port") or 22)
+            self._send_json({
+                "ok": False,
+                "category": "host_key_unpinned",
+                "error": f"Jump host '{target_host}' SSH key is not pinned.",
+                "troubleshooting": "Pin the jump host SSH host key before testing connection.",
+                "unpinned": [{
+                    "id": target_id or "test-jump-host",
+                    "host": target_host,
+                    "port": target_port,
+                }],
+            }, 409)
+            return
         try:
             report = preflight_jump(profile, timeout=15)
+        except HostKeyRequiredError as exc:
+            target_port = int(profile.get("port") or 22)
+            self._send_json({
+                "ok": False,
+                "category": "host_key_unpinned",
+                "error": str(exc),
+                "troubleshooting": "Pin the jump host SSH host key before connecting.",
+                "unpinned": [{
+                    "id": target_id or "test-jump-host",
+                    "host": target_host,
+                    "port": target_port,
+                }],
+            }, 409)
+            return
         except RemoteExecError as exc:
             err_str = str(exc)
             diag = diagnose_jump_error(err_str, target_host)

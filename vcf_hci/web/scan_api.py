@@ -230,6 +230,15 @@ class ScanApiMixin(_ApiMixinBase):
                     400,
                 )
                 return
+            from vcf_hci.remote.orchestrator import unpinned_jump_hosts
+            unpinned = unpinned_jump_hosts(ips, jumps, selected_id=jump_host_id)
+            if unpinned:
+                self._send_json({
+                    "error": "One or more jump hosts have unpinned SSH keys",
+                    "category": "host_key_unpinned",
+                    "unpinned": unpinned,
+                }, 409)
+                return
 
         scan_id = os.urandom(6).hex()
         _cancel_event.clear()
@@ -534,6 +543,22 @@ class ScanApiMixin(_ApiMixinBase):
             info["remote_dir"] = assert_sandbox_path(str(info.get("remote_dir") or ""))
         except Exception:
             self._send_json({"error": "Invalid remote sandbox path"}, 400)
+            return
+
+        jid = str(info.get("jump_host_id") or "").strip()
+        jumps = vault.jump_host_map()
+        jump_profile = jumps.get(jid)
+        if jump_profile and not jump_profile.get("host_key"):
+            port = int(jump_profile.get("port") or 22)
+            self._send_json({
+                "error": f"Jump host '{jid}' SSH key is not pinned",
+                "category": "host_key_unpinned",
+                "unpinned": [{
+                    "id": jid,
+                    "host": str(jump_profile.get("host") or jid),
+                    "port": port,
+                }],
+            }, 409)
             return
 
         def _reconnect_target():

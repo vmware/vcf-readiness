@@ -1,7 +1,8 @@
 """
 VCF Readiness Tool — Browser UI HTTP Server (vcf_hci.web.server)
 
-A stdlib-only ThreadingHTTPServer bound to 127.0.0.1 that:
+A stdlib-only ThreadingHTTPServer bound to 127.0.0.1 by default.
+A non-loopback bind, or --allow-remote, listens with TLS 1.2+ only.
   • Serves the Clarity-styled single-page app
   • Exposes a JSON / SSE API for running scans in background threads
   • Persists profiles and session state to ~/.vcf-readiness-*.json
@@ -15,12 +16,15 @@ No external dependencies — stdlib only:
 import argparse
 import base64
 import gzip
+import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import signal
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -86,10 +90,132 @@ except Exception:
     _CLARITY_CSS = b""
 
 # ── Server security state ────────────────────────────────────────────────────
-_SERVER_BIND_TOKEN = secrets.token_hex(16)
+# One-time browser bootstrap secret. It is not a session and not an API credential.
+_LAUNCH_TOKEN = secrets.token_hex(16)
+_LAUNCH_SESSION: Optional[str] = None
+_LAUNCH_REDEEMED_AT: float = 0.0
+_LAUNCH_CLOSED = False
+# A lost redirect can retry the same URL briefly. After this, or after the
+# browser presents the session cookie, the launch token is dead.
+_LAUNCH_GRACE_SEC = 5.0
 _session_lock = threading.Lock()
-_VALID_SESSIONS: Set[str] = {_SERVER_BIND_TOKEN}
+_VALID_SESSIONS: Set[str] = set()
+_SERVER_BIND_TOKEN: str = _LAUNCH_TOKEN
 _OEM_MODE = False
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_TOKEN_QUERY_RE = re.compile(r"(token=)[^&\s\"']+")
+
+
+def listener_requires_tls(bind_host: str, allow_remote: bool) -> bool:
+    """True when the UI can be reached by something other than a loopback client.
+
+    ``--allow-remote`` widens Host and Origin checks even if the bind address
+    is loopback, so that flag requires TLS too.
+    """
+    host = (bind_host or "").strip().lower()
+    if allow_remote:
+        return True
+    return host not in _LOOPBACK_HOSTS
+
+
+def tls_material_error(
+    bind_host: str,
+    allow_remote: bool,
+    tls_cert: Optional[str],
+    tls_key: Optional[str],
+) -> Optional[str]:
+    """Return a startup error when an exposed listener would be plain HTTP."""
+    if not listener_requires_tls(bind_host, allow_remote):
+        return None
+    if not tls_cert or not tls_key:
+        return (
+            "SECURITY BLOCK: a network-exposed Web UI (--allow-remote, or a --bind "
+            "other than 127.0.0.1 / ::1 / localhost) must be HTTPS.\n"
+            "      Pass --tls-cert and --tls-key (PEM). Plain HTTP would expose the\n"
+            "      one-time launch URL and the session cookie to the network.\n"
+            "      Example: python -m vcf_hci.web --bind 0.0.0.0 --allow-remote "
+            "--tls-cert ui.crt --tls-key ui.key"
+        )
+    if not os.path.isfile(tls_cert):
+        return f"SECURITY BLOCK: TLS certificate not found: {tls_cert}"
+    if not os.path.isfile(tls_key):
+        return f"SECURITY BLOCK: TLS private key not found: {tls_key}"
+    return None
+
+
+def cert_fingerprint_sha256(cert_path: str) -> str:
+    """SHA-256 fingerprint of the first PEM certificate, colon-separated."""
+    with open(cert_path, "r", encoding="ascii", errors="ignore") as fh:
+        text = fh.read()
+    start = text.find("-----BEGIN CERTIFICATE-----")
+    end = text.find("-----END CERTIFICATE-----")
+    if start < 0 or end < 0:
+        raise ValueError(f"No PEM certificate in {cert_path}")
+    end += len("-----END CERTIFICATE-----")
+    der = ssl.PEM_cert_to_DER_cert(text[start:end])
+    digest = hashlib.sha256(der).hexdigest()
+    return ":".join(digest[i:i + 2] for i in range(0, len(digest), 2))
+
+
+def _launch_token_acceptable(query_tok: str) -> bool:
+    """True when GET / may still redeem this launch token. Does not mint a session."""
+    if not query_tok or not secrets.compare_digest(query_tok, _LAUNCH_TOKEN):
+        return False
+    with _session_lock:
+        if _LAUNCH_CLOSED:
+            return False
+        if _LAUNCH_SESSION is None:
+            return True
+        if (time.monotonic() - _LAUNCH_REDEEMED_AT) > _LAUNCH_GRACE_SEC:
+            return False
+        return True
+
+
+def _redeem_launch_token(query_tok: str) -> Optional[str]:
+    """Exchange the one-time launch token for a session id.
+
+    A retry inside the grace window returns the same session so a lost redirect
+    can complete. The launch token is never itself placed in ``_VALID_SESSIONS``.
+    """
+    global _LAUNCH_SESSION, _LAUNCH_REDEEMED_AT, _LAUNCH_CLOSED
+    if not query_tok or not secrets.compare_digest(query_tok, _LAUNCH_TOKEN):
+        return None
+    with _session_lock:
+        now = time.monotonic()
+        if _LAUNCH_CLOSED:
+            return None
+        if _LAUNCH_SESSION is not None:
+            if (now - _LAUNCH_REDEEMED_AT) > _LAUNCH_GRACE_SEC:
+                _LAUNCH_CLOSED = True
+                return None
+            return _LAUNCH_SESSION
+        session = secrets.token_hex(24)
+        _VALID_SESSIONS.add(session)
+        _LAUNCH_SESSION = session
+        _LAUNCH_REDEEMED_AT = now
+        return session
+
+
+def _session_is_known(token: str) -> bool:
+    """True if ``token`` is a live session.
+
+    Presenting the session that was minted from the launch token retires the
+    launch token immediately, including during the grace window.
+    """
+    global _LAUNCH_CLOSED
+    if not token:
+        return False
+    with _session_lock:
+        matched = False
+        for tok in _VALID_SESSIONS:
+            if secrets.compare_digest(token, tok):
+                matched = True
+                break
+        if not matched:
+            return False
+        if _LAUNCH_SESSION is not None and secrets.compare_digest(token, _LAUNCH_SESSION):
+            _LAUNCH_CLOSED = True
+        return True
 
 
 # =============================================================================
@@ -111,6 +237,7 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         self.bind_host = bind_host
         self.allow_remote = allow_remote
         self.allow_hosts = allow_hosts or set()
+        self.tls_enabled = False
         super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
     def handle_error(self, request, client_address):
@@ -135,7 +262,27 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
             msg = "HTTP " + (format % args)
         except Exception:
             msg = f"HTTP {format} {args}"
+        msg = _TOKEN_QUERY_RE.sub(r"\1REDACTED", msg)
         logger.debug(msg)
+
+    def send_header(self, keyword: str, value: str) -> None:
+        low = keyword.lower()
+        if low == "referrer-policy":
+            self._sent_referrer = True
+        elif low == "cache-control":
+            self._sent_cache = True
+        super().send_header(keyword, value)
+
+    def end_headers(self) -> None:
+        # Cover send_error and other paths that never set these. Do not override
+        # an explicit Cache-Control (the CSS asset is intentionally cacheable).
+        if not getattr(self, "_sent_referrer", False):
+            self._sent_referrer = True
+            super().send_header("Referrer-Policy", "no-referrer")
+        if not getattr(self, "_sent_cache", False):
+            self._sent_cache = True
+            super().send_header("Cache-Control", "no-store")
+        super().end_headers()
 
     # ── Response / Request helpers ───────────────────────────────────────────
 
@@ -145,6 +292,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         if extra_headers:
             for k, v in extra_headers.items():
@@ -159,6 +307,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data:; connect-src 'self';")
         if extra_headers:
@@ -191,35 +340,74 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
                     return part.split("=", 1)[1].strip()
         return None
 
-    def _get_or_create_session(self) -> str:
+    def _query_token(self) -> str:
+        parsed = urllib.parse.urlparse(getattr(self, "path", "") or "")
+        if not parsed.query:
+            return ""
+        return urllib.parse.parse_qs(parsed.query).get("token", [""])[0]
+
+    def _session_cookie_header(self, token: str) -> str:
+        parts = [f"vcf_session={token}", "Path=/", "HttpOnly", "SameSite=Strict"]
+        if getattr(self.server, "tls_enabled", False):
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _current_session(self) -> Optional[str]:
+        """Return the presented session id, never the launch token."""
+        hdr_token = self.headers.get("X-Server-Token", "").strip() if getattr(self, "headers", None) else ""
+        if hdr_token and _session_is_known(hdr_token):
+            return hdr_token
         cookie_tok = self._get_request_session_token()
-        with _session_lock:
-            if cookie_tok and (cookie_tok in _VALID_SESSIONS or secrets.compare_digest(cookie_tok, _SERVER_BIND_TOKEN)):
-                return cookie_tok
-            new_tok = secrets.token_hex(24)
-            _VALID_SESSIONS.add(new_tok)
-            return new_tok
+        if cookie_tok and _session_is_known(cookie_tok):
+            return cookie_tok
+        return None
 
     def _is_authenticated(self) -> bool:
-        hdr_token = self.headers.get("X-Server-Token", "").strip() if hasattr(self, "headers") and self.headers else ""
-        if hdr_token:
-            if secrets.compare_digest(hdr_token, _SERVER_BIND_TOKEN):
-                return True
-            with _session_lock:
-                for tok in _VALID_SESSIONS:
-                    if secrets.compare_digest(hdr_token, tok):
-                        return True
+        return self._current_session() is not None
 
-        cookie_tok = self._get_request_session_token()
-        if cookie_tok:
-            if secrets.compare_digest(cookie_tok, _SERVER_BIND_TOKEN):
-                return True
-            with _session_lock:
-                for tok in _VALID_SESSIONS:
-                    if secrets.compare_digest(cookie_tok, tok):
-                        return True
+    def _send_auth_error(self, status: int, message: str) -> None:
+        body = (message + "\n").encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.end_headers()
+        self.wfile.write(body)
 
-        return False
+    def _redirect_strip_token(self, cookie_hdr: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", "/")
+        self.send_header("Set-Cookie", cookie_hdr)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _request_host_name(self) -> str:
+        """Hostname from the Host header, without port or brackets."""
+        raw = self.headers.get("Host", "").strip() if hasattr(self, "headers") and self.headers else ""
+        if not raw:
+            return ""
+        try:
+            parsed = urllib.parse.urlparse("//" + raw)
+            return (parsed.hostname or "").lower().rstrip(".")
+        except Exception:
+            return ""
+
+    def _host_matches_request(self, hostname: str) -> bool:
+        """True when hostname is this request's Host, or an explicit allow_hosts entry."""
+        h = (hostname or "").lower().rstrip(".")
+        if not h:
+            return False
+        req = self._request_host_name()
+        if req and h == req:
+            return True
+        allow_hosts = getattr(self.server, "allow_hosts", set()) or set()
+        return h in {str(ah).lower().rstrip(".") for ah in allow_hosts}
 
     def _is_allowed_origin(self, origin: str) -> bool:
         if not origin:
@@ -237,7 +425,9 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
                 return False
             allow_remote = getattr(self.server, "allow_remote", False)
             if allow_remote:
-                return True
+                # Credentialed CORS must not trust every host that shares this port.
+                # SameSite=Strict is a separate cookie attribute, not this check.
+                return self._host_matches_request(h)
             bind_host = getattr(self.server, "bind_host", "127.0.0.1")
             actual_host = getattr(self.server, "server_address", ("127.0.0.1", 0))[0]
             allowed = {"127.0.0.1", "localhost"}
@@ -296,10 +486,16 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         origin = self.headers.get("Origin", "").strip() if hasattr(self, "headers") and self.headers else ""
         if origin:
             try:
-                parsed_origin = urllib.parse.urlparse(origin)
-                if parsed_origin.hostname and not _is_allowed_host(parsed_origin.hostname):
-                    self.send_error(403, "Forbidden: invalid Origin header")
-                    return False
+                if allow_remote:
+                    # allow-remote CORS: reflect only the addressed host
+                    if not self._is_allowed_origin(origin):
+                        self.send_error(403, "Forbidden: invalid Origin header")
+                        return False
+                else:
+                    parsed_origin = urllib.parse.urlparse(origin)
+                    if parsed_origin.hostname and not _is_allowed_host(parsed_origin.hostname):
+                        self.send_error(403, "Forbidden: invalid Origin header")
+                        return False
             except Exception:
                 self.send_error(403, "Forbidden: invalid Origin header")
                 return False
@@ -307,10 +503,16 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         referer = self.headers.get("Referer", "").strip() if hasattr(self, "headers") and self.headers else ""
         if referer:
             try:
-                parsed_ref = urllib.parse.urlparse(referer)
-                if parsed_ref.hostname and not _is_allowed_host(parsed_ref.hostname):
-                    self.send_error(403, "Forbidden: invalid Referer header")
-                    return False
+                if allow_remote:
+                    parsed_ref = urllib.parse.urlparse(referer)
+                    if parsed_ref.hostname and not self._is_allowed_origin(referer):
+                        self.send_error(403, "Forbidden: invalid Referer header")
+                        return False
+                else:
+                    parsed_ref = urllib.parse.urlparse(referer)
+                    if parsed_ref.hostname and not _is_allowed_host(parsed_ref.hostname):
+                        self.send_error(403, "Forbidden: invalid Referer header")
+                        return False
             except Exception:
                 self.send_error(403, "Forbidden: invalid Referer header")
                 return False
@@ -334,20 +536,12 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         if cmd == "GET" and parsed_path == "/":
             if self._is_authenticated():
                 return True
-            parsed_full = urllib.parse.urlparse(raw_path)
-            query_tok = ""
-            if parsed_full.query:
-                params = urllib.parse.parse_qs(parsed_full.query)
-                query_tok = params.get("token", [""])[0]
-            if query_tok and secrets.compare_digest(query_tok, _SERVER_BIND_TOKEN):
+            if _launch_token_acceptable(self._query_token()):
                 return True
-            hdr_token = self.headers.get("X-Server-Token", "").strip() if hasattr(self, "headers") and self.headers else ""
-            if hdr_token and secrets.compare_digest(hdr_token, _SERVER_BIND_TOKEN):
-                return True
-            self.send_error(
+            self._send_auth_error(
                 401,
-                "Unauthorized: Access requires a valid launch token in URL (?token=...) or X-Server-Token header. "
-                "Please check the server console startup logs for your tokenized launch URL."
+                "Unauthorized: open the one-time launch URL printed at startup. "
+                "That URL stops working once the browser session starts."
             )
             return False
 
@@ -374,16 +568,28 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         path   = parsed.path.rstrip("/") or "/"
 
         if path == "/":
-            sess_token = self._get_or_create_session()
-            parsed_full = urllib.parse.urlparse(self.path)
-            had_token = "token=" in (parsed_full.query or "")
-            cookie_hdr = f"vcf_session={sess_token}; Path=/; SameSite=Strict; HttpOnly"
-            if had_token:
-                self.send_response(302)
-                self.send_header("Location", "/")
-                self.send_header("Set-Cookie", cookie_hdr)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
+            query_tok = self._query_token()
+            existing = self._current_session()
+            if existing:
+                sess_token = existing
+            elif query_tok:
+                sess_token = _redeem_launch_token(query_tok)
+                if not sess_token:
+                    self._send_auth_error(
+                        401,
+                        "Unauthorized: the launch URL has already been used. "
+                        "Use the open browser session, or restart the server for a new URL."
+                    )
+                    return
+            else:
+                self._send_auth_error(
+                    401,
+                    "Unauthorized: open the one-time launch URL printed at startup."
+                )
+                return
+            cookie_hdr = self._session_cookie_header(sess_token)
+            if query_tok:
+                self._redirect_strip_token(cookie_hdr)
                 return
             self._send_html(
                 build_app_html(TOOL_VERSION, _COLLECTOR_OK, oem_mode=_OEM_MODE),
@@ -708,8 +914,14 @@ def make_server(
     host: str = "127.0.0.1",
     allow_remote: bool = False,
     allow_hosts: Optional[set] = None,
+    tls_cert: Optional[str] = None,
+    tls_key: Optional[str] = None,
 ) -> _ThreadingHTTPServer:
-    """Create a ThreadingHTTPServer bound to the given host and port."""
+    """Create a ThreadingHTTPServer bound to the given host and port.
+
+    When ``tls_cert`` and ``tls_key`` are set, the listening socket is wrapped
+    with TLS 1.2+ and ``server.tls_enabled`` is True.
+    """
     server = _ThreadingHTTPServer(
         (host, port),
         AppHandler,
@@ -717,6 +929,16 @@ def make_server(
         allow_remote=allow_remote,
         allow_hosts=allow_hosts,
     )
+    if tls_cert and tls_key:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        try:
+            ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        except Exception:
+            server.server_close()
+            raise
+        server.tls_enabled = True
     return server
 
 
@@ -757,7 +979,13 @@ def main() -> None:
         "--import-hcl", type=str, default=None, help="Path to offline air-gapped dark-site HCL zip bundle"
     )
     parser.add_argument(
-        "--allow-remote", action="store_true", help="Explicitly allow binding and remote connections across all network interfaces (0.0.0.0 / ::)"
+        "--allow-remote", action="store_true", help="Explicitly allow binding and remote connections across all network interfaces (0.0.0.0 / ::). Requires --tls-cert and --tls-key."
+    )
+    parser.add_argument(
+        "--tls-cert", type=str, default=None, help="PEM certificate for the Web UI listener. Required with --allow-remote or a non-loopback --bind."
+    )
+    parser.add_argument(
+        "--tls-key", type=str, default=None, help="PEM private key matching --tls-cert. Required with --allow-remote or a non-loopback --bind."
     )
     parser.add_argument(
         "--oem", action="store_true", help="Launch in OEM Import Mode: presets deep Redfish crawl, raw JSON capture, and 15m timeouts"
@@ -772,9 +1000,15 @@ def main() -> None:
         print(
             f"\n  [✗] SECURITY BLOCK: Binding to wildcard interface '{args.bind}' exposes the web assessment UI to the entire local network.\n"
             "      To explicitly allow remote connections, pass the '--allow-remote' flag.\n"
-            "      Example: python -m vcf_hci.web --bind 0.0.0.0 --allow-remote\n",
+            "      Example: python -m vcf_hci.web --bind 0.0.0.0 --allow-remote "
+            "--tls-cert ui.crt --tls-key ui.key\n",
             file=sys.stderr,
         )
+        sys.exit(1)
+
+    tls_err = tls_material_error(args.bind, args.allow_remote, args.tls_cert, args.tls_key)
+    if tls_err:
+        print(f"\n  [✗] {tls_err}\n", file=sys.stderr)
         sys.exit(1)
 
     global _OEM_MODE
@@ -791,9 +1025,23 @@ def main() -> None:
     is_root, sudo_user = is_root_user()
     default_outdir = get_default_output_dir()
 
+    fingerprint = None
+    if args.tls_cert and args.tls_key:
+        try:
+            fingerprint = cert_fingerprint_sha256(args.tls_cert)
+        except (OSError, ValueError, ssl.SSLError) as exc:
+            print(f"\n  [✗] SECURITY BLOCK: could not read TLS certificate: {exc}\n", file=sys.stderr)
+            sys.exit(1)
+        if os.name == "posix":
+            key_mode = os.stat(args.tls_key).st_mode
+            if key_mode & 0o077:
+                print(
+                    "  [!] WARNING: TLS private key is readable by group or others. Restrict it to mode 600.",
+                    file=sys.stderr,
+                )
+
     port = _find_free_port(preferred=args.port, host=args.bind)
     display_host = "127.0.0.1" if args.bind in ("0.0.0.0", "::", "") else args.bind
-    url = f"http://{display_host}:{port}"
 
     if args.import_hcl:
         if os.path.exists(args.import_hcl):
@@ -802,10 +1050,21 @@ def main() -> None:
         else:
             print(f"  [✗] WARNING: Dark-Site HCL Bundle not found: {args.import_hcl}", file=sys.stderr)
 
-    is_remote = bool(args.allow_remote or args.bind in ("0.0.0.0", "::", ""))
-    tokenized_url = f"{url}/?token={_SERVER_BIND_TOKEN}"
+    exposed = listener_requires_tls(args.bind, args.allow_remote)
+    try:
+        server = make_server(
+            port,
+            host=args.bind,
+            allow_remote=args.allow_remote,
+            tls_cert=args.tls_cert if exposed else None,
+            tls_key=args.tls_key if exposed else None,
+        )
+    except (OSError, ssl.SSLError, ValueError) as exc:
+        print(f"\n  [✗] SECURITY BLOCK: could not start the TLS listener: {exc}\n", file=sys.stderr)
+        sys.exit(1)
 
-    server = make_server(port, host=args.bind, allow_remote=args.allow_remote)
+    scheme = "https" if server.tls_enabled else "http"
+    tokenized_url = f"{scheme}://{display_host}:{port}/?token={_LAUNCH_TOKEN}"
 
     # Serve in a daemon thread so Ctrl-C stops it immediately
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -813,9 +1072,12 @@ def main() -> None:
 
     print("\n  VCF Readiness Assessment")
     print("  ─────────────────────────────────────────────────────")
-    if is_remote:
-        print("  [!] CAUTION: Remote network access enabled (--allow-remote).")
-        print("      Launch token required for authorization to prevent unauthorized access.")
+    if server.tls_enabled:
+        print("  [!] Remote Web UI is HTTPS (TLS 1.2+).")
+        print("      The launch URL works once. After the browser loads, it stops working.")
+        print(f"      Certificate SHA-256: {fingerprint}")
+        print("      Confirm that fingerprint before entering BMC passwords.")
+        print("      The browser was not opened here, so this URL is still unused.")
         print("  ─────────────────────────────────────────────────────")
     if is_root:
         user_desc = f"root (sudo user: {sudo_user})" if sudo_user else "root"
@@ -824,13 +1086,15 @@ def main() -> None:
         print(f"      Default report folder set to: {default_outdir}")
         print("  ─────────────────────────────────────────────────────")
     print(f"  Web UI  →  {tokenized_url}")
+    print("  The launch URL works once. After the browser loads, the session cookie takes over.")
     if args.bind != "127.0.0.1":
         print(f"  Bound   →  {args.bind}:{port}")
     print("  Press Ctrl-C or click Quit in the browser to exit.")
     print()
 
-    # Small delay so the server is ready before the browser fires
-    if not args.no_browser:
+    # Do not auto-open an exposed listener: that would consume the one-time URL
+    # on the server host before the operator can use it.
+    if not args.no_browser and not server.tls_enabled:
         time.sleep(0.25)
         webbrowser.open(tokenized_url)
 

@@ -336,9 +336,10 @@ The VCF Readiness Assessment Tool includes enterprise security controls for BMC 
 - **Forward-Confirmed Reverse DNS (`--dns-lookup`)**: When verifying certificates by hostname or scanning subnets, `--dns-lookup` performs automated FCrDNS (PTR query followed by forward A/AAAA confirmation) to validate BMC Subject Alternative Names (SANs) and mitigate DNS spoofing.
 - **Private IP Range Enforcement (`--restrict-private-targets`)**: Enforces scanning strictly within RFC 1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`), or link-local (`169.254.0.0/16`), rejecting public WAN/internet IPs.
 - **Web UI & API Hardening**:
-  - Unguessable `HttpOnly`, `SameSite=Strict` session cookies for authentication across APIs, SSE streams, and static reports.
+  - Session cookies are `HttpOnly` and `SameSite=Strict`. On an HTTPS listener they are also `Secure`.
+  - The startup URL carries a one-time launch token. The browser exchanges it for that cookie; the token then stops working and is not accepted as an API credential.
   - Strict exact-origin CORS and Host header validation preventing cross-site request forgery (CSRF) and DNS rebinding.
-  - Mandatory `--allow-remote` flag required when binding to non-loopback addresses (`0.0.0.0`).
+  - `--allow-remote`, or a `--bind` other than loopback, requires `--tls-cert` and `--tls-key`. The UI does not listen in cleartext on a reachable interface.
   - Windows DPAPI credential files hardened with restrictive `icacls` user ACLs (or macOS Keychain / Linux Secret Service).
   - Strict 32 MB payload caps and Zip Slip path traversal defenses on all file imports.
 - **Optional Encrypted Credential Vault (off by default)**: For fleets with different BMC passwords per rack or generation, `python -m vcf_hci.vault` manages a passphrase-encrypted local file (`~/.vcf-readiness/credentials.vault`) of exact-host / CIDR / default entries. Stdlib-only PBKDF2-HMAC-SHA256 (600k iterations) + HMAC-SHA256 Encrypt-then-MAC — not AES, since the Python standard library has none. Passwords are never printed, never sent to the browser, and the Web UI vault is disabled under `--allow-remote`. Enable per scan with `--vault` or the *Use encrypted credential vault* checkbox. See the [Credential Vault Guide](docs/CREDENTIAL_VAULT.md).

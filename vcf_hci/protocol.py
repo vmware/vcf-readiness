@@ -11,10 +11,11 @@ import ssl
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import Dict, Optional
 from urllib.error import HTTPError, URLError
 
-from vcf_hci.tls_utils import build_ssl_context
+from vcf_hci.logging_utils import create_pinned_connection
+from vcf_hci.tls_utils import build_bmc_opener, build_pinned_opener, build_ssl_context
 
 logger = logging.getLogger("vcf_assess")
 
@@ -22,7 +23,7 @@ logger = logging.getLogger("vcf_assess")
 def _tcp_reachable(host: str, port: int, timeout: float) -> bool:
     """Return True if a TCP connection can be established within timeout seconds."""
     try:
-        with socket.create_connection((host, port), timeout=timeout):
+        with create_pinned_connection((host, port), timeout=timeout):
             return True
     except OSError:
         return False
@@ -36,9 +37,11 @@ def _redfish_probe(
     ssl_context: Optional[ssl.SSLContext] = None,
     port: int = 443,
     max_retries: int = 1,
+    pinned_thumbprints: Optional[Dict[str, str]] = None,
 ) -> bool:
     """Return True if the host responds with valid Redfish JSON on port (443 or 80)."""
     ctx = ssl_context or build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
+    opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
     schemes = ("https", "http") if port == 443 else ("http", "https")
     port_suffix = f":{port}" if port not in (443, 80) else ""
     for scheme in schemes:
@@ -49,7 +52,7 @@ def _redfish_probe(
             # Adaptive timeout: allow up to 1.5x timeout (capped at 12.0s) on retry for slow/busy BMCs
             cur_timeout = min(12.0, timeout * 1.5) if attempt > 0 else timeout
             try:
-                with urllib.request.urlopen(req, context=ctx, timeout=cur_timeout) as r:
+                with opener.open(req, timeout=cur_timeout) as r:
                     raw = r.read()
                     data = json.loads(raw.decode("utf-8", errors="replace"))
                     if data.get("RedfishVersion") or data.get("v1") or "redfish" in str(data.get("@odata.type", "")).lower():
@@ -96,9 +99,10 @@ def _wsman_identify_probe(
     req.add_header("Content-Type", "application/soap+xml;charset=UTF-8")
     req.add_header("Accept", "application/soap+xml")
     ctx = ssl_context or build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
+    opener = build_bmc_opener(ssl_context=ctx)
     for attempt in range(max_retries + 1):
         try:
-            with urllib.request.urlopen(req, context=ctx, timeout=timeout) as r:
+            with opener.open(req, timeout=timeout) as r:
                 raw = r.read(2048).decode("utf-8", errors="replace")
                 return "IdentifyResponse" in raw or "ProductVendor" in raw
         except (ConnectionResetError, ConnectionRefusedError, TimeoutError, URLError, OSError):
@@ -159,7 +163,7 @@ def probe_fleet_network_latency(
         t0 = time.time()
         for p in (443, 80):
             try:
-                with socket.create_connection((h, p), timeout=timeout):
+                with create_pinned_connection((h, p), timeout=timeout):
                     return round((time.time() - t0) * 1000, 1)
             except OSError:
                 continue
@@ -209,6 +213,7 @@ def detect_management_protocol(
     ssl_context: Optional[ssl.SSLContext] = None,
     enable_dash: bool = False,
     return_diagnostics: bool = False,
+    pinned_thumbprints: Optional[Dict[str, str]] = None,
 ) -> tuple:
     """Probe a host and return (protocol, port) for the first reachable interface.
 
@@ -256,6 +261,7 @@ def detect_management_protocol(
                 ca_bundle=ca_bundle,
                 ssl_context=ssl_context,
                 port=port,
+                pinned_thumbprints=pinned_thumbprints,
             ):
                 logger.debug(f"{host}: Redfish detected on port {port}")
                 return ("redfish", port, diagnostics) if return_diagnostics else ("redfish", port)

@@ -828,11 +828,14 @@ def _run_scan_worker(scan_id: str, ips: list, creds: dict, outdir: str,
                     "reason": ph_reason,
                 })
 
-        vcf_sup = vcf_dep = vcf_unsup = 0
+        vcf_sup = vcf_dep = vcf_unsup = vcf_inc = 0
         for r in final_results:
-            v = ((r.get("system") or {}).get("cpu_summary") or {}).get("verdict", "")
+            v = ((r.get("system") or {}).get("cpu_summary") or {}).get("verdict", "") or ""
+            partial = bool(r.get("partial_scan"))
             if "Unsupported" in v:
                 vcf_unsup += 1
+            elif partial or not v or v == "Unknown" or "Unverified" in v:
+                vcf_inc += 1
             elif "Deprecated" in v:
                 vcf_dep += 1
             else:
@@ -841,15 +844,15 @@ def _run_scan_worker(scan_id: str, ips: list, creds: dict, outdir: str,
             "supported": vcf_sup,
             "deprecated": vcf_dep,
             "unsupported": vcf_unsup,
+            "incomplete": vcf_inc,
         }
-
         n = len(final_results)
         tot_hosts = n + len(final_failed)
         n_remediated = sum(1 for r in final_results if (r.get("remediation") or {}).get("status") == "fully_remediated")
         _log_cb("log", f"\n[✓] Finished scan — Assessment complete ({n}/{tot_hosts} hosts succeeded)")
         if scan_summary:
             _log_cb("log", f"[⏱️] {scan_summary}")
-        _log_cb("log", f"[📊] VCF Readiness: {vcf_sup} Supported, {vcf_dep} Deprecated, {vcf_unsup} Unsupported")
+        _log_cb("log", f"[📊] VCF Readiness: {vcf_sup} Supported, {vcf_dep} Deprecated, {vcf_unsup} Unsupported, {vcf_inc} Incomplete")
         if n_remediated > 0:
             _log_cb("log", f"[🔄] Remediated via Rescan: {n_remediated} host(s)")
         if final_failed:

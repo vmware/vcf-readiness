@@ -125,53 +125,167 @@ _CLOUD_METADATA_HOSTNAMES = {
 
 
 def _is_cloud_metadata_ip(ip_str: str) -> bool:
-    if ip_str in _CLOUD_METADATA_IPS:
+    if not isinstance(ip_str, str):
+        return False
+    text = ip_str.split("%", 1)[0].strip().lower()
+    if text in _CLOUD_METADATA_IPS:
         return True
     try:
-        ip_obj = ipaddress.ip_address(ip_str)
+        ip_obj = ipaddress.ip_address(text)
     except ValueError:
         return False
+    if isinstance(ip_obj, ipaddress.IPv6Address):
+        mapped = ip_obj.ipv4_mapped
+        if mapped is not None:
+            return _is_cloud_metadata_ip(str(mapped))
+        return ip_obj.exploded == ipaddress.ip_address("fd00:ec2::254").exploded
     if isinstance(ip_obj, ipaddress.IPv4Address):
         octets = ip_obj.exploded.split(".")
         return octets[0] == "169" and octets[1] == "254" and octets[2] in ("169", "170")
-    if isinstance(ip_obj, ipaddress.IPv6Address):
-        return ip_obj.exploded == ipaddress.ip_address("fd00:ec2::254").exploded
     return False
 
 
-def is_cloud_metadata_target(target: str) -> bool:
-    """Check if a target IP or hostname (including its DNS resolution) is a prohibited cloud metadata service (SSRF protection)."""
+class CloudMetadataBlocked(OSError):
+    """The target is a cloud metadata service, or DNS returned one.
+
+    Raised before a socket is connected so the dial cannot use that address.
+    """
+
+
+def _clean_metadata_target(target: str) -> str:
     if not target or not isinstance(target, str):
-        return False
+        raise OSError("empty target")
     clean = target.strip().lower().rstrip(".")
+    if clean.startswith("[") and clean.endswith("]"):
+        clean = clean[1:-1]
+    return clean
+
+
+def resolve_pinned_addresses(target: str, port: int = 0):
+    """Return getaddrinfo tuples that are safe to pass to socket.connect.
+
+    IP literals are not resolved. A hostname is resolved with one getaddrinfo
+    call. Every returned address is checked before this function returns. If
+    any address is a cloud metadata address, CloudMetadataBlocked is raised
+    and the caller must not connect. Callers dial these sockaddrs and do not
+    pass the original name to the system resolver again.
+    """
+    clean = _clean_metadata_target(target)
+    try:
+        port_i = int(port)
+    except (TypeError, ValueError) as exc:
+        raise OSError("invalid port") from exc
     if clean in _CLOUD_METADATA_HOSTNAMES:
-        return True
-    if _is_cloud_metadata_ip(clean):
-        return True
-    # Not an IP literal → resolve and check every address (DNS-based bypass protection)
+        raise CloudMetadataBlocked(
+            "target %s is a prohibited cloud metadata endpoint" % clean
+        )
     try:
-        ipaddress.ip_address(clean)
-        return False  # valid IP literal, already checked above
+        literal = ipaddress.ip_address(clean)
     except ValueError:
-        pass
-    # Guard against pathological inputs: only resolve plausible hostname strings
+        literal = None
+    if literal is not None:
+        if _is_cloud_metadata_ip(str(literal)):
+            raise CloudMetadataBlocked(
+                "target %s is a prohibited cloud metadata endpoint" % clean
+            )
+        if isinstance(literal, ipaddress.IPv4Address):
+            family = socket.AF_INET
+            sockaddr = (str(literal), port_i)
+        else:
+            family = socket.AF_INET6
+            sockaddr = (str(literal), port_i, 0, 0)
+        return [(family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr)]
     if not clean or len(clean) > 253 or not re.match(r"^[a-z0-9.\-_]+$", clean):
-        return False
-    # Note: TOCTOU caveat — DNS may re-resolve differently at connect time (DNS rebinding).
-    # Full pinning of resolved IPs is out of scope; this closes trivial static-DNS bypass.
+        raise OSError("target is not a resolvable hostname")
     try:
-        infos = socket.getaddrinfo(clean, None, proto=socket.IPPROTO_TCP)
-    except (socket.gaierror, OSError, UnicodeError):
-        return False
+        infos = socket.getaddrinfo(clean, port_i, 0, socket.SOCK_STREAM)
+    except (socket.gaierror, OSError, UnicodeError) as exc:
+        raise OSError("could not resolve %s" % clean) from exc
+    checked = []
     for info in infos:
-        addr = info[4][0]
-        # strip IPv6 zone id if present
+        sockaddr = info[4]
+        addr = sockaddr[0]
         if isinstance(addr, str):
             addr = addr.split("%", 1)[0]
         if _is_cloud_metadata_ip(str(addr)):
-            return True
-    return False
+            raise CloudMetadataBlocked(
+                "target %s resolves to prohibited cloud metadata address %s"
+                % (clean, addr)
+            )
+        checked.append(info)
+    if not checked:
+        raise OSError("could not resolve %s" % clean)
+    return checked
 
+
+_DEFAULT_TIMEOUT = getattr(socket, "_GLOBAL_DEFAULT_TIMEOUT", object())
+
+
+def create_pinned_connection(address, timeout=_DEFAULT_TIMEOUT, source_address=None):
+    """Connect to a metadata-checked literal address.
+
+    address is (host, port). The host is resolved here. socket.connect is
+    called with a sockaddr from that resolution, not with the hostname.
+    """
+    host, port = address
+    infos = resolve_pinned_addresses(host, port)
+    last_exc = None
+    for info in infos:
+        family, socktype, proto, _canon, sockaddr = info
+        addr = sockaddr[0]
+        if isinstance(addr, str) and _is_cloud_metadata_ip(addr.split("%", 1)[0]):
+            raise CloudMetadataBlocked(
+                "refusing to dial cloud metadata address %s" % addr
+            )
+        sock = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            if timeout is not _DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            last_exc = exc
+            if sock is not None:
+                sock.close()
+    if last_exc is not None:
+        raise last_exc
+    raise OSError("could not connect to %s" % host)
+
+
+def first_pinned_address(host: str, port: int = 0) -> str:
+    """Return one metadata-checked IP literal for host.
+
+    ssh and ssh-keyscan receive this literal so they do not resolve host.
+    """
+    infos = resolve_pinned_addresses(host, port)
+    addr = str(infos[0][4][0])
+    literal = addr.split("%", 1)[0]
+    try:
+        ipaddress.ip_address(literal)
+    except ValueError as exc:
+        raise OSError("resolved address is not an IP literal") from exc
+    if any(ch.isspace() for ch in addr):
+        raise OSError("resolved address is not an IP literal")
+    return addr
+
+
+def is_cloud_metadata_target(target: str) -> bool:
+    """Return True when a target is a prohibited cloud metadata service.
+
+    This is the early reject for parsers and forms. Connecting code must use
+    create_pinned_connection, or an HTTP connection class that calls it, so
+    the dial is pinned to the addresses checked at connect time.
+    """
+    try:
+        resolve_pinned_addresses(target, 0)
+    except CloudMetadataBlocked:
+        return True
+    except OSError:
+        return False
+    return False
 
 _DNS_LOCK = threading.Lock()
 _DNS_CACHE = {}

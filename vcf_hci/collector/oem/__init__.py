@@ -21,7 +21,7 @@ from typing import Optional
 logger = logging.getLogger("vcf_assess")
 
 from vcf_hci.logging_utils import strip_url_userinfo
-from vcf_hci.tls_utils import build_pinned_opener, build_ssl_context
+from vcf_hci.tls_utils import build_bmc_opener, build_pinned_opener, build_ssl_context
 
 from .cisco import CiscoCollector
 from .dell import DellCollector
@@ -112,12 +112,9 @@ def create_collector(
         t_out = timeout or effective_probe_timeout
         for attempt in range(2):
             try:
-                if opener is not None:
-                    with opener.open(req, timeout=t_out) as r:
-                        return json.loads(r.read().decode("utf-8", errors="replace"))
-                else:
-                    with urllib.request.urlopen(req, timeout=t_out, context=ctx) as r:
-                        return json.loads(r.read().decode("utf-8", errors="replace"))
+                fetch_opener = opener if opener is not None else build_bmc_opener(ssl_context=ctx)
+                with fetch_opener.open(req, timeout=t_out) as r:
+                    return json.loads(r.read().decode("utf-8", errors="replace"))
             except Exception as e:
                 err_str = str(e).lower()
                 is_timeout = "timeout" in err_str or "timed out" in err_str

@@ -7,23 +7,23 @@ JS_ACTIONS = """
   // ── Open fleet summary ──────────────────────────────────────────────────
   document.getElementById('openSummaryBtn').addEventListener('click', function() {
     var rpt = this.dataset.report || '00_fleet_summary.html';
-    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank');
+    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank', 'noopener,noreferrer');
   });
 
   document.getElementById('openObfSummaryBtn').addEventListener('click', function() {
     var rpt = this.dataset.report || '00_OBFUSCATED_fleet_summary.html';
-    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank');
+    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank', 'noopener,noreferrer');
   });
 
   // ── Open combined report ──────────────────────────────────────────────────
   document.getElementById('openReportBtn').addEventListener('click', function() {
     var rpt = this.dataset.report;
-    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank');
+    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank', 'noopener,noreferrer');
   });
 
   document.getElementById('openObfReportBtn').addEventListener('click', function() {
     var rpt = this.dataset.report || '00_OBFUSCATED_fleet_combined.html';
-    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank');
+    if (rpt) window.open('/reports/' + encodeURIComponent(rpt), '_blank', 'noopener,noreferrer');
   });
 
   // ── Export Excel ──────────────────────────────────────────────────────────
@@ -172,40 +172,38 @@ JS_ACTIONS = """
   var _fleetFilterText = '';
   var _fleetFilterDebounceTimer = null;
 
-  function loadFleetIndexPage(pageIdx) {
+  function applyLocalResultsPage(pageIdx) {
     if (pageIdx !== undefined) _fleetPageIndex = pageIdx;
-    var offset = _fleetPageIndex * _fleetPageSize;
-    var limit = _fleetPageSize;
-    var q = '/api/fleet/index?offset=' + offset + '&limit=' + limit;
-    if (_fleetFilterText) {
-      q += '&search=' + encodeURIComponent(_fleetFilterText);
+    var tbody = document.getElementById('resultsBody');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var q = (_fleetFilterText || '').toLowerCase();
+    var matched = [];
+    for (var i = 0; i < rows.length; i++) {
+      var text = (rows[i].textContent || '').toLowerCase();
+      if (!q || text.indexOf(q) !== -1) matched.push(rows[i]);
     }
-    get(q)
-      .then(function(resp) {
-        if (!resp || !resp.ok) return;
-        var tbody = document.getElementById('resultsBody');
-        if (tbody) tbody.innerHTML = '';
-        var items = resp.items || [];
-        items.forEach(function(h) {
-          addResultRow(h);
-        });
-        show(document.getElementById('resultsSection'));
+    var size = _fleetPageSize > 0 ? _fleetPageSize : 50;
+    var total = matched.length;
+    var totalPages = Math.max(1, Math.ceil(total / size));
+    if (_fleetPageIndex >= totalPages) _fleetPageIndex = totalPages - 1;
+    if (_fleetPageIndex < 0) _fleetPageIndex = 0;
+    var start = _fleetPageIndex * size;
+    var end = start + size;
+    for (var k = 0; k < rows.length; k++) rows[k].style.display = 'none';
+    for (var n = 0; n < matched.length; n++) {
+      matched[n].style.display = (n >= start && n < end) ? '' : 'none';
+    }
+    var pageInfo = document.getElementById('resultsPageInfo');
+    if (pageInfo) pageInfo.textContent = 'Page ' + (_fleetPageIndex + 1) + ' of ' + totalPages + ' (' + total + ' hosts)';
+    var prevBtn = document.getElementById('resultsPrevPageBtn');
+    if (prevBtn) prevBtn.disabled = (_fleetPageIndex <= 0);
+    var nextBtn = document.getElementById('resultsNextPageBtn');
+    if (nextBtn) nextBtn.disabled = ((_fleetPageIndex + 1) >= totalPages);
+  }
 
-        var total = resp.filtered_total !== undefined ? resp.filtered_total : (resp.total || 0);
-        var totalPages = Math.max(1, Math.ceil(total / _fleetPageSize));
-        var currPage = _fleetPageIndex + 1;
-        var pageInfo = document.getElementById('resultsPageInfo');
-        if (pageInfo) {
-          pageInfo.textContent = 'Page ' + currPage + ' of ' + totalPages + ' (' + total + ' hosts)';
-        }
-        var prevBtn = document.getElementById('resultsPrevPageBtn');
-        if (prevBtn) prevBtn.disabled = (_fleetPageIndex <= 0);
-        var nextBtn = document.getElementById('resultsNextPageBtn');
-        if (nextBtn) nextBtn.disabled = (currPage >= totalPages);
-      })
-      .catch(function(err) {
-        console.warn('Failed loading fleet page:', err);
-      });
+  function loadFleetIndexPage(pageIdx) {
+    applyLocalResultsPage(pageIdx);
   }
 
   var prevPageBtn = document.getElementById('resultsPrevPageBtn');

@@ -64,7 +64,8 @@ def generate_host_html_report(
     _page_salt = os.urandom(16).hex()
 
     sys_info = data.get("system", {})
-    _ip = str(sys_info.get("ip") or "").strip()
+    # Attribute context: a scan target or an imported summary can carry markup.
+    _ip = _h(str(sys_info.get("ip") or "").strip())
     cpu_info = sys_info.get("cpu_summary", {})
     bios_info = data.get("bios_checks", {})
     bios_eval = sys_info.get("bios_eval", {})
@@ -224,10 +225,11 @@ def generate_host_html_report(
                 f"CCM = limited inventory; ACM = full inventory access.</p></div>"
             )
         if sys_info.get("ddr_gen") and sys_info["ddr_gen"] != "Unknown":
-            _spd = f" @ {sys_info.get('ddr_speed_mhz', 0)} MHz" if sys_info.get('ddr_speed_mhz') else ""
+            _spd_mhz = sys_info.get("ddr_speed_mhz")
+            _spd = f" @ {_h(_spd_mhz)} MHz" if _spd_mhz else ""
             _wsman_extra_cards += (
                 f"<div class='card'><h3>Memory Generation</h3>"
-                f"<div><span class='badge info'>ℹ️ {sys_info['ddr_gen']}{_spd}</span></div>"
+                f"<div><span class='badge info'>ℹ️ {_h(sys_info['ddr_gen'])}{_spd}</span></div>"
                 f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
                 f"Detected via CIM_PhysicalMemory.MemoryType</p></div>"
             )

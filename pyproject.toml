@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "vcf-readiness"
-version = "9.8.2"
+version = "9.8.3"
 description = "VCF / vSphere 9.1 Readiness Assessment Tool — Redfish-based hardware compatibility scanner"
 readme = "README.md"
 license = { text = "CA, Inc. Software License Agreement" }

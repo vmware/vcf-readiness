@@ -143,6 +143,7 @@ A remote scan is still started from the workstation UI on `127.0.0.1`. The works
 
 - The jump host process is unprivileged. It writes only under `/tmp/vcfr_remote_<hex>` with mode `0700`.
 - BMC passwords are sent on the collector's stdin (`--creds-stdin`). They are not placed in argv and not written into the remote directory.
+- SSH to a jump host requires a pinned host key (`StrictHostKeyChecking=yes` against an isolated `known_hosts` file). There is no trust-on-first-use. `ssh-keyscan` reads the public key without logging in. The web UI shows that fingerprint and stores it only after **Trust & Pin**. The CLI equivalent is `jump-host pin-key` (interactive confirmation, or `--accept-fingerprint` of a value already checked out of band). Until a key is pinned, the SSH client is not started, so jump credentials and BMC passwords are not sent.
 - An embedded SSH private key has to be a file because OpenSSH reads `IdentityFile` from disk. The workstation writes it as mode `0600` in a private temp directory and deletes that directory when the SSH session ends. A key path such as `~/.ssh/id_ed25519` is not copied into the vault.
 - Remote deletion runs a small Python program that rejects every path except the sandbox pattern, resolves symlinks with `realpath`, and reads `.vcfr_marker` before `rmtree`.
 - Jump-host profiles, including any stored private key, sit in the same PBKDF2-HMAC-SHA256 vault as BMC passwords.
@@ -253,12 +254,16 @@ flowchart TD
 ```
 
 1. **Loopback-Only Socket Binding:** Binds strictly to `127.0.0.1` (IPv4 loopback) by default. It does not bind to `0.0.0.0` or external NIC interfaces. Remote access is disabled by default.
-2. **Cryptographic Launch Token Authentication:** At startup, the server generates a cryptographically secure 128-bit random token (`secrets.token_hex(16)`). The browser opens with this token in the query string (`http://127.0.0.1:7182/?token=...`), which sets an authenticated `vcf_session` cookie (`SameSite=Strict; HttpOnly`). Requests lacking a valid token receive `401 Unauthorized`.
+2. **One-time launch token.** At startup the server generates a 128-bit token (`secrets.token_hex(16)`) and prints it once (`http://127.0.0.1:7182/?token=...` on loopback). That value is accepted only on `GET /`, and only until the browser presents the session cookie minted from it. A retry of the same URL is accepted for at most 5 seconds, and only when that cookie has not been presented yet, so a lost redirect can finish. It is not stored as the session, it is not accepted as `X-Server-Token`, and it does not authorize scan or credential APIs. Redemption answers `302` to `/` with `Set-Cookie: vcf_session=<new 192-bit token>; Path=/; HttpOnly; SameSite=Strict` and `Cache-Control: no-store`, so the token leaves the address bar. Debug access logs redact `token=`. A missing session is `401` on `GET /` and `403` on every other route.
+
+   **Network-exposed listeners are HTTPS-only.** `--allow-remote`, or any `--bind` other than `127.0.0.1`, `::1`, or `localhost`, refuses to start unless `--tls-cert` and `--tls-key` are both set. The socket is wrapped with TLS 1.2+. Startup prints the certificate SHA-256 fingerprint and does not open a browser, so the one-time URL is not consumed on the server host. On that listener the session cookie also carries `Secure`. Loopback HTTP, including an SSH local forward, does not set `Secure` (browsers will not store a Secure cookie on `http://127.0.0.1`). Prefer the SSH forward in `docs/INSTALL.md` over binding the UI to a reachable interface.
 3. **Anti-CSRF & DNS-Rebinding Defense:** Request validation inspects `Host`, `Origin`, and `Referer` headers. Host headers that do not match `127.0.0.1` or `localhost` are rejected with `403 Forbidden`, neutralizing cross-origin attacks from malicious websites visited in the operator's browser.
-4. **Security Response Headers:** Every HTTP response includes:
+4. **Security Response Headers:** UI and docs responses include:
    - `Content-Security-Policy: default-src 'self' 'unsafe-inline' data:; connect-src 'self';`
    - `X-Frame-Options: SAMEORIGIN`
    - `Cache-Control: no-store`
+   - `Referrer-Policy: no-referrer`
+   HTML under `/reports/` is a different document. Inline script stays so fleet and host controls keep working. Those responses set `connect-src 'none'`, `Cross-Origin-Opener-Policy: noopener-allow-popups`, and `Referrer-Policy: no-referrer`, and the UI opens them with `noopener`. `POST /api/keychain/store` and `POST /api/keychain/retrieve` also require a `Referer` whose path is `/`, so a report document cannot read or write OS-keychain secrets with the session cookie.
 5. **SSRF Target Protection:** The target parser strictly validates scanning targets and blocks Server-Side Request Forgery attempts aimed at cloud metadata endpoints (`169.254.169.254`, `169.254.170.2`, `fd00:ec2::254`, `metadata.google.internal`).
 6. **DoS Mitigation:** Enforces a 32MB maximum request body size cap (`MAX_BODY_SIZE`) to prevent memory exhaustion attacks.
 7. **Credential Vault Endpoints (`/api/vault/*`, opt-in):** `status`, `create`, `unlock`, `lock`, `entries` (list / upsert), `remove`, `import-csv`, `coverage`. Every one of them:
@@ -328,7 +333,7 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 | **Does the tool transmit customer data outside the company?** | **No.** Zero telemetry, zero analytics, zero external network calls. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
 | **Can the tool function in an air-gapped network?** | **Yes.** Supports offline dark-site HCL zip bundles. | `vcf_hci/hcl/bundle_manager.py` |
 | **Can sensitive identifiers be redacted before sharing reports?** | **Yes.** SHA-256 deterministic salted PII hashing engine. | `vcf_hci/obfuscation.py` |
-| **Is the local web UI protected against CSRF and DNS rebinding?** | **Yes.** Bound to loopback, launch token auth, strict host headers. | `vcf_hci/web/server.py` |
+| **Is the local web UI protected against CSRF and DNS rebinding?** | **Yes.** Loopback by default, one-time launch token exchanged for an `HttpOnly` / `SameSite=Strict` session cookie (`Secure` on HTTPS), strict host headers. Exposed listeners require TLS. | `vcf_hci/web/server.py` |
 | **Can enterprise CA certificates and TLS pinning be enforced?** | **Yes.** `--verify-ssl`, `--ca-bundle`, and TOFU thumbprint pinning. | `vcf_hci/tls_utils.py` |
 | **How are per-host BMC passwords stored if the operator opts in?** | **Encrypted, off by default.** PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM (with optional pycryptodomex) or stdlib HMAC-SHA256-EtM, `0600` file, no plaintext export, disabled under `--allow-remote`. | [Section 3.3](#33-optional-encrypted-local-credential-vault-opt-in-off-by-default), `vcf_hci/vault/` |
 | **Does the audit align with federal CISA/NSA BMC hardening guidance?** | **Yes.** Directly evaluates controls aligned with CISA/NSA *Harden Baseboard Management Controllers* (CSI). | [Section 12](#12-regulatory--hardening-compliance-baselines-cisa-nsa-nist-vcf-scg) |

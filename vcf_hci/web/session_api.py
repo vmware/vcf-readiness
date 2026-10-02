@@ -38,8 +38,10 @@ from vcf_hci import (
     is_cloud_metadata_target,
     parse_ip_targets,
 )
-from vcf_hci.logging_utils import sanitize_filename
+from vcf_hci.logging_utils import create_pinned_connection, sanitize_filename
 from vcf_hci.tls_utils import (
+    build_bmc_opener,
+    build_pinned_opener,
     build_ssl_context,
     format_ssl_error,
     inspect_server_certificate,
@@ -102,7 +104,7 @@ class SessionApiMixin(_ApiMixinBase):
         def _probe(ip: str):
             t0 = time.time()
             try:
-                with socket.create_connection((ip, 443), timeout=2.0):
+                with create_pinned_connection((ip, 443), timeout=2.0):
                     latency_ms = round((time.time() - t0) * 1000, 1)
                     cert_info = inspect_cert_fn(ip, port=443, timeout=2.5)
                     return ip, True, 443, latency_ms, cert_info
@@ -110,7 +112,7 @@ class SessionApiMixin(_ApiMixinBase):
                 pass
             t0 = time.time()
             try:
-                with socket.create_connection((ip, 80), timeout=2.0):
+                with create_pinned_connection((ip, 80), timeout=2.0):
                     latency_ms = round((time.time() - t0) * 1000, 1)
                     return ip, True, 80, latency_ms, None
             except Exception:
@@ -174,25 +176,81 @@ class SessionApiMixin(_ApiMixinBase):
 
     def _api_test_creds(self) -> None:
         body = self._read_json_body()
-        ip = body.get("ip", "").strip()
+        raw_ip = body.get("ip", "").strip()
         user = body.get("username", "root")
         pwd = body.get("password", "")
         verify_ssl = bool(body.get("verify_ssl", False))
         ca_bundle = body.get("ca_bundle", None) or None
-        if not ip:
+        pinned_thumbprints = body.get("pinned_thumbprints", None) or None
+        use_vault = bool(body.get("use_vault", False))
+        if not raw_ip:
             self._send_json({"error": "ip required"}, 400)
             return
+        if is_cloud_metadata_target(raw_ip):
+            self._send_json({"error": f"Target '{raw_ip}' is a prohibited cloud metadata endpoint."}, 400)
+            return
+
+        # Expand ranges/CIDR and select candidate targets (e.g. "10.0.0.10-12" → ["10.0.0.10", "10.0.0.11", "10.0.0.12"])
+        target_candidates = [raw_ip]
+        try:
+            parsed = parse_ip_targets(raw_ip)
+            if parsed:
+                target_candidates = parsed
+        except Exception:
+            pass
+
+        selected_ip = target_candidates[0]
+        if len(target_candidates) > 1:
+            def _check_tcp(cand: str) -> Optional[str]:
+                if is_cloud_metadata_target(cand):
+                    return None
+                try:
+                    with socket.create_connection((cand, 443), timeout=0.6):
+                        return cand
+                except OSError:
+                    pass
+                try:
+                    with socket.create_connection((cand, 80), timeout=0.4):
+                        return cand
+                except OSError:
+                    pass
+                return None
+
+            probe_slice = target_candidates[:min(len(target_candidates), 16)]
+            with ThreadPoolExecutor(max_workers=min(len(probe_slice), 8)) as ex:
+                results = list(ex.map(_check_tcp, probe_slice))
+            for res in results:
+                if res:
+                    selected_ip = res
+                    break
+
+        ip = selected_ip
         if is_cloud_metadata_target(ip):
             self._send_json({"error": f"Target '{ip}' is a prohibited cloud metadata endpoint."}, 400)
             return
-        # Expand ranges/CIDR and take the first IP (e.g. "10.0.0.10-12" → "10.0.0.10")
+
+        # Resolve credentials from vault if not supplied or use_vault explicitly set
+        is_remote = False
         try:
-            parsed = parse_ip_targets(ip)
-            if parsed:
-                ip = parsed[0]
+            rem = self._is_remote_server()
+            if isinstance(rem, bool):
+                is_remote = rem
         except Exception:
             pass
+
+        if (not pwd or use_vault) and not is_remote:
+            v = vault_session.get()
+            if v is not None:
+                pair = v.resolve(ip)
+                if pair:
+                    user, pwd = pair
+
+        if not pwd:
+            self._send_json({"ok": False, "code": 0, "detail": "Password is required (or unlock vault to use stored credentials)", "tested_ip": ip})
+            return
+
         ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
+        opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
         token = base64.b64encode(f"{user}:{pwd}".encode()).decode()
         # Test authenticated Redfish endpoint (/redfish/v1/Systems or /redfish/v1/Managers)
         # Note: /redfish/v1 root document is unauthenticated on most BMCs and ignores credentials.
@@ -201,39 +259,39 @@ class SessionApiMixin(_ApiMixinBase):
         for ep in test_endpoints:
             req = urllib.request.Request(ep, headers={"Authorization": f"Basic {token}"})
             try:
-                with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
-                    self._send_json({"ok": True, "code": resp.status})
+                with opener.open(req, timeout=5) as resp:
+                    self._send_json({"ok": True, "code": resp.status, "tested_ip": ip})
                     return
             except urllib.error.HTTPError as e:
                 last_error = e
                 # 401 or 403 explicitly means authentication failure
                 if e.code in (401, 403):
-                    self._send_json({"ok": False, "code": e.code, "detail": "Invalid credentials or unauthorized"})
+                    self._send_json({"ok": False, "code": e.code, "detail": "Invalid credentials or unauthorized", "tested_ip": ip})
                     return
                 # If 404, try next endpoint
                 if e.code == 404:
                     continue
-                self._send_json({"ok": False, "code": e.code, "detail": str(e.reason)})
+                self._send_json({"ok": False, "code": e.code, "detail": str(e.reason), "tested_ip": ip})
                 return
             except urllib.error.URLError as e:
                 if isinstance(getattr(e, "reason", None), (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
                     err_info = format_ssl_error(e.reason if isinstance(e.reason, Exception) else e, ip)
-                    self._send_json({"ok": False, "code": 0, "detail": err_info["detail"], "reason_code": err_info["reason_code"]})
+                    self._send_json({"ok": False, "code": 0, "detail": err_info["detail"], "reason_code": err_info["reason_code"], "tested_ip": ip})
                     return
-                self._send_json({"ok": False, "code": 0, "detail": str(e)})
+                self._send_json({"ok": False, "code": 0, "detail": str(e), "tested_ip": ip})
                 return
             except Exception as e:
                 if isinstance(e, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
                     err_info = format_ssl_error(e, ip)
-                    self._send_json({"ok": False, "code": 0, "detail": err_info["detail"], "reason_code": err_info["reason_code"]})
+                    self._send_json({"ok": False, "code": 0, "detail": err_info["detail"], "reason_code": err_info["reason_code"], "tested_ip": ip})
                     return
-                self._send_json({"ok": False, "code": 0, "detail": str(e)})
+                self._send_json({"ok": False, "code": 0, "detail": str(e), "tested_ip": ip})
                 return
 
         if last_error:
-            self._send_json({"ok": False, "code": last_error.code, "detail": str(last_error.reason)})
+            self._send_json({"ok": False, "code": last_error.code, "detail": str(last_error.reason), "tested_ip": ip})
         else:
-            self._send_json({"ok": False, "code": 0, "detail": "Connection failed"})
+            self._send_json({"ok": False, "code": 0, "detail": "Connection failed", "tested_ip": ip})
 
     # ── Profile / Session ─────────────────────────────────────────────────────
 
@@ -282,8 +340,31 @@ class SessionApiMixin(_ApiMixinBase):
                 return False
         return True
 
+    def _require_ui_referer(self) -> bool:
+        """True only for a request whose document is the dashboard at path /.
+
+        Script cannot set Referer. A /reports/ document sends that path, or no
+        Referer after Referrer-Policy: no-referrer. opener.fetch is not covered
+        here: its Referer is the dashboard, which is why report responses also
+        send Cross-Origin-Opener-Policy: noopener-allow-popups.
+        """
+        referer = self.headers.get("Referer", "").strip() if self.headers else ""
+        if not referer:
+            return False
+        try:
+            parsed = urllib.parse.urlparse(referer)
+            if parsed.scheme not in ("http", "https"):
+                return False
+            srv_port = getattr(self.server, "server_address", ("127.0.0.1", 0))[1]
+            r_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            if r_port != srv_port:
+                return False
+            return (parsed.path or "/") == "/"
+        except Exception:
+            return False
+
     def _api_keychain_store(self) -> None:
-        if not self._require_same_origin():
+        if not self._require_same_origin() or not self._require_ui_referer():
             self._send_json({"error": "Forbidden"}, 403)
             return
         if self._is_remote_server():
@@ -312,7 +393,7 @@ class SessionApiMixin(_ApiMixinBase):
         self._send_json({"ok": True, "backend": secret_store_cls.label()})
 
     def _api_keychain_retrieve(self) -> None:
-        if not self._require_same_origin():
+        if not self._require_same_origin() or not self._require_ui_referer():
             self._send_json({"error": "Forbidden"}, 403)
             return
         if self._is_remote_server():
@@ -599,8 +680,14 @@ class SessionApiMixin(_ApiMixinBase):
                 body = fh.read()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            # Inline script stays: fleet and host reports ship their own controllers.
+            # connect-src none blocks this document's fetch. COOP drops window.opener
+            # so the script cannot borrow the dashboard document, whose CSP allows
+            # connect-src 'self'. no-referrer makes keychain Referer checks fail closed.
             self.send_header("Content-Security-Policy",
-                             "default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+                             "default-src 'none'; connect-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+            self.send_header("Cross-Origin-Opener-Policy", "noopener-allow-popups")
+            self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()

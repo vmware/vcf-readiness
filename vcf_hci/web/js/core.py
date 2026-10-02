@@ -290,32 +290,39 @@ JS_CORE = """
       document.getElementById('crawlEndpointsChk').checked = !!s.crawl_endpoints;
     }
     updateCrawlWarningVisibility();
-    if ('combined_report' in s && !s.oem_mode) document.getElementById('combinedChk').checked = !!s.combined_report;
-    if ('debug_log' in s && !s.oem_mode)       document.getElementById('debugChk').checked    = !!s.debug_log;
-    if ('save_json' in s && !s.oem_mode)       document.getElementById('saveJsonChk').checked = !!s.save_json;
-    if ('include_raw' in s && !s.oem_mode)     document.getElementById('includeRawChk').checked = !!s.include_raw;
-    if ('lean' in s)            document.getElementById('leanChk').checked     = !!s.lean;
-    if ('obfuscate' in s)       document.getElementById('obfuscateChk').checked= !!s.obfuscate;
-    if ('export_sheets' in s && document.getElementById('exportSpreadsheetChk')) document.getElementById('exportSpreadsheetChk').checked = !!s.export_sheets;
-    if ('allow_partial' in s)   document.getElementById('allowPartialChk').checked = !!s.allow_partial;
-    if ('auto_retry' in s && document.getElementById('autoRetryChk')) document.getElementById('autoRetryChk').checked = !!s.auto_retry;
-    if ('extend_timeout' in s)  document.getElementById('extendTimeoutChk').checked = !!s.extend_timeout;
-    if (s.host_timeout_min)     document.getElementById('timeoutMinutesInput').value = Math.min(45, Math.max(1, parseInt(s.host_timeout_min, 10) || 10));
+    function setChecked(id, val) {
+      var el = document.getElementById(id);
+      if (el) el.checked = !!val;
+    }
+    function setValue(id, val) {
+      var el = document.getElementById(id);
+      if (el) el.value = val;
+    }
+    if ('combined_report' in s && !s.oem_mode) setChecked('combinedChk', s.combined_report);
+    if ('debug_log' in s && !s.oem_mode)       setChecked('debugChk', s.debug_log);
+    if ('save_json' in s && !s.oem_mode)       setChecked('saveJsonChk', s.save_json);
+    if ('include_raw' in s && !s.oem_mode)     setChecked('includeRawChk', s.include_raw);
+    if ('obfuscate' in s)       setChecked('obfuscateChk', s.obfuscate);
+    if ('export_sheets' in s)   setChecked('exportSpreadsheetChk', s.export_sheets);
+    if ('allow_partial' in s)   setChecked('allowPartialChk', s.allow_partial);
+    if ('auto_retry' in s)      setChecked('autoRetryChk', s.auto_retry);
+    if ('extend_timeout' in s)  setChecked('extendTimeoutChk', s.extend_timeout);
+    if (s.host_timeout_min)     setValue('timeoutMinutesInput', String(Math.min(45, Math.max(1, parseInt(s.host_timeout_min, 10) || 10))));
     updateTimeoutBoxVisibility();
-    if ('ignore_tls' in s && document.getElementById('ignoreTlsChk')) document.getElementById('ignoreTlsChk').checked = !!s.ignore_tls;
+    if ('ignore_tls' in s)      setChecked('ignoreTlsChk', s.ignore_tls);
     if (s.tls_mode) {
       var tr = document.querySelector('input[name=tlsMode][value="'+s.tls_mode+'"]');
       if (tr) tr.checked = true;
     }
-    if (s.ca_bundle && document.getElementById('caBundleInput')) document.getElementById('caBundleInput').value = s.ca_bundle;
-    if ('dns_lookup' in s && document.getElementById('dnsLookupChk')) document.getElementById('dnsLookupChk').checked = !!s.dns_lookup;
-    if ('restrict_private' in s && document.getElementById('restrictPrivateChk')) document.getElementById('restrictPrivateChk').checked = !!s.restrict_private;
-    if ('enable_dash' in s && document.getElementById('enableDashChk')) document.getElementById('enableDashChk').checked = !!s.enable_dash;
+    if (s.ca_bundle) setValue('caBundleInput', s.ca_bundle);
+    if ('dns_lookup' in s)       setChecked('dnsLookupChk', s.dns_lookup);
+    if ('restrict_private' in s) setChecked('restrictPrivateChk', s.restrict_private);
+    if ('enable_dash' in s)      setChecked('enableDashChk', s.enable_dash);
     if (s.pinned_thumbprints && typeof s.pinned_thumbprints === 'object') {
       _pinnedThumbprints = Object.assign({}, s.pinned_thumbprints);
-      updatePinnedCertUi();
+      if (typeof updatePinnedCertUi === 'function') updatePinnedCertUi();
     }
-    syncTlsUi();
+    if (typeof syncTlsUi === 'function') syncTlsUi();
     if ('dark_mode' in s)       applyTheme(s.dark_mode ? 'dark' : 'light');
     updateHostGates();
   }

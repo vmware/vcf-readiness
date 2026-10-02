@@ -38,9 +38,25 @@ def evaluate_memory_topology(mem_details: dict, cpu_summary: Optional[dict] = No
     for d in dimm_list:
         s_val = d.get("socket")
         s_id = int(s_val) if s_val is not None else 1
-        ch_id = str(d.get("channel") or "A").upper()[:1]
-        if not ch_id.isalpha():
-            ch_id = "A"
+        slot_str = str(d.get("slot") or "").strip().upper()
+
+        m_dell = re.search(r"\bDIMM\s+([A-D])\s*(\d+)\b", slot_str)
+        if m_dell and chan_per_cpu > 0:
+            s_id = ord(m_dell.group(1)) - ord('A') + 1
+            slot_num = int(m_dell.group(2))
+            ch_id = chr(ord('A') + (slot_num - 1) % chan_per_cpu)
+            d["socket"] = s_id
+            d["channel"] = ch_id
+        else:
+            ch_id = str(d.get("channel") or "A").upper()[:1]
+            if not ch_id.isalpha():
+                ch_id = "A"
+            if chan_per_cpu > 0:
+                ch_offset = ord(ch_id) - ord('A')
+                if ch_offset >= chan_per_cpu:
+                    ch_id = chr(ord('A') + (ch_offset % chan_per_cpu))
+                    d["channel"] = ch_id
+
         cap   = int(d.get("capacity_gb") or 0)
         spd   = int(d.get("speed_mhz") or 0)
         rated = int(d.get("max_speed_mhz") or 0)

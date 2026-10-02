@@ -1,7 +1,7 @@
 # Remote jump-host scans (Experimental) — operator guide
 
 > **Experimental Feature Notice:**
-> Remote jump-host execution is currently in active preview / experimental status. This feature deploys an ephemeral, unprivileged self-contained Python zipapp worker to remote Linux jump hosts via SSH. Ensure test connectivity, host key pinning (TOFU), and prerequisite verification (Python 3.9+, 500 MiB free in `/tmp`) prior to large-scale fleet scans.
+> Remote jump-host execution is currently in active preview / experimental status. This feature deploys an ephemeral, unprivileged self-contained Python zipapp worker to remote Linux jump hosts via SSH. Ensure test connectivity, mandatory SSH host key pinning, and prerequisite verification (Python 3.9+, 500 MiB free in `/tmp`) prior to large-scale fleet scans.
 
 The web UI stays on `127.0.0.1`. A remote scan copies a single Python zipapp to a Linux jump host, runs it as an unprivileged user under `/tmp`, and pulls the reports back. The jump host needs OpenSSH and Python 3.9 or newer. It does not need pip, a virtualenv, or root.
 
@@ -46,6 +46,24 @@ python -m vcf_hci.vault jump-host import-csv jump_hosts.csv
 ```
 
 Mark one host with `--default` (or `is_default` in the CSV) so hostnames and unmatched addresses have somewhere to go.
+
+### Mandatory SSH Host Key Pinning
+
+Jump host connections strictly enforce SSH host key pinning before credentials or commands are transmitted (`StrictHostKeyChecking=yes` against an isolated `known_hosts` file).
+
+To pin a jump host SSH public key via the CLI:
+
+```bash
+# Interactive check (probes host key, displays fingerprint, prompts to pin)
+python -m vcf_hci.vault jump-host pin-key --id dal-jump-01
+
+# Non-interactive / automation check against verified out-of-band fingerprint
+python -m vcf_hci.vault jump-host pin-key \
+  --id dal-jump-01 \
+  --accept-fingerprint 'SHA256:...'
+```
+
+In the Web UI, clicking **Pin Key** (or clicking **Test** or **Run Assessment** on an unpinned host) probes the host key via `ssh-keyscan` without sending credentials, displays the SHA256 fingerprint, and records the pin only after operator approval via **Trust & Pin**.
 
 ## Scan from the command line
 

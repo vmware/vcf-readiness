@@ -21,7 +21,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from vcf_hci.creds_stdin import dump_creds_document
-from vcf_hci.logging_utils import is_cloud_metadata_target
+from vcf_hci.logging_utils import CloudMetadataBlocked, first_pinned_address
 from vcf_hci.remote.guardrails import (
     MARKER_TOKEN,
     SecurityError,
@@ -38,6 +38,7 @@ from vcf_hci.remote.guardrails import (
 
 __all__ = [
     "ActiveScanError",
+    "HostKeyRequiredError",
     "JumpHostConnectionLostError",
     "RemoteExecError",
     "build_remote_resume_shell",
@@ -61,6 +62,20 @@ SshRun = Callable[..., Tuple[int, bytes, bytes]]
 
 class RemoteExecError(Exception):
     """The jump host could not run or return the scan."""
+
+
+class HostKeyRequiredError(RemoteExecError):
+    """The jump host has no pinned public key."""
+
+
+def _require_host_key(jump: Dict[str, Any]) -> str:
+    host_key = str(jump.get("host_key") or "").strip()
+    if not host_key:
+        host = str(jump.get("host") or "")
+        raise HostKeyRequiredError(
+            f"Jump host '{host}' has no pinned host key. You must pin the host key before connecting."
+        )
+    return host_key
 
 
 class JumpHostConnectionLostError(RemoteExecError):
@@ -182,16 +197,6 @@ def _ensure_known_hosts(jump: Dict[str, Any], runtime_dir: str) -> Optional[str]
     return kh_path
 
 
-def _ensure_tofu_known_hosts(runtime_dir: str) -> Optional[str]:
-    """Empty isolated known_hosts so accept-new does not write ~/.ssh/known_hosts."""
-    if not runtime_dir or not os.path.isdir(runtime_dir):
-        return None
-    kh_path = os.path.join(runtime_dir, "known_hosts.tofu")
-    if not os.path.exists(kh_path):
-        _write_private(runtime_dir, "known_hosts.tofu", "", 0o600)
-    return kh_path
-
-
 def build_ssh_argv(jump: Dict[str, Any], control_path: str, remote_command: str,
                    identity_file: Optional[str] = None, batch_mode: bool = True,
                    known_hosts_file: Optional[str] = None) -> List[str]:
@@ -209,30 +214,35 @@ def build_ssh_argv(jump: Dict[str, Any], control_path: str, remote_command: str,
     except (TypeError, ValueError):
         raise RemoteExecError("invalid jump host port") from None
 
-    if known_hosts_file is None and jump.get("host_key") and control_path:
+    _require_host_key(jump)
+
+    try:
+        dial = first_pinned_address(host, port)
+    except CloudMetadataBlocked as exc:
+        raise RemoteExecError(
+            "target '%s' is a prohibited cloud metadata endpoint" % host
+        ) from exc
+    except OSError as exc:
+        raise RemoteExecError("could not resolve jump host '%s'" % host) from exc
+
+    if known_hosts_file is None and control_path:
         runtime_dir = os.path.dirname(control_path)
+        if runtime_dir and not os.path.isdir(runtime_dir):
+            try:
+                os.makedirs(runtime_dir, exist_ok=True)
+            except OSError:
+                pass
         known_hosts_file = _ensure_known_hosts(jump, runtime_dir)
 
     argv = ["ssh", "-T"]
     if batch_mode:
         argv.extend(["-o", "BatchMode=yes"])
 
-    if known_hosts_file:
-        argv.extend([
-            "-o", "StrictHostKeyChecking=yes",
-            "-o", "UserKnownHostsFile=%s" % known_hosts_file,
-            "-o", "GlobalKnownHostsFile=/dev/null",
-        ])
-    else:
-        tofu = None
-        if control_path:
-            tofu = _ensure_tofu_known_hosts(os.path.dirname(control_path))
-        tofu_path = tofu or "/dev/null"
-        argv.extend([
-            "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "UserKnownHostsFile=%s" % tofu_path,
-            "-o", "GlobalKnownHostsFile=/dev/null",
-        ])
+    argv.extend([
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "UserKnownHostsFile=%s" % (known_hosts_file or "/dev/null"),
+        "-o", "GlobalKnownHostsFile=/dev/null",
+    ])
 
     argv.extend([
         "-o", "HostKeyAlgorithms=ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256",
@@ -245,6 +255,7 @@ def build_ssh_argv(jump: Dict[str, Any], control_path: str, remote_command: str,
     ])
     if identity_file:
         argv.extend(["-i", identity_file, "-o", "IdentitiesOnly=yes"])
+    argv.extend(["-o", "HostName=%s" % dial])
     argv.append("%s@%s" % (user, host))
     argv.append(remote_command)
     return argv
@@ -420,6 +431,7 @@ def preflight_jump(
     check_active_scans: bool = True,
 ) -> Dict[str, Any]:
     """SSH to the jump host and check Python 3.9+, writable /tmp, free space, and active scans."""
+    _require_host_key(jump)
     runner = ssh_run or default_ssh_run
     runtime = tempfile.mkdtemp(prefix="vcfrssh")
     os.chmod(runtime, 0o700)
@@ -483,6 +495,7 @@ def inspect_jump_scans(
     timeout: int = 30,
 ) -> List[Dict[str, Any]]:
     """SSH to jump host and return list of active scan dictionaries."""
+    _require_host_key(jump)
     runner = ssh_run or default_ssh_run
     runtime = tempfile.mkdtemp(prefix="vcfrssh")
     os.chmod(runtime, 0o700)
@@ -517,6 +530,7 @@ def kill_remote_scan(
     timeout: int = 30,
 ) -> Dict[str, Any]:
     """SSH to jump host and terminate active scan process(es) safely via SIGTERM -> SIGKILL."""
+    _require_host_key(jump)
     runner = ssh_run or default_ssh_run
     runtime = tempfile.mkdtemp(prefix="vcfrssh")
     os.chmod(runtime, 0o700)
@@ -578,21 +592,32 @@ def probe_jump_host_key(
     clean_host = str(host or "").strip()
     if not clean_host:
         return {"ok": False, "error": "Host required", "host": clean_host, "port": port}
-    if is_cloud_metadata_target(clean_host):
+    try:
+        port_i = int(port or 22)
+    except (ValueError, TypeError):
+        port_i = 22
+    try:
+        dial = first_pinned_address(clean_host, port_i)
+    except CloudMetadataBlocked:
         return {
             "ok": False,
             "error": f"Target '{clean_host}' is a prohibited cloud metadata endpoint.",
             "category": "security",
             "host": clean_host,
-            "port": port,
+            "port": port_i,
         }
-    try:
-        port_i = int(port or 22)
-    except (ValueError, TypeError):
-        port_i = 22
+    except OSError:
+        return {
+            "ok": False,
+            "host": clean_host,
+            "port": port_i,
+            "error": "could not resolve %s" % clean_host,
+            "category": "general",
+            "troubleshooting": "Check jump host reachability.",
+        }
 
     timeout_s = max(1, int(timeout))
-    cmd = ["ssh-keyscan", "-p", str(port_i), "-T", str(timeout_s), "-t", "ed25519,ecdsa,rsa", clean_host]
+    cmd = ["ssh-keyscan", "-p", str(port_i), "-T", str(timeout_s), "-t", "ed25519,ecdsa,rsa", dial]
     try:
         if keyscan_run:
             proc_res = keyscan_run(cmd, timeout=timeout_s + 2)
@@ -1012,6 +1037,7 @@ def run_remote_scan(
         raise RemoteExecError("collector zipapp is empty")
     if not targets:
         raise RemoteExecError("no targets")
+    _require_host_key(jump)
     remote_dir = sandbox_path_for_run(run_id or os.urandom(6).hex())
     try:
         retain_n = int(sandbox_retain)
@@ -1370,6 +1396,7 @@ def resume_remote_scan(
 ) -> Dict[str, Any]:
     """Resume an existing in-progress or completed scan on the jump host and pull artifacts."""
     remote_dir = assert_sandbox_path(remote_dir)
+    _require_host_key(jump)
     runner = ssh_run or default_ssh_run
     runtime = tempfile.mkdtemp(prefix="vcfrssh")
     os.chmod(runtime, 0o700)

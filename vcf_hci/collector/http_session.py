@@ -134,7 +134,7 @@ class RedfishSessionManager:
                 with self._opener.open(req, timeout=5):
                     pass
             else:
-                with urllib.request.urlopen(req, timeout=5, context=self._ctx):
+                with build_bmc_opener(ssl_context=self._ctx).open(req, timeout=5):
                     pass
             logger.debug(f"RedfishSessionManager: closed session {self.session_uri}")
         except Exception:
@@ -334,7 +334,7 @@ def redfish_get(
                     raw = r.read().decode("utf-8", errors="replace")
             else:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as r:
+                with build_bmc_opener(ssl_context=ssl_ctx).open(req, timeout=timeout) as r:
                     status_val = getattr(r, "status", None) or getattr(r, "code", None)
                     status = status_val if isinstance(status_val, int) else 200
                     raw = r.read().decode("utf-8", errors="replace")

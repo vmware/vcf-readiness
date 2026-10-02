@@ -14,6 +14,7 @@ __all__ = [
     "UnroutedTargets",
     "route_targets",
     "run_fanout",
+    "unpinned_jump_hosts",
 ]
 
 
@@ -91,6 +92,40 @@ def route_targets(
     return routes, unrouted
 
 
+def unpinned_jump_hosts(
+    targets: Sequence[str],
+    jump_hosts: Dict[str, Dict[str, Any]],
+    selected_id: str = "auto",
+) -> List[Dict[str, Any]]:
+    """Return a list of jump hosts that would receive targets but have no pinned host key.
+
+    Returns ``[{"id": jid, "host": host, "port": port}]`` for each unpinned jump host.
+    """
+    try:
+        routes, _ = route_targets(targets, jump_hosts, selected_id=selected_id)
+    except Exception:
+        return []
+
+    unpinned: List[Dict[str, Any]] = []
+    seen = set()
+    for jid in routes.keys():
+        if jid in seen:
+            continue
+        seen.add(jid)
+        profile = jump_hosts.get(jid) or {}
+        if not profile.get("host_key"):
+            try:
+                port = int(profile.get("port") or 22)
+            except (TypeError, ValueError):
+                port = 22
+            unpinned.append({
+                "id": jid,
+                "host": str(profile.get("host") or jid),
+                "port": port,
+            })
+    return unpinned
+
+
 def _filter_creds(creds: Any, targets: Sequence[str]) -> Dict[str, Tuple[str, str]]:
     if isinstance(creds, tuple):
         return {"default": (str(creds[0]), str(creds[1]))}
@@ -132,6 +167,14 @@ def run_fanout(
         raise UnroutedTargets(unrouted)
     if not routes:
         raise RemoteExecError("no targets to scan")
+
+    from vcf_hci.remote.executor import HostKeyRequiredError
+    for jid in routes.keys():
+        profile_row = jump_hosts.get(jid) or {}
+        if not profile_row.get("host_key"):
+            raise HostKeyRequiredError(
+                f"Jump host '{profile_row.get('host') or jid}' has no pinned host key. You must pin the host key before connecting."
+            )
 
     def _one(jump_id: str, batch: List[str]) -> Dict[str, Any]:
         profile_row = jump_hosts[jump_id]

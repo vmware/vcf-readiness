@@ -4,18 +4,24 @@ Tests for vcf_hci/logging_utils.py
 import json
 import logging
 import os
+import socket
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 from vcf_hci.logging_utils import (
+    CloudMetadataBlocked,
     configure_logging,
     create_obfuscated_scan_zip_archive,
+    create_pinned_connection,
     create_scan_zip_archive,
     get_nested,
+    is_cloud_metadata_target,
     normalize_output_dir,
     parse_ip_targets,
     parse_version_tuple,
+    resolve_pinned_addresses,
     sanitize_filename,
     update_latest_scan_aliases,
 )
@@ -350,6 +356,112 @@ class TestCreateObfuscatedScanZipArchive(unittest.TestCase):
                 readme_text = zf.read(f"{root}/README.txt").decode("utf-8")
                 self.assertIn("00_OBFUSCATED_fleet_combined.html", readme_text)
                 self.assertIn("DATA PRIVACY & OBFUSCATION", readme_text.upper())
+
+
+
+class TestCloudMetadataPin(unittest.TestCase):
+    """Connect-time pin: the checked sockaddr is the one that is dialed."""
+
+    def test_metadata_literal_is_blocked_without_dns(self):
+        with mock.patch("vcf_hci.logging_utils.socket.getaddrinfo") as lookup:
+            with self.assertRaises(CloudMetadataBlocked):
+                resolve_pinned_addresses("169.254.169.254", 443)
+            lookup.assert_not_called()
+        self.assertTrue(is_cloud_metadata_target("metadata.google.internal"))
+        self.assertTrue(is_cloud_metadata_target("::ffff:169.254.169.254"))
+        with self.assertRaises(ValueError):
+            parse_ip_targets("169.254.169.254")
+
+    def test_metadata_lookup_does_not_open_a_socket(self):
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.11", port)),
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("169.254.169.254", port)),
+            ]
+
+        def fail_socket(*args, **kwargs):
+            raise AssertionError("socket created for a metadata lookup")
+
+        with mock.patch("vcf_hci.logging_utils.socket.getaddrinfo", fake_getaddrinfo), mock.patch(
+            "vcf_hci.logging_utils.socket.socket", fail_socket
+        ):
+            with self.assertRaises(CloudMetadataBlocked):
+                create_pinned_connection(("rebind.example", 80), timeout=1)
+
+    def test_connection_dials_the_checked_literal_once(self):
+        lookups = []
+        dialed = []
+
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            lookups.append((host, port))
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.2.22", port)),
+            ]
+
+        class Sock:
+            def __init__(self, family, socktype, proto):
+                pass
+
+            def settimeout(self, timeout):
+                pass
+
+            def connect(self, sockaddr):
+                dialed.append(sockaddr)
+
+            def close(self):
+                pass
+
+        with mock.patch("vcf_hci.logging_utils.socket.getaddrinfo", fake_getaddrinfo), mock.patch(
+            "vcf_hci.logging_utils.socket.socket", Sock
+        ):
+            create_pinned_connection(("bmc.example", 443), timeout=1)
+        self.assertEqual(lookups, [("bmc.example", 443)])
+        self.assertEqual(dialed, [("192.0.2.22", 443)])
+
+    def test_http_connection_uses_the_pin(self):
+        from vcf_hci.tls_utils import MetadataPinnedHTTPConnection
+
+        sentinel = mock.Mock()
+        with mock.patch("vcf_hci.tls_utils.create_pinned_connection", return_value=sentinel) as pin:
+            conn = MetadataPinnedHTTPConnection("bmc.example", port=80, timeout=2)
+            conn.connect()
+        pin.assert_called_once_with(("bmc.example", 80), 2, None)
+        self.assertIs(conn.sock, sentinel)
+
+    def test_jump_ssh_sets_hostname_to_the_literal(self):
+        from vcf_hci.remote.executor import build_ssh_argv, probe_jump_host_key
+
+        with mock.patch("vcf_hci.remote.executor.first_pinned_address", return_value="192.0.2.99"):
+            argv = build_ssh_argv(
+                {"host": "jump.example", "username": "root", "host_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey123"},
+                control_path="",
+                remote_command="true",
+                known_hosts_file="/tmp/vcfr-known-hosts",
+            )
+        self.assertIn("HostName=192.0.2.99", argv)
+        self.assertIn("root@jump.example", argv)
+
+        seen = []
+
+        def keyscan_run(cmd, timeout=0):
+            seen.append(list(cmd))
+            return (0, b"", b"")
+
+        with mock.patch("vcf_hci.remote.executor.first_pinned_address", return_value="192.0.2.88"):
+            probe_jump_host_key("jump.example", port=22, timeout=1, keyscan_run=keyscan_run)
+        self.assertEqual(seen[0][-1], "192.0.2.88")
+        self.assertNotIn("jump.example", seen[0])
+
+        def must_not_scan(cmd, timeout=0):
+            raise AssertionError("ssh-keyscan ran for a metadata target")
+
+        with mock.patch(
+            "vcf_hci.remote.executor.first_pinned_address",
+            side_effect=CloudMetadataBlocked("blocked"),
+        ):
+            blocked = probe_jump_host_key("evil.example", keyscan_run=must_not_scan)
+        self.assertFalse(blocked["ok"])
+        self.assertEqual(blocked["category"], "security")
 
 
 if __name__ == "__main__":

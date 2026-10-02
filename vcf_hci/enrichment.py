@@ -274,10 +274,43 @@ def _enrich_single_host(
     if isinstance(mem_sub, dict):
         if chan_per_socket and cpu_count:
             mem_sub["expected_channels_total"] = cpu_count * chan_per_socket
+        dimm_list = mem_sub.get("dimm_list")
+        if isinstance(dimm_list, list) and chan_per_socket > 0:
+            active_channels_set = set()
+            for d in dimm_list:
+                if not isinstance(d, dict):
+                    continue
+                slot_str = str(d.get("slot") or "").strip().upper()
+                m_dell = re.search(r"\bDIMM\s+([A-D])\s*(\d+)\b", slot_str)
+                if m_dell:
+                    s_idx = ord(m_dell.group(1)) - ord('A') + 1
+                    slot_num = int(m_dell.group(2))
+                    d["socket"] = s_idx
+                    d["channel"] = chr(ord('A') + (slot_num - 1) % chan_per_socket)
+                elif slot_str.isdigit():
+                    raw_slot = int(slot_str)
+                    if raw_slot > 0:
+                        slot_in_sock = (raw_slot - 1) % (chan_per_socket * 2)
+                        chan_idx = slot_in_sock // 2
+                        d["channel"] = chr(ord('A') + (chan_idx % chan_per_socket))
+
+                ch_val = str(d.get("channel") or "A").upper().strip()
+                if len(ch_val) == 1 and ch_val.isalpha():
+                    ch_offset = ord(ch_val) - ord('A')
+                    if ch_offset >= chan_per_socket:
+                        d["channel"] = chr(ord('A') + (ch_offset % chan_per_socket))
+
+                if int(d.get("capacity_gb") or 0) > 0:
+                    s_val = d.get("socket", 1)
+                    ch_final = d.get("channel", "A")
+                    active_channels_set.add(f"S{s_val}-Ch{ch_final}")
+
+            if active_channels_set:
+                mem_sub["active_channels_count"] = len(active_channels_set)
+
         total_dimms = mem_sub.get("total_dimms_populated", 0)
         active_chan = mem_sub.get("active_channels_count", 0)
-        if not mem_sub.get("channel_display") or mem_sub.get("channel_display") == "Unknown":
-            mem_sub["channel_display"] = f"{total_dimms} DIMMs across {active_chan} Active Channel(s)"
+        mem_sub["channel_display"] = f"{total_dimms} DIMMs across {active_chan} Active Channel(s)"
 
     try:
         host_data["memory_topology"] = VCF9CompatibilityEngine.evaluate_memory_topology(

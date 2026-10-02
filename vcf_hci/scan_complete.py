@@ -122,6 +122,8 @@ def _handle_completed_host(future: Any, ip: str, ctx: Any) -> None:
                     hcl_bundle_metadata=getattr(ctx, "hcl_bundle_metadata", None),
                 )
                 ctx.report_paths.append(out_path)
+                item["report"] = fname
+                item["filename"] = fname
                 rem = item.get("remediation") or {}
                 rem_status = rem.get("status")
                 if rem_status == "fully_remediated":
@@ -158,6 +160,8 @@ def _handle_completed_host(future: Any, ip: str, ctx: Any) -> None:
                         obfuscated=True,
                     )
                     ctx.obf_report_paths.append(_obf_path)
+                    item["obf_report"] = f"OBFUSCATED_{_alias}.html"
+                    item["obf_filename"] = item["obf_report"]
                     _scan_log(ctx, f"  [🔒] Obfuscated  →  reports/OBFUSCATED_{_alias}.html")
                 except Exception as e:
                     _scan_log(ctx, f"  [⚠] {host_label} — obfuscated report failed: {e}{_debug_hint}")

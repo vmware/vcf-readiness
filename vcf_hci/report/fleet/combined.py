@@ -1347,7 +1347,7 @@ document.addEventListener('click', function(e) {{
       e.preventDefault();
       var src = actionEl.getAttribute('data-src');
       if (src) {{
-        window.open(src, '_blank');
+        window.open(src, '_blank', 'noopener,noreferrer');
       }}
     }}
   }}

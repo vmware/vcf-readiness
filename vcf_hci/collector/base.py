@@ -24,6 +24,7 @@ from urllib.error import HTTPError
 
 from vcf_hci.tls_utils import (
     StdlibHTTPConnectionPool,
+    build_bmc_opener,
     build_pinned_opener,
     build_ssl_context,
     hosts_equal,
@@ -713,8 +714,9 @@ class BaseRedfishCollector(
             else:
                 def _do_post(endpoint_url: str):
                     req = urllib.request.Request(endpoint_url, data=payload.encode("utf-8"), method="POST", headers=headers)
+                    post_opener = self._opener if self._opener is not None else build_bmc_opener(ssl_context=self.ssl_context)
                     try:
-                        return self._opener.open(req, timeout=10) if self._opener is not None else urllib.request.urlopen(req, timeout=10, context=self.ssl_context)
+                        return post_opener.open(req, timeout=10)
                     except HTTPError as e:
                         if e.code in (301, 302, 307, 308):
                             redir = e.headers.get("Location") or e.headers.get("location") or ""
@@ -722,7 +724,7 @@ class BaseRedfishCollector(
                                 redir_url = redir if redir.startswith("http") else f"{self.host_url}{redir}"
                                 logger.debug(f"Following session creation redirect (HTTP {e.code}) -> {redir_url}")
                                 req_r = urllib.request.Request(redir_url, data=payload.encode("utf-8"), method="POST", headers=headers)
-                                return self._opener.open(req_r, timeout=10) if self._opener is not None else urllib.request.urlopen(req_r, timeout=10, context=self.ssl_context)
+                                return post_opener.open(req_r, timeout=10)
                         raise
 
                 try:

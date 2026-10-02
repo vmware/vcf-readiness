@@ -21,7 +21,11 @@ from urllib.error import HTTPError, URLError
 from vcf_hci.bcg_links import BCGLinkGenerator
 from vcf_hci.compat_engine import VCF9CompatibilityEngine, evaluate_bios_version
 from vcf_hci.protocol import _AMT_BASE, _CIM_BASE, _DCIM_BASE, _MEM_TYPE_MAP
-from vcf_hci.tls_utils import build_ssl_context
+from vcf_hci.tls_utils import (
+    MetadataPinnedHTTPHandler,
+    MetadataPinnedHTTPSHandler,
+    build_ssl_context,
+)
 
 logger = logging.getLogger("vcf_assess")
 
@@ -80,13 +84,15 @@ class WsManCollector:
             pw_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
             pw_mgr.add_password(None, self.endpoint, username, password)
             digest_h = urllib.request.HTTPDigestAuthHandler(pw_mgr)
-            https_h  = urllib.request.HTTPSHandler(context=self.ssl_context)
-            self._opener = urllib.request.build_opener(digest_h, https_h)
+            http_h = MetadataPinnedHTTPHandler()
+            https_h = MetadataPinnedHTTPSHandler(context=self.ssl_context)
+            self._opener = urllib.request.build_opener(digest_h, http_h, https_h)
         else:
             token = base64.b64encode(f"{username}:{password}".encode()).decode()
             self._basic_auth = f"Basic {token}"
-            https_h = urllib.request.HTTPSHandler(context=self.ssl_context)
-            self._opener = urllib.request.build_opener(https_h)
+            http_h = MetadataPinnedHTTPHandler()
+            https_h = MetadataPinnedHTTPSHandler(context=self.ssl_context)
+            self._opener = urllib.request.build_opener(http_h, https_h)
 
     def close(self):
         """No-op close method for context manager compatibility."""

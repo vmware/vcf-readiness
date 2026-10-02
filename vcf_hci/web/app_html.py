@@ -47,27 +47,6 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     <strong>⚠ Running as Root / Superuser:</strong> Root privileges are not required for Redfish BMC connections. Default report folder set to: <code id="rootBannerPath"></code>
   </div>
 
-  <!-- ── 1. Profiles ─────────────────────────────────────────────────────── -->
-  <div class="card">
-    <div class="card-header">🔖 Saved Profiles</div>
-    <div class="card-body">
-      <div class="form-grid">
-        <div class="clr-form-group">
-          <label class="clr-control-label">Load Profile</label>
-          <select class="clr-select" id="profileSelect">
-            <option value="">— select —</option>
-          </select>
-        </div>
-        <div class="clr-form-group" style="justify-content:flex-end;flex-direction:row;align-items:flex-end;gap:.5rem">
-          <button class="btn btn-flat btn-sm" id="loadProfileBtn">Load</button>
-          <button class="btn btn-flat btn-sm" id="saveProfileBtn">Save as…</button>
-          <button class="btn btn-flat btn-sm" id="deleteProfileBtn">Delete</button>
-        </div>
-      </div>
-      <p class="clr-hint mt-half" id="keychainNote">Passwords stored in: {keychain_note}</p>
-    </div>
-  </div>
-
   <!-- ── 2. Discovery ────────────────────────────────────────────────────── -->
   <div class="card">
     <div class="card-header">🔍 Host Discovery &amp; Selection</div>
@@ -77,13 +56,15 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <label class="clr-control-label">Target Range</label>
           <input class="clr-input" id="rangeInput" type="text"
             placeholder="10.0.0.1  or  10.0.0.1-20  or  192.168.1.0/24  or  host.fqdn">
-          <span class="clr-hint">Comma-separated for multiple ranges/IPs</span>
+          <span class="clr-hint">Comma-separated for multiple ranges or IPs. Probe Hosts is optional — Run Assessment uses this field.</span>
         </div>
       </div>
       <div class="flex gap-sm mt-half" style="flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" id="discoverBtn">Probe Hosts</button>
+        <span id="probeSelectActions" class="hidden" style="display:inline-flex;gap:0.4rem;">
         <button class="btn btn-flat btn-sm" id="selAllBtn">Select All</button>
         <button class="btn btn-flat btn-sm" id="selNoneBtn">Deselect All</button>
+        </span>
         <span class="spinner hidden" id="discSpinner"></span>
         <span class="text-sm text-muted" id="discStatus"></span>
       </div>
@@ -148,6 +129,185 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <div id="jumpSelectHint" class="text-xs text-muted hidden" style="margin-top:0.25rem"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+    <!-- ── Scan setup ──────────────────────────────────────────────────────── -->
+  <div class="card" id="scanSetupCard">
+    <div class="card-header">Where to save and how deep</div>
+    <div class="card-body">
+      <div class="form-grid">
+<div class="clr-form-group">
+          <label class="clr-control-label">Output Folder</label>
+          <div style="display:flex;gap:0.4rem;align-items:center;">
+            <input class="clr-input" id="outdirInput" type="text" value="~/Desktop/VCF-Scans" style="flex:1;">
+            <button class="btn btn-outline btn-sm" id="browseOutdirBtn" type="button" title="Browse for output folder" style="white-space:nowrap;">📁 Browse…</button>
+          </div>
+        </div>
+      </div>
+<div class="clr-form-control" style="margin-top:0.25rem;">
+        <label class="clr-control-label" style="font-weight:600;">Scan Depth Profile</label>
+        <div class="clr-control-container" style="margin-top:0.25rem;">
+          <div style="display:flex;flex-direction:column;gap:0.4rem;">
+            <div class="clr-radio-wrapper">
+              <input type="radio" name="scanProfile" id="profFull" value="readiness-full" checked>
+              <label for="profFull"><strong>Readiness Full</strong> <span class="text-muted text-sm">— Full audit: hardware, HCL, PCIe, and telemetry. About 60–90 seconds per host.</span></label>
+            </div>
+            <div class="clr-radio-wrapper">
+              <input type="radio" name="scanProfile" id="profLean" value="readiness-lean">
+              <label for="profLean"><strong>Readiness Lean</strong> <span class="text-muted text-sm">— VCF 9.1 and vSAN ESA checks. Skips historical telemetry and secondary member scans. About 15–30 seconds per host.</span></label>
+            </div>
+            <div class="clr-radio-wrapper">
+              <input type="radio" name="scanProfile" id="profLite" value="inventory-lite">
+              <label for="profLite"><strong>Inventory Lite</strong> <span class="text-muted text-sm">— Fast pre-screen: system, power, thermal rollup, storage rollup, and NIC summary. Deep port, DIMM, PCIe, and firmware tables are left empty. About 5–10 seconds per host.</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ── Run & Actions section ───────────────────────────────────────────── -->
+  <div class="card" style="margin: 1.25rem 0; padding: 1rem;">
+    <!-- Primary Actions -->
+    <div class="run-bar flex gap-sm items-center flex-wrap">
+      <button class="btn btn-primary btn-run" id="runBtn"
+              {'disabled' if not collector_ok else ''}>▶  Run Assessment</button>
+      <button class="btn btn-danger btn-sm hidden" id="cancelBtn">🛑 Cancel Scan</button>
+      <input type="file" id="importSummaryInput" accept=".json,.gz,.zip" style="display:none;" multiple>
+      <button class="btn btn-outline btn-sm" id="importScanBtn" title="Import a prior scan: data/fleet_summary.json, vcf_readiness_scan_*.zip, or vcf_summary_*.json">📁 Import prior scan</button>
+      <button class="btn btn-outline btn-sm" id="openLibraryBtn" title="Discover and assemble multiple scan drops from a central library folder (~/Desktop/VCF-Scans)">📚 Open Fleet Library</button>
+    </div>
+
+    <!-- Conditional 100+ Fleet Notice Banner -->
+    <div id="fleetNotice" class="alert alert-warning text-xs hidden" style="margin-top: 0.75rem;">
+      <span>⚡ <strong>Large fleet detected (<span id="fleetCountLabel">100+</span> hosts):</strong> Fleet Summary is written as a sidecar pack, and each host report opens on demand. You can finish this scan in the browser.</span>
+    </div>
+
+    <!-- Post-Scan / Report & Export Actions -->
+    <div id="postScanActions" class="hidden" style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--vcf-border);">
+      <!-- Finished Scan Summary Card -->
+      <div id="postScanSummaryCard" class="card mb-md hidden" style="width: 100%; margin-bottom: 0.85rem;">
+        <div class="card-header" style="font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
+          <span>🏁 Finished Scan Summary</span>
+          <span id="summarySuccessBadge" class="badge badge-success">0/0 succeeded</span>
+        </div>
+        <div class="card-body" style="padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
+          <div id="summaryMetricsRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span>⏱️ <strong>Scan Performance:</strong></span>
+            <span id="summaryMetricsText">—</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span>📊 <strong>VCF Readiness:</strong></span>
+            <span id="summarySupportedBadge" class="badge badge-success">0 Supported</span>
+            <span id="summaryDeprecatedBadge" class="badge badge-warning">0 Deprecated</span>
+            <span id="summaryUnsupportedBadge" class="badge badge-danger">0 Unsupported</span>
+            <span id="summaryIncompleteBadge" class="badge badge-warning">0 Incomplete</span>
+            <span id="summaryRemediatedBadge" class="badge badge-success hidden" style="background:#16a34a;color:#fff">0 Remediated</span>
+          </div>
+          <div id="summaryFailedList" class="text-sm hidden"></div>
+          <div id="summaryOutdirRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all; flex-wrap: wrap;">
+            <span>📁 <strong>Output Folder:</strong></span>
+            <code id="summaryOutdirText" style="font-size: 0.8rem;">—</code>
+            <button class="btn btn-outline btn-sm" id="summaryOpenFolderBtn" type="button" style="padding: 0.1rem 0.4rem; font-size: 0.75rem; margin-left: 0.25rem;">📂 Open Folder</button>
+          </div>
+          <div id="summaryZipRow" class="text-muted hidden" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all;">
+            <span>📦 <strong>Zip Archive:</strong></span>
+            <code id="summaryZipText" style="font-size: 0.8rem;">—</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-xl flex-wrap items-start">
+        <!-- View Reports Column -->
+        <div id="reportLinksGroup" class="flex flex-col gap-xs items-start">
+          <span class="fw-bold text-xs text-muted mb-3xs">VIEW REPORTS</span>
+          <button class="btn btn-success-solid btn-sm hidden" id="openSummaryBtn">
+            📊  Open Fleet Summary
+          </button>
+          <button class="btn btn-outline btn-sm hidden" id="openObfSummaryBtn" style="color:#7c3aed;border-color:#7c3aed">
+            🔒  Open Obfuscated Summary
+          </button>
+          <button class="btn btn-success-solid btn-sm hidden" id="openReportBtn">
+            ✔  Open Combined Host Report
+          </button>
+          <button class="btn btn-outline btn-sm hidden" id="openObfReportBtn" style="color:#7c3aed;border-color:#7c3aed">
+            🔒  Open Obfuscated Combined
+          </button>
+        </div>
+
+        <!-- Export Data Column -->
+        <div id="exportLinksGroup" class="flex flex-col gap-xs items-start">
+          <span class="fw-bold text-xs text-muted mb-3xs">EXPORT DATA</span>
+          <button class="btn btn-flat btn-sm hidden" id="openFolderBtn">
+            📂 Open Scan Folder
+          </button>
+          <button class="btn btn-flat btn-sm hidden" id="exportXlsxBtn">
+            ⬇  Export Excel
+          </button>
+          <button class="btn btn-flat btn-sm hidden" id="exportObfXlsxBtn" style="color:#7c3aed">
+            🔒 Export Obfuscated Excel + Key
+          </button>
+          <button class="btn btn-flat btn-sm hidden" id="exportObfZipBtn" style="color:#2563eb" title="Download sanitized ZIP archive with HTML hub, sub-reports, Excel, and CSVs (safe to post or share externally)">
+            📦 Export Obfuscated Package (.zip)
+          </button>
+          <button class="btn btn-flat btn-sm hidden" id="exportCsvBtn">
+            ⬇  Export CSV
+          </button>
+          <button class="btn btn-flat btn-sm hidden" id="exportSummaryJsonBtn">
+            📁 Export Summary JSON
+          </button>
+          <button class="btn btn-flat btn-sm hidden" id="prerenderReportsBtn" title="Pre-generate all single-host HTML reports across the fleet for fully offline portable bundles">
+            ⚡ Pre-render All Host Reports
+          </button>
+        </div>
+
+        <!-- Remediation / Retry Column -->
+        <div id="retryActionsGroup" class="flex flex-col gap-xs items-start hidden" style="min-width:260px">
+          <span class="fw-bold text-xs text-muted mb-3xs">REMEDIATION &amp; RETRY</span>
+          <div id="retryBreakdownBadges" class="flex gap-2xs flex-wrap mb-2xs" style="font-size:0.75rem">
+            <span id="badgePartialCount" class="badge badge-warning hidden">⚠️ <span id="cntPartial">0</span> Partial</span>
+            <span id="badgeTimeoutCount" class="badge badge-warning hidden">⏱️ <span id="cntTimeout">0</span> Timed Out</span>
+            <span id="badgeAuthCount" class="badge badge-danger hidden">🔒 <span id="cntAuth">0</span> Auth Failed</span>
+            <span id="badgeUnreachCount" class="badge hidden" style="background:#64748b;color:#ffffff">🔌 <span id="cntUnreach">0</span> Unreachable</span>
+          </div>
+          <button class="btn btn-warning-solid btn-sm" id="retryIssuesBtn" style="background:#ca8a04;border-color:#ca8a04;color:#ffffff;font-weight:600">
+            🔄 Retry Active Issues (<span id="retryIssuesCount">0</span>)
+          </button>
+          <button class="btn btn-outline btn-sm hidden" id="retryAllBtn" style="font-size:0.78rem">
+            🔄 Retry All Non-Success (<span id="retryAllCount">0</span>)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- ── Advanced ────────────────────────────────────────────────────────── -->
+  <div class="card" id="advancedCard">
+    <div class="card-header" style="cursor:pointer" id="advancedToggle">
+      Advanced
+      <span class="text-muted text-sm" style="margin-left:.4rem;font-weight:400;text-transform:none;letter-spacing:0">— profiles, vault, threads, TLS, HCL, Dell warranty</span>
+      <span style="margin-left:auto;font-size:.85rem" id="advancedArrow">▶</span>
+    </div>
+    <div id="advancedBody" class="collapsible">
+<!-- ── 1. Profiles ─────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">🔖 Saved Profiles</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="clr-form-group">
+          <label class="clr-control-label">Load Profile</label>
+          <select class="clr-select" id="profileSelect">
+            <option value="">— select —</option>
+          </select>
+        </div>
+        <div class="clr-form-group" style="justify-content:flex-end;flex-direction:row;align-items:flex-end;gap:.5rem">
+          <button class="btn btn-flat btn-sm" id="loadProfileBtn">Load</button>
+          <button class="btn btn-flat btn-sm" id="saveProfileBtn">Save as…</button>
+          <button class="btn btn-flat btn-sm" id="deleteProfileBtn">Delete</button>
+        </div>
+      </div>
+      <p class="clr-hint mt-half" id="keychainNote">Passwords stored in: {keychain_note}</p>
     </div>
   </div>
 
@@ -308,39 +468,13 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <input class="clr-input" id="threadsInput" type="number" value="12" min="1" max="32" style="width:80px">
           <span class="clr-hint">Recommended: 4–8 over VPN/WAN, 8–16 on local LAN</span>
         </div>
-        <div class="clr-form-group">
-          <label class="clr-control-label">Output Folder</label>
-          <div style="display:flex;gap:0.4rem;align-items:center;">
-            <input class="clr-input" id="outdirInput" type="text" value="~/Desktop/VCF-Scans" style="flex:1;">
-            <button class="btn btn-outline btn-sm" id="browseOutdirBtn" type="button" title="Browse for output folder" style="white-space:nowrap;">📁 Browse…</button>
-          </div>
-        </div>
       </div>
-      <hr class="vcf-sep">
-      <div class="clr-form-control" style="margin-top:0.25rem;">
-        <label class="clr-control-label" style="font-weight:600;">Scan Depth Profile</label>
-        <div class="clr-control-container" style="margin-top:0.25rem;">
-          <div style="display:flex;flex-direction:column;gap:0.4rem;">
-            <div class="clr-radio-wrapper">
-              <input type="radio" name="scanProfile" id="profFull" value="readiness-full" checked>
-              <label for="profFull"><strong>Readiness Full</strong> <span class="text-muted text-sm">— Exhaustive audit (Phase 1 + Phase 2 + HCL + PCIe + Telemetry + Interleaving, ~60–90 s/host)</span></label>
-            </div>
-            <div class="clr-radio-wrapper">
-              <input type="radio" name="scanProfile" id="profLean" value="readiness-lean">
-              <label for="profLean"><strong>Readiness Lean</strong> <span class="text-muted text-sm">— High-speed VCF 9.1 / vSAN ESA audit (skips historical telemetry logs & secondary member scans, ~15–30 s/host)</span></label>
-            </div>
-            <div class="clr-radio-wrapper">
-              <input type="radio" name="scanProfile" id="profLite" value="inventory-lite">
-              <label for="profLite"><strong>Inventory Lite</strong> <span class="text-muted text-sm">— Rapid hardware inventory pre-screening (Systems, Power/Thermal rollup, Storage rollup, NIC summary, ~5–10 s/host)</span></label>
-            </div>
-          </div>
-        </div>
-      </div>
+
       <hr class="vcf-sep">
       <div class="clr-check-row">
         <input type="checkbox" id="combinedChk" checked>
-        <label for="combinedChk">Generate Fleet Hub HTML report  <span class="text-muted text-sm">— single-file inline hub (&le;64 hosts) or sidecar hub pack (&gt;64 hosts); for multi-scan aggregation use Open Fleet Library assemble</span></label>
-        <div id="combinedNote" class="text-muted text-sm" style="display:none; margin-top:0.25rem;">Large fleet (&gt;64 hosts): Fleet Hub will be generated as a sidecar pack with lazy on-demand host frames (no 256-host limit). fleet_summary.html is also generated. For multiple independent scans, use Open Fleet Library to assemble.</div>
+        <label for="combinedChk">Generate Fleet Summary  <span class="text-muted text-sm">— also writes the combined host report (one file up to 64 hosts, sidecar pack above that)</span></label>
+        <div id="combinedNote" class="text-muted text-sm" style="display:none; margin-top:0.25rem;">Large fleet (more than 64 hosts): the combined host report is a sidecar pack, and each host opens on demand. fleet_summary.html is also written. For several independent scans, use Open Fleet Library.</div>
       </div>
       <div class="clr-check-row">
         <input type="checkbox" id="debugChk">
@@ -390,7 +524,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       </div>
       <div class="clr-check-row">
         <input type="checkbox" id="autoRetryChk" checked>
-        <label for="autoRetryChk">Auto-retry incomplete / failed hosts once  <span class="text-muted text-sm">— automatically run one gentle retry pass if timeouts or partial data occur</span></label>
+        <label for="autoRetryChk">Auto-retry failed hosts (up to 2 extra passes)  <span class="text-muted text-sm">— the first pass retries every failure, including bad passwords and unreachable BMCs. Later passes retry timeouts only. The progress bar resets at each pass.</span></label>
       </div>
       <hr class="vcf-sep">
       <!-- ── TLS & Security Hardening (collapsible) ── -->
@@ -398,7 +532,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <label class="clr-control-label" style="font-weight:600;margin-bottom:0.35rem">🛡 TLS &amp; Target Security</label>
         <div class="clr-check-row">
           <input type="checkbox" id="ignoreTlsChk" checked>
-          <label for="ignoreTlsChk">Ignore BMC TLS certificate errors <span class="text-muted text-sm">(recommended for self-signed BMC certificates)</span></label>
+          <label for="ignoreTlsChk">Ignore BMC TLS certificate errors <span class="text-muted text-sm">(self-signed BMCs: pin the certificate when you run)</span></label>
         </div>
         <div id="tlsVerifyOptions" class="hidden" style="margin-left:1.5rem;margin-top:0.35rem;padding:0.5rem;background:rgba(0,0,0,0.05);border-radius:4px;">
           <div style="display:flex;flex-direction:column;gap:0.35rem;">
@@ -494,121 +628,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     </div>
   </div>
 
-  <!-- ── Run & Actions section ───────────────────────────────────────────── -->
-  <div class="card" style="margin: 1.25rem 0; padding: 1rem;">
-    <!-- Primary Actions -->
-    <div class="flex gap-sm items-center flex-wrap">
-      <button class="btn btn-primary btn-run" id="runBtn"
-              {'disabled' if not collector_ok else ''}>▶  Run Assessment</button>
-      <button class="btn btn-danger btn-sm hidden" id="cancelBtn">🛑 Cancel Scan</button>
-      <input type="file" id="importSummaryInput" accept=".json,.gz,.zip" style="display:none;" multiple>
-      <button class="btn btn-outline btn-sm" id="importScanBtn" title="Import prior scan data (data/fleet_summary.json, vcf_readiness_scan_*.zip, or vcf_summary_*.json) to regenerate consolidated reports offline">📁 Import Scan</button>
-      <button class="btn btn-outline btn-sm" id="importSummaryBtn" title="Import host or fleet summary JSON">📁 Import Summary</button>
-      <button class="btn btn-outline btn-sm" id="openLibraryBtn" title="Discover and assemble multiple scan drops from a central library folder (~/Desktop/VCF-Scans)">📚 Open Fleet Library</button>
-    </div>
-
-    <!-- Conditional 100+ Fleet Notice Banner -->
-    <div id="fleetNotice" class="alert alert-warning text-xs hidden" style="margin-top: 0.75rem;">
-      <span>⚡ <strong>Large fleet detected (<span id="fleetCountLabel">100+</span> hosts):</strong> Fleets of 100+ hosts should use CLI <code>--from-summary</code> for optimal performance.</span>
-    </div>
-
-    <!-- Post-Scan / Report & Export Actions -->
-    <div id="postScanActions" class="hidden" style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--vcf-border);">
-      <!-- Finished Scan Summary Card -->
-      <div id="postScanSummaryCard" class="card mb-md hidden" style="width: 100%; margin-bottom: 0.85rem;">
-        <div class="card-header" style="font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
-          <span>🏁 Finished Scan Summary</span>
-          <span id="summarySuccessBadge" class="badge badge-success">0/0 succeeded</span>
-        </div>
-        <div class="card-body" style="padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
-          <div id="summaryMetricsRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span>⏱️ <strong>Scan Performance:</strong></span>
-            <span id="summaryMetricsText">—</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span>📊 <strong>VCF Readiness:</strong></span>
-            <span id="summarySupportedBadge" class="badge badge-success">0 Supported</span>
-            <span id="summaryDeprecatedBadge" class="badge badge-warning">0 Deprecated</span>
-            <span id="summaryUnsupportedBadge" class="badge badge-danger">0 Unsupported</span>
-            <span id="summaryRemediatedBadge" class="badge badge-success hidden" style="background:#16a34a;color:#fff">0 Remediated</span>
-          </div>
-          <div id="summaryOutdirRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all; flex-wrap: wrap;">
-            <span>📁 <strong>Output Folder:</strong></span>
-            <code id="summaryOutdirText" style="font-size: 0.8rem;">—</code>
-            <button class="btn btn-outline btn-sm" id="summaryOpenFolderBtn" type="button" style="padding: 0.1rem 0.4rem; font-size: 0.75rem; margin-left: 0.25rem;">📂 Open Folder</button>
-          </div>
-          <div id="summaryZipRow" class="text-muted hidden" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all;">
-            <span>📦 <strong>Zip Archive:</strong></span>
-            <code id="summaryZipText" style="font-size: 0.8rem;">—</code>
-          </div>
-        </div>
       </div>
-
-      <div class="flex gap-xl flex-wrap items-start">
-        <!-- View Reports Column -->
-        <div id="reportLinksGroup" class="flex flex-col gap-xs items-start">
-          <span class="fw-bold text-xs text-muted mb-3xs">VIEW REPORTS</span>
-          <button class="btn btn-success-solid btn-sm hidden" id="openSummaryBtn">
-            📊  Open Fleet Summary
-          </button>
-          <button class="btn btn-outline btn-sm hidden" id="openObfSummaryBtn" style="color:#7c3aed;border-color:#7c3aed">
-            🔒  Open Obfuscated Summary
-          </button>
-          <button class="btn btn-success-solid btn-sm hidden" id="openReportBtn">
-            ✔  Open Combined Report
-          </button>
-          <button class="btn btn-outline btn-sm hidden" id="openObfReportBtn" style="color:#7c3aed;border-color:#7c3aed">
-            🔒  Open Obfuscated Combined
-          </button>
-        </div>
-
-        <!-- Export Data Column -->
-        <div id="exportLinksGroup" class="flex flex-col gap-xs items-start">
-          <span class="fw-bold text-xs text-muted mb-3xs">EXPORT DATA</span>
-          <button class="btn btn-flat btn-sm hidden" id="openFolderBtn">
-            📂 Open Scan Folder
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportXlsxBtn">
-            ⬇  Export Excel
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportObfXlsxBtn" style="color:#7c3aed">
-            🔒 Export Obfuscated Excel + Key
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportObfZipBtn" style="color:#2563eb" title="Download sanitized ZIP archive with HTML hub, sub-reports, Excel, and CSVs (safe to post or share externally)">
-            📦 Export Obfuscated Package (.zip)
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportCsvBtn">
-            ⬇  Export CSV
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportSummaryJsonBtn">
-            📁 Export Summary JSON
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="prerenderReportsBtn" title="Pre-generate all single-host HTML reports across the fleet for fully offline portable bundles">
-            ⚡ Pre-render All Host Reports
-          </button>
-        </div>
-
-        <!-- Remediation / Retry Column -->
-        <div id="retryActionsGroup" class="flex flex-col gap-xs items-start hidden" style="min-width:260px">
-          <span class="fw-bold text-xs text-muted mb-3xs">REMEDIATION &amp; RETRY</span>
-          <div id="retryBreakdownBadges" class="flex gap-2xs flex-wrap mb-2xs" style="font-size:0.75rem">
-            <span id="badgePartialCount" class="badge badge-warning hidden">⚠️ <span id="cntPartial">0</span> Partial</span>
-            <span id="badgeTimeoutCount" class="badge badge-warning hidden">⏱️ <span id="cntTimeout">0</span> Timed Out</span>
-            <span id="badgeAuthCount" class="badge badge-danger hidden">🔒 <span id="cntAuth">0</span> Auth Failed</span>
-            <span id="badgeUnreachCount" class="badge hidden" style="background:#64748b;color:#ffffff">🔌 <span id="cntUnreach">0</span> Unreachable</span>
-          </div>
-          <button class="btn btn-warning-solid btn-sm" id="retryIssuesBtn" style="background:#ca8a04;border-color:#ca8a04;color:#ffffff;font-weight:600">
-            🔄 Retry Active Issues (<span id="retryIssuesCount">0</span>)
-          </button>
-          <button class="btn btn-outline btn-sm hidden" id="retryAllBtn" style="font-size:0.78rem">
-            🔄 Retry All Non-Success (<span id="retryAllCount">0</span>)
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
-  <!-- ── Progress ───────────────────────────────────────────────────────── -->
+<!-- ── Progress ───────────────────────────────────────────────────────── -->
   <div id="progressSection" class="hidden">
     <!-- ── Jump Host Reconnect Alert Banner ── -->
     <div id="jumpReconnectAlert" class="alert alert-warning hidden" style="margin-bottom: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
@@ -911,6 +934,34 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <button type="button" class="btn btn-outline btn-sm" id="continueWithoutPasswordBtn">Continue Anyway</button>
           <button type="button" class="btn btn-flat btn-sm hidden" id="unlockVaultModalBtn">🔓 Unlock Vault</button>
           <button type="button" class="btn btn-primary btn-sm" id="enterPasswordModalBtn">Enter Password</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BMC certificate pin gate ──────────────────────────────────── -->
+  <div id="certPinModal" class="vcf-modal-backdrop hidden">
+    <div class="vcf-modal-dialog" style="max-width:640px; width:95%;">
+      <div class="vcf-modal-header">
+        <h3 style="margin:0; font-size:1.1rem; font-weight:600;">🔒 Pin BMC certificates before scanning</h3>
+        <button type="button" id="closeCertPinModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+      </div>
+      <div class="vcf-modal-body">
+        <p style="margin-top:0; font-size:0.95rem; font-weight:600; color:var(--vcf-text);">
+          TLS certificate checks are off. The BMC password and Redfish session can be read on the path to these hosts.
+        </p>
+        <p class="text-sm text-muted" id="certPinText">
+          Pin the certificate each BMC presents. Later connections must match that thumbprint.
+        </p>
+        <p class="text-sm" id="certPinStatus"></p>
+        <div id="certPinEmpty" class="alert alert-warning text-sm hidden" style="margin:0.75rem 0;"></div>
+        <div id="certPinList" class="cert-pin-list hidden"></div>
+      </div>
+      <div class="vcf-modal-footer">
+        <span class="text-xs text-muted">Pinning is the primary action. Scanning without checks takes its own click.</span>
+        <div class="flex gap-sm" style="flex-wrap:wrap; justify-content:flex-end;">
+          <button type="button" class="btn btn-outline btn-sm" id="scanWithoutCertChecksBtn">Scan without certificate checks</button>
+          <button type="button" class="btn btn-primary btn-sm" id="pinCertsAndScanBtn">Fetch and pin certificates</button>
         </div>
       </div>
     </div>

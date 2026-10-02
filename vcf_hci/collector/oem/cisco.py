@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...logging_utils import get_nested
+from ...tls_utils import build_bmc_opener
 from ..base import ExpandableCollectionsMap
 from ..collect_storage_drive import parse_drive_details
 from .generic import GenericCollector
@@ -132,7 +133,7 @@ class CiscoCollector(GenericCollector):
             req = urllib.request.Request(url, data=xml_req.encode("utf-8"), headers=headers, method="POST")
             ssl_ctx = getattr(self, "ssl_context", None)
             opener = getattr(self, "_opener", None)
-            resp_cm = opener.open(req, timeout=10) if opener is not None else urllib.request.urlopen(req, timeout=10, context=ssl_ctx)
+            resp_cm = (opener if opener is not None else build_bmc_opener(ssl_context=ssl_ctx)).open(req, timeout=10)
             with resp_cm as resp:
                 raw = resp.read()
                 if isinstance(raw, bytes):

@@ -477,7 +477,7 @@ JS_HCL = """
           hide(document.getElementById('scanSpinner'));
           document.getElementById('runBtn').disabled = false;
           document.getElementById('runBtn').textContent = '▶  Run Assessment';
-          if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '📁 Import Scan'; }
+          if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '📁 Import prior scan'; }
           if (sumBtn) { sumBtn.disabled = false; sumBtn.textContent = '📁 Import Summary'; }
           alert(msg);
           appendLog('[✗] ' + msg);

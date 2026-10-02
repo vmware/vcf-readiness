@@ -216,6 +216,8 @@ JS_VAULT = """
       });
     }
     show(list);
+    var selActions = document.getElementById('probeSelectActions');
+    if (selActions) { if (hosts && hosts.length) show(selActions); else hide(selActions); }
     var certBanner = document.getElementById('certTrustBanner');
     if (certBanner) {
       if (certHosts.length > 0) {
@@ -318,24 +320,34 @@ JS_VAULT = """
 
   // ── Test credentials ──────────────────────────────────────────────────────
   document.getElementById('testCredsBtn').addEventListener('click', function() {
-    var ip  = document.getElementById('rangeInput').value.trim().split(/[\\s,]+/)[0];
-    if (!ip) { alert('Enter a target IP first.'); return; }
+    var rawInput = document.getElementById('rangeInput').value.trim();
+    if (!rawInput) { alert('Enter a target IP first.'); return; }
+    var ip = rawInput.split(/[\\s,]+/)[0];
+    var targetToSend = (rawInput.indexOf('-') !== -1 || rawInput.indexOf(',') !== -1) ? rawInput : ip;
     var u = document.getElementById('usernameInput').value;
     var p = document.getElementById('passwordInput').value;
     var ignoreTls = document.getElementById('ignoreTlsChk') ? document.getElementById('ignoreTlsChk').checked : true;
     var verifySsl = !ignoreTls;
     var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
     var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
+    var useVaultChkEl = document.getElementById('useVaultChk');
+    var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);
     document.getElementById('testCredsStatus').textContent = 'Testing…';
     post('/api/test-creds', {
-      ip: ip,
+      ip: targetToSend,
       username: u,
       password: p,
       verify_ssl: verifySsl,
       ca_bundle: caBundle,
+      pinned_thumbprints: _pinnedThumbprints,
+      use_vault: useVaultOn,
     }).then(function(r) {
-      document.getElementById('testCredsStatus').textContent =
-        r.ok ? '✔ Auth OK ('+r.code+')' : '✗ Failed: '+r.detail+' ('+r.code+')';
+      var targetNote = (r.tested_ip && r.tested_ip !== targetToSend) ? ' (' + r.tested_ip + ')' : '';
+      if (r.ok) {
+        document.getElementById('testCredsStatus').textContent = '✔ Auth OK (' + r.code + ')' + targetNote;
+      } else {
+        document.getElementById('testCredsStatus').textContent = '✗ Failed: ' + (r.detail || 'Connection failed') + targetNote + ' (' + (r.code || 0) + ')';
+      }
     });
   });
 
@@ -345,6 +357,17 @@ JS_VAULT = """
     var open = body.classList.toggle('open');
     document.getElementById('dellArrow').textContent = open ? '▼' : '▶';
   });
+
+  var advancedToggle = document.getElementById('advancedToggle');
+  if (advancedToggle) {
+    advancedToggle.addEventListener('click', function() {
+      var body = document.getElementById('advancedBody');
+      if (!body) return;
+      var open = body.classList.toggle('open');
+      var arrow = document.getElementById('advancedArrow');
+      if (arrow) arrow.textContent = open ? '▼' : '▶';
+    });
+  }
 
   // ── Encrypted Credential Vault (opt-in) ───────────────────────────────────
   // All calls are same-origin; the server never returns passwords. Nothing here
@@ -669,6 +692,8 @@ JS_VAULT = """
         hide(hostList);
         hostList.innerHTML = '';
       }
+      var selActions = document.getElementById('probeSelectActions');
+      if (selActions) hide(selActions);
       var perHostRows = document.getElementById('perHostRows');
       if (perHostRows) perHostRows.innerHTML = '';
       resetCertTrustBanner(0);

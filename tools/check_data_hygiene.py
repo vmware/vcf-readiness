@@ -125,7 +125,8 @@ INTERNAL_DIRS = {"__pycache__", "plans", "Management_Pack_Docs", "Internal Plans
 EXCLUDED_FILES = {"assets.py", "docs_data.py", "check_data_hygiene.py", "test_data_hygiene.py"}
 PUBLIC_TEST_FILES = {
     "__init__.py", "test_public_smoke.py", "test_data_hygiene.py",
-    "test_no_forbidden_imports.py", "test_vault_crypto.py", "test_logging_utils.py",
+    "test_no_forbidden_imports.py", "test_vault_crypto.py",
+    "test_vault_provider_tls.py", "test_logging_utils.py",
 }
 
 

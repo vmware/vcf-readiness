@@ -1,7 +1,7 @@
 # Architecture Summary & Engineering Handoff
 
 **Project:** VCF / vSphere 9.1 Readiness Assessment Tool  
-**Version:** 9.8.2  
+**Version:** 9.8.3  
 **Primary Users:** VMware Sales Engineers (SEs), Solution Architects, IT Administrators  
 **Target Platform:** VMware Cloud Foundation 9.1 / vSphere 9.1 / vSAN ESA & OSA
 

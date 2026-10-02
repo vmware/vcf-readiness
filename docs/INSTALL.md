@@ -137,13 +137,17 @@ The web UI still works if the tool runs on a machine you access via SSH (e.g., a
 # Run this on your local machine (replace user@server with your details)
 ssh -L 7182:127.0.0.1:7182 user@server
 
-# Inside the SSH session, start the tool:
-python3 vcfr_web.py
+# Inside the SSH session, start the tool without opening a server-local browser.
+# A local browser would consume the one-time launch URL before you can use it.
+python3 vcfr_web.py --no-browser
 
-# Now open http://127.0.0.1:7182 in your local browser
+# Copy the one-time http://127.0.0.1:7182/?token=... line from that output
+# and open it in your local browser. The tunnel delivers it to the server.
 ```
 
-The scan runs on the server (with direct access to your BMC network) while the browser UI is on your laptop.
+The scan runs on the server (with direct access to your BMC network) while the browser UI is on your laptop. The launch URL works once. After the page loads, the browser keeps a session cookie and the token in the terminal stops working.
+
+Do not publish that UI with `--allow-remote` or a non-loopback `--bind` on plain HTTP. Those listeners refuse to start unless you pass `--tls-cert` and `--tls-key`. The SSH forward above keeps the UI on loopback and does not put the launch token on the network.
 
 ---
 

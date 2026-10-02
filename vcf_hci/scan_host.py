@@ -149,6 +149,7 @@ def _scan_one_host(
 
         detect_proto_fn = getattr(ctx, "detect_management_protocol", detect_management_protocol)
         diag = {}
+        pinned_thumbprints = getattr(ctx, "pinned_thumbprints", None)
         try:
             res = detect_proto_fn(
                 ip,
@@ -157,18 +158,33 @@ def _scan_one_host(
                 ca_bundle=getattr(ctx, "ca_bundle", None),
                 enable_dash=getattr(ctx, "enable_dash", False),
                 return_diagnostics=True,
+                pinned_thumbprints=pinned_thumbprints,
             )
             if isinstance(res, tuple) and len(res) == 3:
                 proto, port, diag = res
             else:
                 proto, port = res[0], res[1]
         except TypeError:
-            proto, port = detect_proto_fn(
-                ip,
-                verify_ssl=verify_ssl,
-                ca_bundle=getattr(ctx, "ca_bundle", None),
-                enable_dash=getattr(ctx, "enable_dash", False),
-            )
+            try:
+                res = detect_proto_fn(
+                    ip,
+                    timeout=getattr(ctx, "discovery_timeout", 8.0),
+                    verify_ssl=verify_ssl,
+                    ca_bundle=getattr(ctx, "ca_bundle", None),
+                    enable_dash=getattr(ctx, "enable_dash", False),
+                    return_diagnostics=True,
+                )
+                if isinstance(res, tuple) and len(res) == 3:
+                    proto, port, diag = res
+                else:
+                    proto, port = res[0], res[1]
+            except TypeError:
+                proto, port = detect_proto_fn(
+                    ip,
+                    verify_ssl=verify_ssl,
+                    ca_bundle=getattr(ctx, "ca_bundle", None),
+                    enable_dash=getattr(ctx, "enable_dash", False),
+                )
         if proto == "redfish":
             scheme = "http" if port == 80 else "https"
             if scheme == "http":

@@ -12,7 +12,9 @@ Supported Providers:
   • ChainedCredentialProvider  — Cascading fallback across multiple providers
   • LocalVaultProvider         — Adapter wrapping the local CredentialVault
 
-All HTTP operations use stdlib urllib.request with ssl.CERT_NONE support.
+All HTTP operations use stdlib urllib.request. TLS certificate checks are
+on by default, because these calls send Vault tokens and SDDC Manager
+passwords. Pass verify_ssl=False only for a store whose network you trust.
 No external third-party dependencies (requests, hvac) are permitted.
 """
 
@@ -77,10 +79,60 @@ class LocalVaultProvider(BaseCredentialProvider):
         pass
 
 
+def _resolve_ca_bundle(ca_bundle: Optional[str], env_var: str) -> Optional[str]:
+    """Prefer an explicit PEM path, then the named environment variable."""
+    raw = ca_bundle if ca_bundle else os.environ.get(env_var)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def _secret_provider_ssl_context(
+    verify_ssl: bool,
+    ca_bundle: Optional[str],
+    provider_name: str,
+) -> ssl.SSLContext:
+    """TLS context for a secret store.
+
+    Verification stays on unless the caller passes verify_ssl=False. These
+    requests carry Vault tokens or SDDC Manager passwords, so the BMC default
+    (accept any certificate) does not apply here. A ca_bundle replaces the
+    system trust store for this client.
+    """
+    if not verify_ssl:
+        logger.warning(
+            "%s TLS certificate verification is disabled. "
+            "Tokens and passwords can be intercepted on this connection. "
+            "Pass verify_ssl=True, or ca_bundle for a private CA.",
+            provider_name,
+        )
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+    if ca_bundle:
+        if not os.path.isfile(ca_bundle):
+            raise ValueError(f"{provider_name} CA bundle is not a file: {ca_bundle}")
+        try:
+            ctx = ssl.create_default_context(cafile=ca_bundle)
+        except (OSError, ssl.SSLError) as exc:
+            raise ValueError(
+                f"{provider_name} could not load CA bundle {ca_bundle}: {exc}"
+            ) from exc
+    else:
+        ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return ctx
+
+
 class HashiCorpVaultProvider(BaseCredentialProvider):
     """Stdlib-only HashiCorp Vault provider supporting AppRole and Token auth.
 
-    Queries KV v1 and KV v2 secret engines.
+    Queries KV v1 and KV v2 secret engines. TLS certificate checks are on
+    unless verify_ssl is passed as False.
     """
 
     def __init__(
@@ -94,7 +146,8 @@ class HashiCorpVaultProvider(BaseCredentialProvider):
         secret_prefix: str = "bmcs",
         namespace: Optional[str] = None,
         cache_ttl_sec: float = 300.0,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
+        ca_bundle: Optional[str] = None,
     ):
         self.vault_addr = vault_addr.rstrip("/")
         self.token = token or os.environ.get("VAULT_TOKEN", "")
@@ -106,16 +159,15 @@ class HashiCorpVaultProvider(BaseCredentialProvider):
         self.namespace = namespace or os.environ.get("VAULT_NAMESPACE")
         self.cache_ttl_sec = cache_ttl_sec
         self.verify_ssl = verify_ssl
+        self.ca_bundle = _resolve_ca_bundle(ca_bundle, "VAULT_CACERT")
 
         # In-memory resolution cache: target -> (creds_tuple, expire_ts)
         self._cache: Dict[str, Tuple[Tuple[str, str], float]] = {}
         self._token_expiry: float = 0.0
 
-        # SSL context
-        self._ssl_ctx = ssl.create_default_context()
-        if not verify_ssl:
-            self._ssl_ctx.check_hostname = False
-            self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        self._ssl_ctx = _secret_provider_ssl_context(
+            verify_ssl, self.ca_bundle, "HashiCorp Vault"
+        )
 
     def _ensure_authenticated(self) -> bool:
         """Authenticate via AppRole if token is absent or expired."""
@@ -237,6 +289,7 @@ class SddcManagerSecretProvider(BaseCredentialProvider):
     """Stdlib-only VMware Cloud Foundation SDDC Manager Secret Provider.
 
     Queries SDDC Manager REST API (/v1/system/credentials) for physical host credentials.
+    TLS certificate checks are on unless verify_ssl is passed as False.
     """
 
     def __init__(
@@ -246,7 +299,8 @@ class SddcManagerSecretProvider(BaseCredentialProvider):
         username: Optional[str] = None,
         password: Optional[str] = None,
         cache_ttl_sec: float = 300.0,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
+        ca_bundle: Optional[str] = None,
     ):
         self.sddc_host = sddc_manager_host.rstrip("/")
         if "://" not in self.sddc_host:
@@ -256,14 +310,14 @@ class SddcManagerSecretProvider(BaseCredentialProvider):
         self.password = password or os.environ.get("VCF_SDDC_PASSWORD", "")
         self.cache_ttl_sec = cache_ttl_sec
         self.verify_ssl = verify_ssl
+        self.ca_bundle = _resolve_ca_bundle(ca_bundle, "VCF_SDDC_CACERT")
 
         self._cache: Dict[str, Tuple[Tuple[str, str], float]] = {}
         self._token_expiry: float = 0.0
 
-        self._ssl_ctx = ssl.create_default_context()
-        if not verify_ssl:
-            self._ssl_ctx.check_hostname = False
-            self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        self._ssl_ctx = _secret_provider_ssl_context(
+            verify_ssl, self.ca_bundle, "SDDC Manager"
+        )
 
     def _ensure_token(self) -> bool:
         now = time.time()
