@@ -183,7 +183,7 @@ class ScanApiMixin(_ApiMixinBase):
                 if not ip:
                     continue
                 cur_user, cur_pass = creds.get(ip, (shared_user, shared_pass))
-                u = row.get("user", cur_user) if "user" in row else cur_user
+                u = (row.get("user") or cur_user).strip() or cur_user
                 p = row.get("pass", cur_pass) if "pass" in row else cur_pass
                 creds[ip] = (u, p)
             for ip in ips:

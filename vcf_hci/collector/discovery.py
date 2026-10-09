@@ -68,7 +68,7 @@ else:
     _CollectorBase = object
 
 from vcf_hci.collector.pci_utils import extract_pci_ids_from_dict, match_pcie_cache
-from vcf_hci.constants import GENERIC_NAME_BLOCKLIST
+from vcf_hci.constants import is_generic_name
 from vcf_hci.logging_utils import get_nested
 
 logger = logging.getLogger("vcf_assess")
@@ -684,7 +684,7 @@ class DiscoveryMixin(_CollectorBase):
             return "PCIe Network Adapter"
         for key in ["Name", "Description", "Model"]:
             val = str(raw_obj.get(key, "") or "").strip()
-            if val and val.lower() not in GENERIC_NAME_BLOCKLIST:
+            if val and not is_generic_name(val):
                 return val
         # Dell OEM NIC product name check
         dell_nic = ((raw_obj.get("Oem") or {}).get("Dell") or {}).get("DellNIC") or {}
@@ -702,13 +702,13 @@ class DiscoveryMixin(_CollectorBase):
                         ndf_data = self._get(ndf_ref.get("@odata.id")) or {}
                         d_nic = ((ndf_data.get("Oem") or {}).get("Dell") or {}).get("DellNIC") or {}
                         p_name = str(d_nic.get("ProductName") or "").strip()
-                        if p_name and p_name.lower() not in GENERIC_NAME_BLOCKLIST:
+                        if p_name and not is_generic_name(p_name):
                             dell_name = p_name
                             break
 
-        if dell_name and dell_name.lower() not in GENERIC_NAME_BLOCKLIST:
+        if dell_name and not is_generic_name(dell_name):
             dell_clean = re.sub(r"\s*-\s*([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$", "", dell_name).strip()
-            if dell_clean and dell_clean.lower() not in GENERIC_NAME_BLOCKLIST:
+            if dell_clean and not is_generic_name(dell_clean):
                 return dell_clean
 
         # HPE iLO 5+: AdapterDetails.Name carries the human-readable product name
@@ -716,7 +716,7 @@ class DiscoveryMixin(_CollectorBase):
         # the top-level Name is the generic "Ethernet Network Adapter".
         hpe_details = ((raw_obj.get("Oem") or {}).get("Hpe") or {}).get("AdapterDetails") or {}
         hpe_name = str(hpe_details.get("Name") or hpe_details.get("Model") or "").strip()
-        if hpe_name and hpe_name.lower() not in GENERIC_NAME_BLOCKLIST:
+        if hpe_name and not is_generic_name(hpe_name):
             return hpe_name
 
         raw_pn = raw_obj.get("PartNumber") or raw_obj.get("part_number") or ""
@@ -727,7 +727,7 @@ class DiscoveryMixin(_CollectorBase):
                     dev_name = str(dev.get("name", "")).strip()
                     dev_pn = str(dev.get("part_number") or "").strip().upper()
                     if dev_pn and dev_pn not in ("N/A", "NONE", "UNKNOWN", "NULL", "") and (pn in dev_pn or dev_pn in pn):
-                        if dev_name and dev_name.lower() not in GENERIC_NAME_BLOCKLIST:
+                        if dev_name and not is_generic_name(dev_name):
                             return dev_name
             # Try matching by exact VID:DID from extract_pci_ids_from_dict
             pci_info = extract_pci_ids_from_dict(raw_obj, get_fn=getattr(self, "_get", None))
@@ -739,7 +739,7 @@ class DiscoveryMixin(_CollectorBase):
                     p_vid = dev.get("vendor_id", "")
                     p_did = dev.get("device_id", "")
                     if c_vid == p_vid and c_did == p_did:
-                        if dev_name and dev_name.lower() not in GENERIC_NAME_BLOCKLIST:
+                        if dev_name and not is_generic_name(dev_name):
                             return dev_name
             # Fallback to match_pcie_cache (links, slot location, model tokens)
             matched_dev = match_pcie_cache(raw_obj, pcie_cache, get_fn=getattr(self, "_get", None))
@@ -749,8 +749,34 @@ class DiscoveryMixin(_CollectorBase):
                 for dev in pcie_cache:
                     if (m_vid and m_did and dev.get("vendor_id") == m_vid and dev.get("device_id") == m_did) or dev.get("id") == matched_dev.get("id"):
                         dev_name = str(dev.get("name", "")).strip()
-                        if dev_name and dev_name.lower() not in GENERIC_NAME_BLOCKLIST:
+                        if dev_name and not is_generic_name(dev_name):
                             return dev_name
+
+        # Broadcom HCL / io_nics lookup if PCI IDs are known
+        try:
+            pci_check = extract_pci_ids_from_dict(raw_obj, get_fn=getattr(self, "_get", None))
+            if not pci_check.get("pci_quad") and pcie_cache:
+                pci_check = match_pcie_cache(raw_obj, pcie_cache, get_fn=getattr(self, "_get", None))
+            quad = pci_check.get("pci_quad")
+            pair = pci_check.get("pci_pair")
+            if quad or pair:
+                from vcf_hci.hcl.loader import load_io_nics_catalog
+                cat = load_io_nics_catalog()
+                if isinstance(cat, dict):
+                    h_dev = cat.get("quads", {}).get(quad)
+                    if not h_dev and pair:
+                        p_items = cat.get("pairs", {}).get(pair)
+                        if p_items:
+                            from vcf_hci.collector.pci_utils import select_best_pci_pair_entry
+                            h_dev = select_best_pci_pair_entry(
+                                p_items,
+                                svid=pci_check.get("subsystem_vendor_id", ""),
+                                ssid=pci_check.get("subsystem_id", ""),
+                            )
+                    if isinstance(h_dev, dict) and h_dev.get("model"):
+                        return str(h_dev["model"]).strip()
+        except Exception:
+            pass
 
         mfr = str(raw_obj.get("Manufacturer", "Ethernet") or "Ethernet").strip()
         return f"{mfr} Network Adapter"

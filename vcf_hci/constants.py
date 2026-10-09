@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.8.3"
+TOOL_VERSION = "9.9.0"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -244,6 +244,23 @@ GENERIC_NAME_BLOCKLIST = [
     "poweredge rx5xx lom board",   # Dell generic LOM board description
 ]
 
+
+def is_generic_name(name: Optional[str]) -> bool:
+    """Return True if name is empty, generic, or an internal BMC handle (e.g. DevType7_NIC0, 00_C5_00)."""
+    if not name:
+        return True
+    s = str(name).strip()
+    sl = s.lower()
+    if sl in GENERIC_NAME_BLOCKLIST:
+        return True
+    if re.match(r"^devtype\d+(?:_\w+)?$", sl):
+        return True
+    if re.match(r"^[0-9a-f]{2}_[0-9a-f]{2}_[0-9a-f]{2}$", sl):
+        return True
+    if re.match(r"^pcie(?:device)?\s*\d*$", sl):
+        return True
+    return bool(re.search(r"virtual(?:nic|ethernet|interface)", sl))
+
 # ---------------------------------------------------------------------------
 # HPE ProLiant SKU → Chassis configuration database
 # ---------------------------------------------------------------------------
@@ -461,126 +478,243 @@ HCI_APPLIANCE_PATTERNS = (
     "HXAF", "HX220C", "HX240C", "HX480C",    # Cisco HyperFlex
 )
 
+def _fw(latest, min_recommended, min_spectre, **extra):
+    """Build one BIOS or BMC catalog row. Unknown release dates are omitted."""
+    row = {
+        "latest": latest,
+        "min_recommended": min_recommended,
+        "min_spectre": min_spectre,
+    }
+    for key, value in extra.items():
+        if value is not None:
+            row[key] = value
+    return row
+
+
+_DELL_CODE = {
+    "source": "Dell KB 000227230 (updated 29 Sep 2026)",
+    "source_url": "https://www.dell.com/support/kbdoc/en-us/000227230",
+}
+_HPE_GEN10 = {
+    "source": "HPE Gen10 SPP 2026.05.00.00",
+    "source_url": "https://vibsdepot.hpe.com/VMwareSPPComponentReleaseNotes/Gen10_SPP_2026.05.00.00/VMware_vSphere8.0U3_ReleaseNotesGen10SPP2026050000.pdf",
+    "released": "2026-04-01",
+}
+_HPE_GEN11 = {
+    "source": "HPE Gen11 SPP 2026.07.00.00",
+    "source_url": "https://vibsdepot.hpe.com/VMwareSPPComponentReleaseNotes/Gen11_SPP_2026.07.00.00/VMware_vSphere8.0U3_ReleaseNotesGen11SPP2026070000.pdf",
+    "released": "2026-06-25",
+}
+_LENOVO_GEN1 = {
+    "source": "Lenovo VMware recipe SR650 Cascade Lake / Skylake (10 Dec 2025)",
+    "source_url": "https://vmware.lenovo.com/content/recipe/2026_05/SR650-Cascade_Lake-ESXi8.0.html",
+    "released": "2025-12-10",
+}
+_LENOVO_V2 = {
+    "source": "Lenovo VMware recipe SR650 V2 Ice Lake (25 May 2026)",
+    "source_url": "https://vmware.lenovo.com/content/recipe/SR650_v2-Icelake-ESXi9.0.html",
+    "released": "2026-05-25",
+}
+_LENOVO_V3 = {
+    "source": "Lenovo VMware recipe SR650 V3 Sapphire Rapids (4 Sep 2026)",
+    "source_url": "https://vmware.lenovo.com/content/recipe/SR650_V3-Sapphire_Rapids-ESXi9.0.html",
+    "released": "2026-09-04",
+}
+_CISCO_M5 = {
+    "source": "Cisco HUU 4.3(2.260020) (14 Jul 2026)",
+    "source_url": "https://www.cisco.com/c/en/us/td/docs/unified_computing/ucs/release/notes/b_release-notes-for-cisco-ucs-rack-server-software-release-4_3_2.html",
+    "released": "2026-07-14",
+}
+_CISCO_M6 = {
+    "source": "Cisco HUU 6.0(2.260143) (25 Jun 2026)",
+    "source_url": "https://www.cisco.com/c/en/us/td/docs/unified_computing/ucs/release/notes/b_release-notes-for-cisco-ucs-rack-server-software-release-6-0-2.html",
+    "released": "2026-06-25",
+}
+_UNVERIFIED = {
+    "source": "unverified — prefix key is not a single board, or no newer third-party build was confirmed",
+}
+
+# min_recommended for Dell is the KB "Minimum Supported" column.
+# min_spectre stays the security floor and is not a currency failure by itself.
+# Lenovo/HPE min_recommended values below the OEM latest are library floors so one
+# revision behind stays a yellow age note. They are not a second vendor minimum.
+_DELL_14G_INTEL = _fw("2.28.1", "2.25.0", "1.3.7", **_DELL_CODE)
+_DELL_14G_AMD = _fw("1.28.0", "1.27.0", "1.0.9", **_DELL_CODE)
+_DELL_15G_INTEL = _fw("1.22.1", "1.19.2", "1.0.0", **_DELL_CODE)
+_DELL_15G_AMD = _fw("2.24.1", "2.21.1", "2.2.0", **_DELL_CODE)
+_DELL_16G_INTEL = _fw("2.11.2", "2.8.2", "1.0.0", **_DELL_CODE)
+_DELL_16G_AMD = _fw("1.18.2", "1.14.1", "1.0.0", **_DELL_CODE)
+_DELL_17G_INTEL = _fw("1.9.5", "1.5.4", "1.0.0", **_DELL_CODE)
+_DELL_17G_AMD = _fw(
+    "1.8.5", "1.4.1", "1.0.0",
+    catalog_note=(
+        "Dell vSAN Ready Node ESXi 9.x catalogs (KB 000337386) moved past the old 1.6.4 BOM. "
+        "Currency uses this OEM latest."
+    ),
+    **_DELL_CODE,
+)
+_DELL_17G_R7725 = _fw("1.8.5", "1.7.6", "1.0.0", catalog_note=_DELL_17G_AMD["catalog_note"], **_DELL_CODE)
+
+_LENOVO_IVE = _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.16", **_LENOVO_GEN1)
+_LENOVO_AFE = _fw("AFE136D-3.60", "AFE136D-2.00", "AFE-1.00", previous_families=("TEE", "IVE"), **_LENOVO_V2)
+_LENOVO_ESE = _fw("ESE140F-3.90", "ESE140F-2.00", "ESE-1.00", previous_families=("AFE", "TEE", "IVE"), **_LENOVO_V3)
+
 BIOS_BASELINES = {
+    # ── Dell 13G (iDRAC8) — catalog hosts R630, R730xd, R930 ────────────────
+    "POWEREDGE R630":   _fw("2.19.0", "2.19.0", "2.19.0", source="library floor; 13G is outside KB 000227230"),
+    "POWEREDGE R730":   _fw("2.19.0", "2.19.0", "2.19.0", source="library floor; 13G is outside KB 000227230"),
+    "POWEREDGE R730XD": _fw("2.19.0", "2.19.0", "2.19.0", source="library floor; 13G is outside KB 000227230"),
+    "POWEREDGE R930":   _fw("2.12.0", "2.12.0", "2.12.0", source="library floor; 13G is outside KB 000227230"),
     # ── Dell 14G Intel (Skylake-SP / Cascade Lake-SP) ─────────────────────────
     # min_spectre per Dell KB 000178106 (Jan–Feb 2018 initial spectre microcode)
-    "POWEREDGE R640":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE R740":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE R740XD": {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE R940":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE R440":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE R540":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE T640":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE C6420":  {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE FC640":  {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE M640":   {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.3.7"},
-    "POWEREDGE C4140":  {"latest": "2.24.0", "min_recommended": "2.23.0", "min_spectre": "1.1.6"},
+    "POWEREDGE R640":   _DELL_14G_INTEL,
+    "POWEREDGE R740":   _DELL_14G_INTEL,
+    "POWEREDGE R740XD": _DELL_14G_INTEL,
+    "POWEREDGE R940":   _DELL_14G_INTEL,
+    "POWEREDGE R840":   _DELL_14G_INTEL,
+    "POWEREDGE R440":   _DELL_14G_INTEL,
+    "POWEREDGE R540":   _DELL_14G_INTEL,
+    "POWEREDGE T640":   _DELL_14G_INTEL,
+    "POWEREDGE C6420":  _DELL_14G_INTEL,
+    "POWEREDGE FC640":  _DELL_14G_INTEL,
+    "POWEREDGE M640":   _DELL_14G_INTEL,
+    "POWEREDGE C4140":  _fw("2.28.1", "2.25.0", "1.1.6", **_DELL_CODE),
     # ── Dell 14G AMD (EPYC Naples) ────────────────────────────────────────────
-    "POWEREDGE R7425":  {"latest": "1.21.0", "min_recommended": "1.20.0", "min_spectre": "1.0.9"},
-    "POWEREDGE R7415":  {"latest": "1.21.0", "min_recommended": "1.20.0", "min_spectre": "1.0.9"},
-    "POWEREDGE R6415":  {"latest": "1.21.0", "min_recommended": "1.20.0", "min_spectre": "1.0.9"},
-    # ── Dell 15G (Ice Lake-SP / Sapphire Rapids) — shipped post-spectre era ──
-    "POWEREDGE R650":   {"latest": "1.12.0", "min_recommended": "1.11.0", "min_spectre": "1.0.0"},
-    "POWEREDGE R750":   {"latest": "1.12.0", "min_recommended": "1.11.0", "min_spectre": "1.0.0"},
-    "POWEREDGE R650XS": {"latest": "1.12.0", "min_recommended": "1.11.0", "min_spectre": "1.0.0"},
-    "POWEREDGE R750XA": {"latest": "1.12.0", "min_recommended": "1.11.0", "min_spectre": "1.0.0"},
-    "POWEREDGE R450":   {"latest": "1.12.0", "min_recommended": "1.11.0", "min_spectre": "1.0.0"},
-    "POWEREDGE R550":   {"latest": "1.12.0", "min_recommended": "1.11.0", "min_spectre": "1.0.0"},
-    "POWEREDGE R6525":  {"latest": "2.14.0", "min_recommended": "2.13.0", "min_spectre": "2.2.0"},
-    "POWEREDGE R7525":  {"latest": "2.14.0", "min_recommended": "2.13.0", "min_spectre": "2.2.0"},
-    # ── Dell 16G (Sapphire / Emerald Rapids) — shipped post-spectre era ───────
-    "POWEREDGE R660":   {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R760":   {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R660XS": {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R760XA": {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R960":   {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R6625":  {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R7625":  {"latest": "1.8.0",  "min_recommended": "1.7.0",  "min_spectre": "1.0.0"},
-    # ── Dell 17G (Xeon 6 / Turin) — shipped post-spectre era ──────────────────
-    "POWEREDGE R670":   {"latest": "1.4.4",  "min_recommended": "1.2.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R770":   {"latest": "1.2.4",  "min_recommended": "1.1.0",  "min_spectre": "1.0.0"},
-    "POWEREDGE R7715":  {"latest": "1.7.7",  "min_recommended": "1.6.4",  "min_spectre": "1.0.0", "vsan_catalog": "1.6.4"},
-    "POWEREDGE R6715":  {"latest": "1.7.7",  "min_recommended": "1.6.4",  "min_spectre": "1.0.0", "vsan_catalog": "1.6.4"},
-    "POWEREDGE R7725":  {"latest": "1.7.7",  "min_recommended": "1.6.4",  "min_spectre": "1.0.0", "vsan_catalog": "1.6.4"},
-    "POWEREDGE R6725":  {"latest": "1.7.7",  "min_recommended": "1.6.4",  "min_spectre": "1.0.0", "vsan_catalog": "1.6.4"},
+    "POWEREDGE R7425":  _DELL_14G_AMD,
+    "POWEREDGE R7415":  _DELL_14G_AMD,
+    "POWEREDGE R6415":  _DELL_14G_AMD,
+    # ── Dell 15G (Ice Lake-SP) — Intel and AMD are different BIOS trains ──────
+    "POWEREDGE R650":   _DELL_15G_INTEL,
+    "POWEREDGE R750":   _DELL_15G_INTEL,
+    "POWEREDGE R650XS": _DELL_15G_INTEL,
+    "POWEREDGE R750XA": _DELL_15G_INTEL,
+    "POWEREDGE R450":   _DELL_15G_INTEL,
+    "POWEREDGE R550":   _DELL_15G_INTEL,
+    "POWEREDGE R6525":  _DELL_15G_AMD,
+    "POWEREDGE R7525":  _DELL_15G_AMD,
+    "POWEREDGE R7515":  _fw("2.22.0", "2.14.0", "2.2.0", **_DELL_CODE),
+    "POWEREDGE R6515":  _fw("1.7.4", "1.7.4", "1.0.0", **_DELL_CODE),
+    # ── Dell 16G — Intel 2.11.x and AMD 1.18.x are not the same train ─────────
+    "POWEREDGE R660":   _DELL_16G_INTEL,
+    "POWEREDGE R760":   _DELL_16G_INTEL,
+    "POWEREDGE R660XS": _DELL_16G_INTEL,
+    "POWEREDGE R760XA": _DELL_16G_INTEL,
+    "POWEREDGE R960":   _DELL_16G_INTEL,
+    "POWEREDGE R6625":  _DELL_16G_AMD,
+    "POWEREDGE R7625":  _DELL_16G_AMD,
+    "POWEREDGE R7615":  _fw("1.17.1", "1.8.0", "1.0.0", **_DELL_CODE),
+    # ── Dell 17G (Xeon 6 / Turin) ─────────────────────────────────────────────
+    "POWEREDGE R670":   _DELL_17G_INTEL,
+    "POWEREDGE R770":   _DELL_17G_INTEL,
+    "POWEREDGE R7715":  _DELL_17G_AMD,
+    "POWEREDGE R6715":  _DELL_17G_AMD,
+    "POWEREDGE R7725":  _DELL_17G_R7725,
+    "POWEREDGE R6725":  _DELL_17G_AMD,
+    # ── HPE Gen9 (iLO 4) — catalog DL380 Gen9 / DL580 Gen9 ───────────────────
+    "PROLIANT DL380 GEN9": _fw("P89 v3.40", "P89 v2.76", "P89 v2.76", source="HPE Gen9 catalog baseline"),
+    "PROLIANT DL580 GEN9": _fw("U17 v3.30", "U17 v3.30", "U17 v3.30", source="HPE Gen9 catalog baseline"),
     # ── HPE Gen10 (Skylake-SP / Cascade Lake-SP) ──────────────────────────────
-    # min_spectre ~U30 v1.22 per HPE Customer Advisory a00039267en_us (Feb 2018)
-    "PROLIANT DL360 GEN10": {"latest": "U30 v3.00", "min_recommended": "U30 v2.90", "min_spectre": "U30 v1.22"},
-    "PROLIANT DL380 GEN10": {"latest": "U30 v3.00", "min_recommended": "U30 v2.90", "min_spectre": "U30 v1.22"},
-    "PROLIANT DL580 GEN10": {"latest": "U17 v3.00", "min_recommended": "U17 v2.90", "min_spectre": "U17 v1.22"},
-    "PROLIANT BL460C GEN10":{"latest": "U34 v3.00", "min_recommended": "U34 v2.90", "min_spectre": "U34 v1.22"},
-    # ── HPE Gen10 Plus (Ice Lake-SP) — shipped post-spectre era ───────────────
-    "PROLIANT DL360 GEN10 PLUS": {"latest": "U32 v2.80", "min_recommended": "U32 v2.70", "min_spectre": "U32 v1.00"},
-    "PROLIANT DL380 GEN10 PLUS": {"latest": "U32 v2.80", "min_recommended": "U32 v2.70", "min_spectre": "U32 v1.00"},
-    # ── HPE Gen11 (Sapphire Rapids) — shipped post-spectre era ────────────────
-    "PROLIANT DL360 GEN11":  {"latest": "U64 v1.60", "min_recommended": "U64 v1.50", "min_spectre": "U64 v1.00"},
-    "PROLIANT DL380 GEN11":  {"latest": "U60 v1.60", "min_recommended": "U60 v1.50", "min_spectre": "U60 v1.00"},
-    "PROLIANT DL380A GEN11": {"latest": "U58 v2.44", "min_recommended": "U58 v2.00", "min_spectre": "U58 v1.00"},
-    "PROLIANT DL560 GEN11":  {"latest": "U36 v1.60", "min_recommended": "U36 v1.50", "min_spectre": "U36 v1.00"},
+    # min_spectre ~ v1.22 per HPE Customer Advisory a00039267en_us (Feb 2018).
+    # Family codes are part of the version: DL360 Gen10 is U32, DL380 Gen10 is U30.
+    "PROLIANT DL360 GEN10": _fw("U32 v3.66", "U32 v2.90", "U32 v1.22", **_HPE_GEN10),
+    "PROLIANT DL380 GEN10": _fw("U30 v3.66", "U30 v2.90", "U30 v1.22", **_HPE_GEN10),
+    "PROLIANT DL580 GEN10": _fw("U34 v3.66", "U34 v2.90", "U34 v1.22", previous_families=("U17",), **_HPE_GEN10),
+    "PROLIANT BL460C GEN10": _fw(
+        "I41 v3.20", "I41 v2.90", "I41 v1.22",
+        released="2024-05-27",
+        source="HPE BL460c Gen10 ROM family I41. The 2026.05 rack SPP does not list this blade; newest named build is I41 v3.20 (27 May 2024).",
+        source_url="https://community.hpe.com/t5/hpe-proliant-servers-ml-dl-sl/ilo-5-firmware-jump-upgrade-for-bl460c-gen10-blades/td-p/7221625",
+        previous_families=("U34",),
+    ),
+    # ── HPE Gen10 Plus (Ice Lake-SP) — U46, not the retired U32 label ─────────
+    "PROLIANT DL360 GEN10 PLUS": _fw("U46 v2.64", "U46 v2.00", "U46 v1.00", previous_families=("U32",), **_HPE_GEN10),
+    "PROLIANT DL380 GEN10 PLUS": _fw("U46 v2.64", "U46 v2.00", "U46 v1.00", previous_families=("U32",), **_HPE_GEN10),
+    # ── HPE Gen11 — DL360/DL380 moved onto the shared U54 ROM ─────────────────
+    "PROLIANT DL360 GEN11":  _fw("U54 v2.94", "U54 v2.00", "U54 v1.00", previous_families=("U64",), **_HPE_GEN11),
+    "PROLIANT DL380 GEN11":  _fw("U54 v2.94", "U54 v2.00", "U54 v1.00", previous_families=("U60",), **_HPE_GEN11),
+    "PROLIANT DL380A GEN11": _fw("U58 v2.94", "U58 v2.00", "U58 v1.00", **_HPE_GEN11),
+    "PROLIANT DL560 GEN11":  _fw("U59 v2.94", "U59 v2.00", "U59 v1.00", previous_families=("U36",), **_HPE_GEN11),
+    # ── HPE AMD Gen10 / Gen10 Plus / Gen11 (A40 / A43 / A55 families) ────────
+    "PROLIANT DL385 GEN10": _fw("A40 v3.80", "A40 v2.72", "A40 v2.72", **_HPE_GEN10),
+    "PROLIANT DL325 GEN10": _fw("A41 v3.80", "A41 v3.80", "A41 v1.00", **_HPE_GEN10),
+    "PROLIANT DL385 GEN10 PLUS": _fw("A42 v3.10", "A42 v3.10", "A42 v1.00", **_HPE_GEN10),
+    "PROLIANT DL325 GEN10 PLUS": _fw("A43 v3.72", "A43 v3.72", "A43 v1.00", **_HPE_GEN10),
+    "PROLIANT DL385 GEN11": _fw("A55 v3.16", "A55 v1.32", "A55 v1.00", **_HPE_GEN11),
+    # ── HPE Gen12 (iLO 7) and Edgeline e910 ──────────────────────────────────
+    "PROLIANT DL380 GEN12": _fw("U68 v1.82", "U68 v1.82", "U68 v1.00", source="HPE Gen12 catalog baseline"),
+    "PROLIANT COMPUTE DL380 GEN12": _fw("U68 v1.82", "U68 v1.82", "U68 v1.00", source="HPE Gen12 catalog baseline"),
+    "PROLIANT E910": _fw("H08 v3.60", "H08 v1.84", "H08 v1.00", source="HPE Edgeline catalog baseline"),
     # ── Lenovo ThinkSystem Gen 1 (Skylake-SP / Cascade Lake-SP) ──────────────
-    # Redfish BiosVersion format: "[IVE-2.93]" — parse_version_tuple extracts 2.93
+    # Build-id prefix (IVE / AFE / ESE) is the family. Redfish may show "[IVE-2.93]".
     # min_spectre per Lenovo LEN-22133: firmware IVE116Y (Jun 2018) ≈ [IVE-1.16]
-    "THINKSYSTEM SR630": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    "THINKSYSTEM SR650": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    "THINKSYSTEM SR850": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    "THINKSYSTEM SR860": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    "THINKSYSTEM SR950": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    "THINKSYSTEM SN550": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    "THINKSYSTEM SN850": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.16"},
-    # ── Lenovo ThinkSystem Gen 2 / 3 (Ice Lake / Sapphire Rapids) ─────────────
-    # Shipped post-spectre; min_spectre = 1.00 (first firmware release)
-    "THINKSYSTEM SR630 V2": {"latest": "TEE-2.00", "min_recommended": "TEE-1.90", "min_spectre": "TEE-1.00"},
-    "THINKSYSTEM SR650 V2": {"latest": "TEE-2.00", "min_recommended": "TEE-1.90", "min_spectre": "TEE-1.00"},
-    "THINKSYSTEM SR850 V2": {"latest": "TEE-2.00", "min_recommended": "TEE-1.90", "min_spectre": "TEE-1.00"},
-    "THINKSYSTEM SR860 V2": {"latest": "TEE-2.00", "min_recommended": "TEE-1.90", "min_spectre": "TEE-1.00"},
-    "THINKSYSTEM SR630 V3": {"latest": "AFE-3.00", "min_recommended": "AFE-2.90", "min_spectre": "AFE-1.00"},
-    "THINKSYSTEM SR650 V3": {"latest": "AFE-3.00", "min_recommended": "AFE-2.90", "min_spectre": "AFE-1.00"},
-    # ── Lenovo ThinkAgile HX/VX (based on ThinkSystem nodes) ─────────────────
-    "THINKAGILE HX1320": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.22"},
-    "THINKAGILE HX3320": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.22"},
-    "THINKAGILE HX5520": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.22"},
-    "THINKAGILE HX7520": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.22"},
-    "THINKAGILE VX3520": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.22"},
-    "THINKAGILE VX7520": {"latest": "IVE-5.00", "min_recommended": "IVE-4.90", "min_spectre": "IVE-1.22"},
+    "THINKSYSTEM SR630": _LENOVO_IVE,
+    "THINKSYSTEM SR650": _LENOVO_IVE,
+    "THINKSYSTEM SR850": _LENOVO_IVE,
+    "THINKSYSTEM SR860": _LENOVO_IVE,
+    "THINKSYSTEM SR950": _LENOVO_IVE,
+    "THINKSYSTEM SN550": _LENOVO_IVE,
+    "THINKSYSTEM SN850": _LENOVO_IVE,
+    # ── Lenovo ThinkSystem V2 (Ice Lake, AFE) and V3 (Sapphire Rapids, ESE) ──
+    "THINKSYSTEM SR630 V2": _LENOVO_AFE,
+    "THINKSYSTEM SR650 V2": _LENOVO_AFE,
+    "THINKSYSTEM SR850 V2": _LENOVO_AFE,
+    "THINKSYSTEM SR860 V2": _LENOVO_AFE,
+    "THINKSYSTEM SR630 V3": _LENOVO_ESE,
+    "THINKSYSTEM SR650 V3": _LENOVO_ESE,
+    "THINKSYSTEM SR650 V4": _fw("IHE110U", "IHE110U", "IHE110U", source="Lenovo V4 catalog baseline"),
+    "THINKSYSTEM SR655":    _fw("CFE142E", "CFE142E", "CFE142E", source="Lenovo SR655 catalog baseline"),
+    # ── Lenovo ThinkAgile HX/VX (Gen1 IVE UEFI) ──────────────────────────────
+    "THINKAGILE HX1320": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
+    "THINKAGILE HX3320": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
+    "THINKAGILE HX5520": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
+    "THINKAGILE HX7520": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
+    "THINKAGILE VX3520": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
+    "THINKAGILE VX7520": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
     # ── Supermicro X11 Purley (Skylake-SP / Cascade Lake-SP 2P) ─────────────
-    # X11-Purley stable spectre BIOS shipped in 2018; conservative min_spectre = "2.0"
-    # per Supermicro security advisory Intel-SA-00088
-    "SYS-1029U": {"latest": "4.4", "min_recommended": "4.3", "min_spectre": "2.0"},
-    "SYS-2029U": {"latest": "4.4", "min_recommended": "4.3", "min_spectre": "2.0"},
-    "SYS-6029P": {"latest": "4.4", "min_recommended": "4.3", "min_spectre": "2.0"},
-    "SYS-2049U": {"latest": "4.4", "min_recommended": "4.3", "min_spectre": "2.0"},
-    "SYS-1019P": {"latest": "4.4", "min_recommended": "4.3", "min_spectre": "2.0"},
+    # X11/X12 keys are board-prefix families. Download pages are per SKU, so these
+    # stay at the previous library values and are marked unverified.
+    # min_spectre per Supermicro security advisory Intel-SA-00088
+    "SYS-1029U": _fw("4.4", "4.3", "2.0", **_UNVERIFIED),
+    "SYS-2029U": _fw("4.4", "4.3", "2.0", **_UNVERIFIED),
+    "SYS-6029P": _fw("4.4", "4.3", "2.0", **_UNVERIFIED),
+    "SYS-2049U": _fw("4.4", "4.3", "2.0", **_UNVERIFIED),
+    "SYS-1019P": _fw("4.4", "4.3", "2.0", **_UNVERIFIED),
     # ── Supermicro X12 (Ice Lake) / H12 (AMD EPYC Rome/Milan) ────────────────
-    # All shipped post-spectre era; min_spectre = first released version
-    "SYS-120U":  {"latest": "2.9", "min_recommended": "2.8", "min_spectre": "1.0"},
-    "SYS-220U":  {"latest": "2.9", "min_recommended": "2.8", "min_spectre": "1.0"},
-    "AS-2124BT": {"latest": "2.9", "min_recommended": "2.8", "min_spectre": "1.0"},
-    "AS-4124GS": {"latest": "2.9", "min_recommended": "2.8", "min_spectre": "1.0"},
-    # ── Supermicro X13 / H13 (Sapphire Rapids / EPYC Genoa) ─────────────────
-    "SYS-121H":  {"latest": "1.4", "min_recommended": "1.3", "min_spectre": "1.0"},
-    "SYS-221H":  {"latest": "1.4", "min_recommended": "1.3", "min_spectre": "1.0"},
-    "AS-2125HS": {"latest": "1.4", "min_recommended": "1.3", "min_spectre": "1.0"},
-    # ── Quanta Platforms ─────────────────────────────────────────────────────
-    "QUANTAGRID D42A-2U": {"latest": "3A08.01", "min_recommended": "3A06.01", "min_spectre": "3A01.00"},
-    # ── GIGABYTE Platforms ───────────────────────────────────────────────────
-    "H262-Z63-00": {"latest": "C27", "min_recommended": "C20", "min_spectre": "C10"},
-    # ── Cisco C-Series M5 (Skylake-SP / Cascade Lake-SP) ────────────────────
-    # Cisco Redfish BiosVersion: "C220M5.4.1.2b.0.0323202048" — parse_version_tuple gets 4.1.2
-    # M5 servers are on the 4.3(2.x) release train; stable spectre microcode from 3.1(2g) / 3.1.2.
-    "UCSC-C220-M5": {"latest": "4.3.2", "min_recommended": "4.2.3", "min_spectre": "3.1.2"},
-    "UCSC-C240-M5": {"latest": "4.3.2", "min_recommended": "4.2.3", "min_spectre": "3.1.2"},
-    "UCSC-C480-M5": {"latest": "4.3.2", "min_recommended": "4.2.3", "min_spectre": "3.1.2"},
-    "HX220C-M5SX":  {"latest": "4.3.2", "min_recommended": "4.2.3", "min_spectre": "3.1.2"},
-    "HX240C-M5SX":  {"latest": "4.3.2", "min_recommended": "4.2.3", "min_spectre": "3.1.2"},
-    "HXAF220C-M5SX":{"latest": "4.3.2", "min_recommended": "4.2.3", "min_spectre": "3.1.2"},
-    # ── Cisco C-Series M6 (Ice Lake) — 6.0(2.x) HUU release train ────────────
-    "UCSC-C220-M6": {"latest": "6.0.2", "min_recommended": "4.3.2", "min_spectre": "4.2.1"},
-    "UCSC-C240-M6": {"latest": "6.0.2", "min_recommended": "4.3.2", "min_spectre": "4.2.1"},
-    "HX220C-M6SX":  {"latest": "6.0.2", "min_recommended": "4.3.2", "min_spectre": "4.2.1"},
-    "HXAF220C-M6SX":{"latest": "6.0.2", "min_recommended": "4.3.2", "min_spectre": "4.2.1"},
-    # ── Cisco C-Series M7 (Sapphire Rapids) — 6.0(2.x) HUU release train ────
-    "UCSC-C220-M7": {"latest": "6.0.2", "min_recommended": "4.3.2", "min_spectre": "4.2.1"},
-    "UCSC-C240-M7": {"latest": "6.0.2", "min_recommended": "4.3.2", "min_spectre": "4.2.1"},
+    "SYS-120U":  _fw("2.9", "2.8", "1.0", **_UNVERIFIED),
+    "SYS-220U":  _fw("2.9", "2.8", "1.0", **_UNVERIFIED),
+    "AS-2124BT": _fw("2.9", "2.8", "1.0", **_UNVERIFIED),
+    "AS-4124GS": _fw("2.9", "2.8", "1.0", **_UNVERIFIED),
+    # ── Supermicro X13 (Sapphire Rapids). H13 AS-2125HS was not reconfirmed. ─
+    "SYS-121H": _fw(
+        "3.0", "1.3", "1.0",
+        source="Supermicro X13DEM bundle BIOS 3.0 (SYS-221H-TN24R)",
+        source_url="https://www.supermicro.com/en/support/resources/downloadcenter/firmware/SYS-221H-TN24R/BIOS",
+    ),
+    "SYS-221H": _fw(
+        "3.0", "1.3", "1.0",
+        source="Supermicro X13DEM bundle BIOS 3.0 (SYS-221H-TN24R)",
+        source_url="https://www.supermicro.com/en/support/resources/downloadcenter/firmware/SYS-221H-TN24R/BIOS",
+    ),
+    "AS-2125HS": _fw("1.4", "1.3", "1.0", **_UNVERIFIED),
+    # ── Quanta / GIGABYTE — no newer third-party build confirmed ─────────────
+    "QUANTAGRID D42A-2U": _fw("3A08.01", "3A06.01", "3A01.00", **_UNVERIFIED),
+    "H262-Z63-00": _fw("C27", "C20", "C10", **_UNVERIFIED),
+    # ── Cisco C-Series M5 — full HUU build, still on the 4.3(2) train ────────
+    # Redfish BIOS "C220M5.4.3.2h..." shares the 4.3.2 train and is not failed
+    # for lacking the HUU build number.
+    "UCSC-C220-M5": _fw("4.3(2.260020)", "4.2.3", "3.1.2", **_CISCO_M5),
+    "UCSC-C240-M5": _fw("4.3(2.260020)", "4.2.3", "3.1.2", **_CISCO_M5),
+    "UCSC-C480-M5": _fw("4.3(2.260020)", "4.2.3", "3.1.2", **_CISCO_M5),
+    "HX220C-M5SX":  _fw("4.3(2.260020)", "4.2.3", "3.1.2", **_CISCO_M5),
+    "HX240C-M5SX":  _fw("4.3(2.260020)", "4.2.3", "3.1.2", **_CISCO_M5),
+    "HXAF220C-M5SX": _fw("4.3(2.260020)", "4.2.3", "3.1.2", **_CISCO_M5),
+    # ── Cisco C-Series M6/M7 — full HUU 6.0(2.260143), not a truncated 6.0.2 ─
+    "UCSC-C220-M6": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
+    "UCSC-C240-M6": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
+    "HX220C-M6SX":  _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
+    "HXAF220C-M6SX": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
+    "UCSC-C220-M7": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
+    "UCSC-C240-M7": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
 }
 
 # NVMe drive firmware baselines — keyed by model-number prefix (uppercase).
@@ -604,42 +738,93 @@ NVME_FW_BASELINES = {
 # Keyed on a distinctive substring of the manager Model or FirmwareVersion string
 # (uppercased).  "min_spectre" = minimum version where BMC firmware first included
 # mitigations for speculative-execution related BMC-side CVEs.
+# Generation rows are selected ahead of the generic IDRAC9 key. A bare "iDRAC9"
+# model with no generation falls through to the 14G floor so a current 14G
+# controller is not asked for a 15G/16G build it cannot install. Pass the server
+# model to evaluate_bmc_fw_version() when the generation is known.
+_IDRAC_14G = _fw("7.00.00.185", "7.00.00.173", "3.30.30", **_DELL_CODE)
+_IDRAC_14G_C4140 = _fw("7.00.00.184", "7.00.00.173", "3.30.30", **_DELL_CODE)
+_IDRAC_15G = _fw("7.30.30.54", "7.20.10.50", "3.30.30", **_DELL_CODE)
+_IDRAC_16G = _fw("7.30.30.54", "7.30.30.51", "3.30.30", **_DELL_CODE)
+_IDRAC_17G = _fw("1.30.40.51", "1.10.17.00", "1.00.00.00", **_DELL_CODE)
+_IDRAC_13G = _fw("2.82.82.82", "2.82.00.00", "2.50.50.50", source="library floor; 13G is outside KB 000227230")
+_ILO5 = _fw(
+    "3.20", "3.00", "1.40",
+    released="2026-06-02",
+    source="HPE Synergy firmware comparison, iLO 5 3.20 (2 Jun 2026)",
+    source_url="https://support.hpe.com/docs/display/public/synergy-sw-release/C.11.4.html",
+)
+_ILO6 = _fw(
+    "1.77", "1.60", "1.00",
+    released="2026-06-06",
+    source="HPE Synergy firmware comparison, iLO 6 1.77 (6 Jun 2026)",
+    source_url="https://support.hpe.com/docs/display/public/synergy-sw-release/C.11.4.html",
+)
+# XCC build families are not one number. A version with no CDI/AFBT/ESX prefix
+# is left unverified instead of being scored against another generation.
+_XCC = {
+    "latest": "CDI3B8D-10.40",
+    "min_recommended": "CDI3B8D-8.80",
+    "min_spectre": "2.00",
+    "source": "Lenovo VMware recipes; family comes from the firmware build id",
+    "source_url": "https://vmware.lenovo.com/content/recipe/2026_05/SR650-Cascade_Lake-ESXi8.0.html",
+    "prefix_required": True,
+    "by_prefix": {
+        "CDI": _fw("CDI3B8D-10.40", "CDI3B8D-8.80", "2.00", **_LENOVO_GEN1),
+        "AFBT": _fw("AFBT58B-5.70", "AFBT58B-4.00", "2.00", **_LENOVO_V2),
+        "ESX": _fw("ESX362K-8.10", "ESX362K-5.00", "2.00", **_LENOVO_V3),
+    },
+}
+
 BMC_FW_BASELINES = {
     # Dell iDRAC 10 (17G)
-    "IDRAC10":        {"latest": "1.30.07.10",  "min_recommended": "1.10.17.00", "min_spectre": "1.00.00.00"},
-    "17G MONOLITHIC": {"latest": "1.30.07.10",  "min_recommended": "1.10.17.00", "min_spectre": "1.00.00.00"},
-    "17G":            {"latest": "1.30.07.10",  "min_recommended": "1.10.17.00", "min_spectre": "1.00.00.00"},
-    # Dell iDRAC 9 (14G, 15G, 16G) — DSA-2025-046 (CVE-2025-26482) fixed in 7.00.00.181
-    "IDRAC9":         {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "IDRAC 9":        {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "14G MONOLITHIC": {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "14G":            {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "15G MONOLITHIC": {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "15G":            {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "16G MONOLITHIC": {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    "16G":            {"latest": "7.20.70.50",  "min_recommended": "7.00.00.181", "min_spectre": "3.30.30"},
-    # Dell iDRAC 8 (13G legacy)
-    "IDRAC8":         {"latest": "2.82.82.82",  "min_recommended": "2.82.00.00",  "min_spectre": "2.50.50.50"},
-    "IDRAC 8":        {"latest": "2.82.82.82",  "min_recommended": "2.82.00.00",  "min_spectre": "2.50.50.50"},
-    "13G MONOLITHIC": {"latest": "2.82.82.82",  "min_recommended": "2.82.00.00",  "min_spectre": "2.50.50.50"},
-    "13G":            {"latest": "2.82.82.82",  "min_recommended": "2.82.00.00",  "min_spectre": "2.50.50.50"},
-    # HPE iLO 5
-    "ILO 5":   {"latest": "3.10",        "min_recommended": "3.00",         "min_spectre": "1.40"},
-    # HPE iLO 6
-    "ILO 6":   {"latest": "1.70",        "min_recommended": "1.60",         "min_spectre": "1.00"},
-    # Lenovo XCC / XCC2 — firmware version returned as numeric string e.g. "8.90" (XCC) or "1.42" (XCC2)
-    # Ref: Lenovo XClarity Controller support portal https://datacentersupport.lenovo.com
-    "XCC":     {"latest": "8.90",        "min_recommended": "8.80",         "min_spectre": "2.00"},
-    # Cisco IMC (C-Series BMC) — version matches BundleVersion portion (e.g. 4.3(2.x) for M5, 6.0(2.x) for M6/M7)
-    # Ref: Cisco UCS C-Series Integrated Management Controller Firmware HUU guides
-    "CIMC":    {"latest": "4.3.2",       "min_recommended": "4.2.3",        "min_spectre": "3.1.0"},
-    # Supermicro BMC / IPMI firmware
-    "SUPERMICRO BMC": {"latest": "3.76",  "min_recommended": "3.70",         "min_spectre": "3.20"},
-    # Quanta BMC (AST2500 baseboard management controller)
-    "AST2500":        {"latest": "3.14.19", "min_recommended": "3.14.19",   "min_spectre": "1.00"},
-    # GIGABYTE server BMC (AMI MegaRAC / 410810600)
-    "410810600":      {"latest": "12.84.13", "min_recommended": "12.84.13", "min_spectre": "1.00"},
-    "12.84":          {"latest": "12.84.13", "min_recommended": "12.84.13", "min_spectre": "1.00"},
+    "IDRAC10":        _IDRAC_17G,
+    "IDRAC 10":       _IDRAC_17G,
+    "17G MONOLITHIC": _IDRAC_17G,
+    "17G":            _IDRAC_17G,
+    # Dell iDRAC 9, split by generation. 14G cannot install 7.30.x.
+    "14G C4140":      _IDRAC_14G_C4140,
+    "14G MONOLITHIC": _IDRAC_14G,
+    "14G":            _IDRAC_14G,
+    "15G MONOLITHIC": _IDRAC_15G,
+    "15G":            _IDRAC_15G,
+    "16G MONOLITHIC": _IDRAC_16G,
+    "16G":            _IDRAC_16G,
+    "IDRAC9":         _IDRAC_14G,
+    "IDRAC 9":        _IDRAC_14G,
+    # Dell iDRAC 8 (13G legacy) — not in the 14G–17G code table
+    "IDRAC8":         _IDRAC_13G,
+    "IDRAC 8":        _IDRAC_13G,
+    "13G MONOLITHIC": _IDRAC_13G,
+    "13G":            _IDRAC_13G,
+    # HPE iLO 4 (Gen9)
+    "ILO 4":          _fw("2.82", "2.78", "2.60", source="HPE iLO 4 baseline"),
+    "ILO 5":          _ILO5,
+    "ILO 6":          _ILO6,
+    # HPE iLO 7 (Gen12)
+    "ILO 7":          _fw("1.70", "1.60", "1.00", source="HPE iLO 7 baseline"),
+    "XCC3":           _XCC,
+    "XCC2":           _XCC,
+    "XCC":            _XCC,
+    # Bare CIMC has no M5/M6 hint. M5's 4.3(2) build is the floor that does not
+    # demand a 6.0 HUU from an M5. Model-specific BIOS rows carry the M6/M7 build.
+    "CIMC": _fw("4.3(2.260020)", "4.2.3", "3.1.0", **_CISCO_M5),
+    "SUPERMICRO BMC": {
+        "latest": "3.76",
+        "min_recommended": "3.70",
+        "min_spectre": "3.20",
+        "source": "unverified legacy IPMI train; X-revision BMCs use the X prefix row",
+        "by_prefix": {
+            "X": _fw(
+                "X1.09.15", "X1.00.00", "X1.00.00",
+                source="Supermicro SYS-221H-TN24R bundle BMC X1.09.15",
+                source_url="https://www.supermicro.com/en/support/resources/downloadcenter/firmware/SYS-221H-TN24R/BMC",
+            ),
+        },
+    },
+    "AST2500":   _fw("3.14.19", "3.14.19", "1.00", **_UNVERIFIED),
+    "410810600": _fw("12.84.13", "12.84.13", "1.00", **_UNVERIFIED),
+    "12.84":     _fw("12.84.13", "12.84.13", "1.00", **_UNVERIFIED),
 }
 
 # Per-vendor side-channel security advisory URLs.

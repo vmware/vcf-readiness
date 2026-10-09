@@ -489,11 +489,11 @@ def evaluate_hpe_bios_baseline(
             })
 
     # ── Rule 6: Hardware Virtualization (Intel VT-x / AMD-V) ─────────────────
-    vtx_val = attrs.get("ProcVirtualization")
+    vtx_val = attrs.get("ProcVirtualization") or attrs.get("CbsCmnCpuSvmMode")
     if vtx_val is not None and str(vtx_val).strip():
         val = str(vtx_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "ProcVirtualization",
                 "setting_name": "Hardware-Assisted CPU Virtualization (VT-x / AMD-V)",
@@ -502,7 +502,7 @@ def evaluate_hpe_bios_baseline(
                 "severity": None,
                 "status": "compliant",
                 "rationale": "Hardware-assisted CPU virtualization is Enabled. Required for ESXi 64-bit guest virtual machine execution.",
-                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware-Assisted CPU Virtualization (VT-x and AMD-V™) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
@@ -514,16 +514,23 @@ def evaluate_hpe_bios_baseline(
                 "severity": "blocker",
                 "status": "drifted",
                 "rationale": f"Hardware virtualization is Disabled ({val}). ESXi cannot run virtual machines. Hard blocker for VCF deployment.",
-                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware-Assisted CPU Virtualization (VT-x and AMD-V™) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
 
     # ── Rule 7: Intel VT-d / AMD IOMMU ──────────────────────────────────────
-    vtd_val = attrs.get("IntelProcVtd") or attrs.get("VtdSupport")
+    vtd_val = (
+        attrs.get("IntelProcVtd")
+        or attrs.get("VtdSupport")
+        or attrs.get("AmdIoMmu")
+        or attrs.get("CbsCmnGnbNbIOMMU")
+        or attrs.get("CbsCmnGnbNbIommu")
+        or attrs.get("IOMMU")
+    )
     if vtd_val is not None and str(vtd_val).strip():
         val = str(vtd_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "IntelProcVtd",
                 "setting_name": "Intel VT-d / AMD IOMMU (Directed I/O)",
@@ -531,8 +538,8 @@ def evaluate_hpe_bios_baseline(
                 "expected_value": "Enabled",
                 "severity": None,
                 "status": "compliant",
-                "rationale": "Directed I/O virtualization (VT-d / AMD IOMMU) is Enabled. Required for PCI pass-through, vSAN Direct, and DPU/SmartNIC operations.",
-                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "rationale": "Directed I/O virtualization (VT-d / AMD IOMMU) is Enabled (or Auto). Required for PCI pass-through, vSAN Direct, and DPU/SmartNIC operations.",
+                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware-Assisted I/O MMU Virtualization (VT-d and AMD-Vi) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
@@ -544,16 +551,16 @@ def evaluate_hpe_bios_baseline(
                 "severity": "blocker",
                 "status": "drifted",
                 "rationale": f"VT-d / IOMMU is Disabled ({val}). ESXi cannot isolate memory domains or pass NVMe devices directly to vSAN ESA.",
-                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "citation": "VMware vSphere 9.1 Performance Best Practices, Hardware-Assisted I/O MMU Virtualization (VT-d and AMD-Vi) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
 
     # ── Rule 8: Logical Processor (Hyper-Threading / SMT) ───────────────────
-    ht_val = attrs.get("LogicalProc") or attrs.get("ProcHyperthreading")
+    ht_val = attrs.get("LogicalProc") or attrs.get("ProcHyperthreading") or attrs.get("CbsCmnCpuSmtCtrl")
     if ht_val is not None and str(ht_val).strip():
         val = str(ht_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "ProcHyperthreading",
                 "setting_name": "Logical Processor (Hyper-Threading / SMT)",
@@ -579,11 +586,11 @@ def evaluate_hpe_bios_baseline(
             })
 
     # ── Rule 9: Processor Turbo Boost / CPB ─────────────────────────────────
-    turbo_val = attrs.get("ProcTurboMode") or attrs.get("ProcTurbo")
+    turbo_val = attrs.get("ProcTurboMode") or attrs.get("ProcTurbo") or attrs.get("CbsCmnCpuCpb")
     if turbo_val is not None and str(turbo_val).strip():
         val = str(turbo_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "ProcTurbo",
                 "setting_name": "Processor Turbo Boost / Core Performance Boost",

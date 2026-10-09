@@ -180,6 +180,26 @@ JS_VAULT = """
       handleReviewCerts();
     } else if (action === 'accept-all-certs') {
       handleAcceptAllCerts();
+    } else if (action === 'quick-ignore-tls') {
+      e.preventDefault();
+      var chk = document.getElementById('ignoreTlsChk');
+      if (chk) {
+        chk.checked = true;
+        if (typeof syncTlsUi === 'function') syncTlsUi();
+      }
+      var statusEl = document.getElementById('testCredsStatus');
+      if (statusEl) statusEl.textContent = 'Ignore TLS enabled. Re-run Test Connection.';
+    } else if (action === 'open-tofu-modal') {
+      e.preventDefault();
+      handleReviewCerts();
+    } else if (action === 'inspect-and-pin') {
+      e.preventDefault();
+      var ipToInspect = actionEl.getAttribute('data-ip');
+      if (ipToInspect) inspectAndReviewCert(ipToInspect);
+    } else if (action === 'probe-for-tofu') {
+      e.preventDefault();
+      var discBtn = document.getElementById('discoverBtn');
+      if (discBtn) discBtn.click();
     }
   });
 
@@ -240,6 +260,7 @@ JS_VAULT = """
     }
     buildPerHostCreds(hosts.map(function(h){return h.ip;}));
     updateHostGates();
+    syncCredButtons();
   }
 
   document.getElementById('discoverBtn').addEventListener('click', function() {
@@ -311,11 +332,81 @@ JS_VAULT = """
       row.className = 'form-grid';
       row.style.marginBottom = '.4rem';
       row.innerHTML = '<div class="clr-form-group"><label class="clr-control-label">'+safeIp+' — User</label>'
-        + '<input class="clr-input" data-ip="'+safeIp+'" data-field="user" type="text" value="root"></div>'
+        + '<input class="clr-input" data-ip="'+safeIp+'" data-field="user" type="text" placeholder="user  or  user@contoso.com"></div>'
         + '<div class="clr-form-group"><label class="clr-control-label">'+safeIp+' — Password</label>'
         + '<input class="clr-input" data-ip="'+safeIp+'" data-field="pass" type="password"></div>';
       container.appendChild(row);
     });
+  }
+
+  // ── Credential Testing & TOFU Gating ──────────────────────────────────────
+  function syncCredButtons() {
+    var rangeEl = document.getElementById('rangeInput');
+    var raw = (rangeEl ? rangeEl.value : '').trim();
+    var isMulti = (raw.indexOf('-') !== -1 || raw.indexOf(',') !== -1 || raw.indexOf('/') !== -1 || raw.indexOf(' ') !== -1)
+      || (typeof _discoveredHosts !== 'undefined' && _discoveredHosts && _discoveredHosts.length > 1);
+    var btn = document.getElementById('validateFleetCredsBtn');
+    if (btn) {
+      if (isMulti) show(btn);
+      else hide(btn);
+    }
+  }
+
+  function checkTlsGatingForCreds(targetToSend, candidateIp, onProceed) {
+    var ignoreTls = document.getElementById('ignoreTlsChk') ? document.getElementById('ignoreTlsChk').checked : true;
+    var verifySsl = !ignoreTls;
+    var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
+    var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
+
+    if (!verifySsl || caBundle) {
+      onProceed();
+      return;
+    }
+
+    var pinnedCount = Object.keys(_pinnedThumbprints || {}).length;
+    var hasPinForCandidate = candidateIp && _pinnedThumbprints && _pinnedThumbprints[candidateIp];
+    if (pinnedCount > 0 && (hasPinForCandidate || !candidateIp)) {
+      onProceed();
+      return;
+    }
+
+    var statusEl = document.getElementById('testCredsStatus');
+    var hasDiscoveredCerts = _discoveredHosts && _discoveredHosts.some(function(h) {
+      return h.cert_info && (h.cert_info.sha256 || h.cert_info.sha256_raw);
+    });
+
+    if (hasDiscoveredCerts) {
+      if (statusEl) {
+        statusEl.innerHTML = '<span class="text-warning">⚠️ Certs unpinned:</span> ' +
+          '<a href="#" data-action="open-tofu-modal" style="font-weight:600; text-decoration:underline;">Review &amp; Pin Certs</a> or ' +
+          '<a href="#" data-action="quick-ignore-tls" style="font-weight:600; text-decoration:underline;">Ignore TLS</a>';
+      }
+      handleReviewCerts();
+      return;
+    }
+
+    var targetIp = candidateIp || (targetToSend ? targetToSend.split(/[\\s,]+/)[0] : 'target');
+    if (statusEl) {
+      statusEl.innerHTML = '<span class="text-warning">⚠️ Strict TLS without pinned certs:</span> ' +
+        '<a href="#" data-action="inspect-and-pin" data-ip="' + esc(targetIp) + '" style="font-weight:600; text-decoration:underline;">Inspect &amp; Pin Cert</a> or ' +
+        '<a href="#" data-action="quick-ignore-tls" style="font-weight:600; text-decoration:underline;">Ignore TLS</a>';
+    }
+
+    var proceed = confirm(
+      'BMC TLS verification is active, but certificate thumbprints have not been pinned for ' + targetIp + '.\\n\\n' +
+      'Connecting to self-signed enterprise BMCs without pinned thumbprints or a custom CA bundle will fail.\\n\\n' +
+      'Click OK to inspect and pin the certificate (TOFU), or Cancel to enable Ignore TLS.'
+    );
+    if (proceed) {
+      inspectAndReviewCert(targetIp);
+    } else {
+      var chk = document.getElementById('ignoreTlsChk');
+      if (chk) {
+        chk.checked = true;
+        if (typeof syncTlsUi === 'function') syncTlsUi();
+        if (statusEl) statusEl.textContent = 'Ignore TLS enabled. Re-run Test Connection.';
+      }
+    }
   }
 
   // ── Test credentials ──────────────────────────────────────────────────────
@@ -324,32 +415,126 @@ JS_VAULT = """
     if (!rawInput) { alert('Enter a target IP first.'); return; }
     var ip = rawInput.split(/[\\s,]+/)[0];
     var targetToSend = (rawInput.indexOf('-') !== -1 || rawInput.indexOf(',') !== -1) ? rawInput : ip;
-    var u = document.getElementById('usernameInput').value;
-    var p = document.getElementById('passwordInput').value;
-    var ignoreTls = document.getElementById('ignoreTlsChk') ? document.getElementById('ignoreTlsChk').checked : true;
-    var verifySsl = !ignoreTls;
-    var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
-    var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
-    var useVaultChkEl = document.getElementById('useVaultChk');
-    var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);
-    document.getElementById('testCredsStatus').textContent = 'Testing…';
-    post('/api/test-creds', {
-      ip: targetToSend,
-      username: u,
-      password: p,
-      verify_ssl: verifySsl,
-      ca_bundle: caBundle,
-      pinned_thumbprints: _pinnedThumbprints,
-      use_vault: useVaultOn,
-    }).then(function(r) {
-      var targetNote = (r.tested_ip && r.tested_ip !== targetToSend) ? ' (' + r.tested_ip + ')' : '';
-      if (r.ok) {
-        document.getElementById('testCredsStatus').textContent = '✔ Auth OK (' + r.code + ')' + targetNote;
-      } else {
-        document.getElementById('testCredsStatus').textContent = '✗ Failed: ' + (r.detail || 'Connection failed') + targetNote + ' (' + (r.code || 0) + ')';
+
+    var candidateIp = '';
+    if (_discoveredHosts && _discoveredHosts.length) {
+      for (var i = 0; i < _discoveredHosts.length; i++) {
+        if (_discoveredHosts[i].ip) { candidateIp = _discoveredHosts[i].ip; break; }
       }
+    }
+    if (!candidateIp) candidateIp = ip;
+
+    checkTlsGatingForCreds(targetToSend, candidateIp, function() {
+      var u = (document.getElementById('usernameInput').value || '').trim() || 'root';
+      var p = document.getElementById('passwordInput').value;
+      var ignoreTls = document.getElementById('ignoreTlsChk') ? document.getElementById('ignoreTlsChk').checked : true;
+      var verifySsl = !ignoreTls;
+      var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
+      var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
+      var useVaultChkEl = document.getElementById('useVaultChk');
+      var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);
+      document.getElementById('testCredsStatus').textContent = 'Testing…';
+      post('/api/test-creds', {
+        ip: targetToSend,
+        candidate_ip: candidateIp,
+        username: u,
+        password: p,
+        verify_ssl: verifySsl,
+        ca_bundle: caBundle,
+        pinned_thumbprints: _pinnedThumbprints,
+        use_vault: useVaultOn,
+      }).then(function(r) {
+        var targetNote = (r.tested_ip && r.tested_ip !== targetToSend) ? ' (' + r.tested_ip + ')' : '';
+        if (r.ok) {
+          document.getElementById('testCredsStatus').textContent = '✔ Auth OK (' + r.code + ')' + targetNote;
+        } else if (r.requires_tofu) {
+          document.getElementById('testCredsStatus').innerHTML =
+            '<span class="text-warning">⚠️ ' + esc(r.detail) + '</span> ' +
+            '<a href="#" data-action="inspect-and-pin" data-ip="' + esc(candidateIp) + '" style="font-weight:600; text-decoration:underline;">Pin Cert</a> or ' +
+            '<a href="#" data-action="quick-ignore-tls" style="font-weight:600; text-decoration:underline;">Ignore TLS</a>';
+        } else {
+          document.getElementById('testCredsStatus').textContent = '✗ Failed: ' + (r.detail || 'Connection failed') + targetNote + ' (' + (r.code || 0) + ')';
+        }
+      }).catch(function(err) {
+        document.getElementById('testCredsStatus').textContent = '✗ Error: ' + err;
+      });
     });
   });
+
+  var validateFleetBtn = document.getElementById('validateFleetCredsBtn');
+  if (validateFleetBtn) {
+    validateFleetBtn.addEventListener('click', function() {
+      var rawInput = document.getElementById('rangeInput').value.trim();
+      if (!rawInput) { alert('Enter a target range first.'); return; }
+
+      checkTlsGatingForCreds(rawInput, null, function() {
+        var u = (document.getElementById('usernameInput').value || '').trim() || 'root';
+        var p = document.getElementById('passwordInput').value;
+        var ignoreTls = document.getElementById('ignoreTlsChk') ? document.getElementById('ignoreTlsChk').checked : true;
+        var verifySsl = !ignoreTls;
+        var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
+        var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
+        var useVaultChkEl = document.getElementById('useVaultChk');
+        var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);
+
+        var sameCreds = document.getElementById('sameCredsChk') ? document.getElementById('sameCredsChk').checked : true;
+        var perHostList = [];
+        if (!sameCreds) {
+          document.querySelectorAll('#perHostRows [data-field=user]').forEach(function(uInp) {
+            var hostIp = uInp.getAttribute('data-ip');
+            var pInp = document.querySelector('#perHostRows [data-field=pass][data-ip="' + hostIp + '"]');
+            if (hostIp) {
+              perHostList.push({
+                ip: hostIp,
+                user: (uInp.value || '').trim() || u,
+                pass: pInp ? pInp.value : p
+              });
+            }
+          });
+        }
+
+        var statusEl = document.getElementById('testCredsStatus');
+        if (statusEl) statusEl.textContent = 'Validating fleet credentials…';
+        validateFleetBtn.disabled = true;
+
+        post('/api/test-creds', {
+          ip: rawInput,
+          batch: true,
+          username: u,
+          password: p,
+          creds: perHostList,
+          verify_ssl: verifySsl,
+          ca_bundle: caBundle,
+          pinned_thumbprints: _pinnedThumbprints,
+          use_vault: useVaultOn,
+        }).then(function(r) {
+          validateFleetBtn.disabled = false;
+          if (r.ok) {
+            statusEl.innerHTML = '<span class="badge badge-success">✔ All ' + r.auth_ok + ' hosts Auth OK</span> (' + r.total + ' total)';
+          } else if (r.requires_tofu) {
+            statusEl.innerHTML =
+              '<span class="text-warning">⚠️ ' + esc(r.detail) + '</span> ' +
+              '<a href="#" data-action="quick-ignore-tls" style="font-weight:600; text-decoration:underline;">Ignore TLS</a>';
+          } else if (r.batch) {
+            var badgeClass = (r.auth_ok > 0) ? 'badge-warning' : 'badge-danger';
+            var detailText = r.auth_ok + '/' + r.total + ' Auth OK';
+            if (r.auth_failed > 0) detailText += ' · ' + r.auth_failed + ' auth failed';
+            if (r.unreachable > 0) detailText += ' · ' + r.unreachable + ' unreachable';
+            statusEl.innerHTML = '<span class="badge ' + badgeClass + '">' + detailText + '</span>';
+          } else {
+            statusEl.textContent = '✗ Failed: ' + (r.detail || 'Fleet validation failed');
+          }
+        }).catch(function(err) {
+          validateFleetBtn.disabled = false;
+          statusEl.textContent = '✗ Error: ' + err;
+        });
+      });
+    });
+  }
+
+  var rangeInputEl = document.getElementById('rangeInput');
+  if (rangeInputEl) rangeInputEl.addEventListener('input', syncCredButtons);
+  syncCredButtons();
 
   // ── Dell section toggle ───────────────────────────────────────────────────
   document.getElementById('dellToggle').addEventListener('click', function() {

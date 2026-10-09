@@ -7,6 +7,8 @@ from typing import Optional
 from vcf_hci.collector.pci_utils import normalize_pci_id, select_best_pci_pair_entry
 from vcf_hci.constants import QLC_NVME_PREFIXES
 
+from .consumer_drives import detect_consumer_drive
+
 _GENERIC_DRIVE_TOKENS = {
     "INTEL", "DELL", "CISCO", "MICRON", "SAMSUNG", "SEAGATE", "TOSHIBA",
     "SOLIDIGM", "KINGSTON", "LENOVO", "HPE", "HGST", "WESTERN", "DIGITAL",
@@ -394,6 +396,7 @@ def evaluate_drive_hcl_tier(
         drive.get("subsystem_id"),
         drive.get("capacity_gb"),
         drive.get("is_qlc"),
+        drive.get("is_consumer"),
         drive.get("single_lane_alert"),
         drive.get("behind_software_raid"),
         id(json_hcl) if json_hcl else 0,
@@ -407,17 +410,42 @@ def evaluate_drive_hcl_tier(
     is_nvme = "NVME" in proto or "PCIE" in proto or drive.get("is_edsff") or drive.get("is_nvme")
     cat_orig = str(drive.get("category", ""))
     badge_orig = str(drive.get("status_badge", ""))
-    is_boot = cat_orig == "Boot Device" or "Boot Device" in badge_orig
+    is_boot = cat_orig == "Boot Device" or "Boot Device" in badge_orig or drive.get("is_boot", False)
     behind_trimode = drive.get("behind_trimode", False) or "Behind Tri-Mode" in badge_orig
     is_raid_ctrl = cat_orig in ("Unsupported NVMe RAID", "Unsupported NVMe Tri-Mode") or "Behind RAID" in badge_orig
 
+    # Intercept consumer SSDs before general HCL matching / protocol fallbacks
+    consumer_reason = detect_consumer_drive(model, manufacturer=drive.get("manufacturer") or "")
+    if consumer_reason or cat_orig == "Unsupported Consumer SSD" or "Unsupported (Consumer SSD)" in badge_orig:
+        if is_boot or cat_orig == "Boot Device":
+            badge = badge_orig if ("Boot Device" in badge_orig and "Consumer" in badge_orig) else (
+                "<span class='badge' style='background:#0284c7;color:#fff'>🚀 Boot Device</span>"
+                "<br><small style='color:var(--text-muted,#94a3b8);font-size:.75rem'>Consumer SSD (Boot Only — Not vSAN Eligible)</small>"
+            )
+            cat = "Boot Device"
+        else:
+            badge = badge_orig if ("Unsupported (Consumer SSD)" in badge_orig) else (
+                "<span class='badge danger'>🔴 Unsupported (Consumer SSD)</span>"
+                "<br><small style='color:var(--danger,#ef4444);font-size:.75rem'>Consumer drive — lacks Power Loss Protection (PLP) &amp; not vSAN certified</small>"
+            )
+            cat = "Unsupported Consumer SSD"
+        return {
+            "category": cat,
+            "status_badge": badge,
+            "hcl_str": "",
+            "vsan_eligible": False,
+            "hcl_matched_info": None,
+        }
+
     # Don't override special non-vSAN categories (Boot Device, Tri-mode RAID, Optane, Magnetic HDD)
     if is_boot or behind_trimode or is_raid_ctrl or cat_orig in ("Optane Memory Tiering", "Magnetic HDD"):
+        if is_boot and not badge_orig:
+            badge_orig = "<span class='badge' style='background:#0284c7;color:#fff'>🚀 Boot Device</span>"
         return {
-            "category": cat_orig,
+            "category": cat_orig or ("Boot Device" if is_boot else ""),
             "status_badge": badge_orig,
             "hcl_str": "",
-            "vsan_eligible": drive.get("vsan_eligible", False),
+            "vsan_eligible": drive.get("vsan_eligible", False) and not is_boot,
             "hcl_matched_info": None,
         }
 

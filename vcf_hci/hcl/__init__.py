@@ -10,6 +10,10 @@ from .bundle_manager import (
     get_hcl_dir,
     import_hcl_bundle,
 )
+from .consumer_drives import (
+    detect_consumer_drive,
+    is_consumer_drive,
+)
 from .cross_reference import (
     cross_reference_device,
     cross_reference_drive,
@@ -31,12 +35,14 @@ __all__ = [
     "create_hcl_bundle",
     "cross_reference_device",
     "cross_reference_drive",
+    "detect_consumer_drive",
     "detect_qlc_nvme",
     "ensure_auto_hcl_bundle",
     "evaluate_drive_hcl_tier",
     "get_hcl_cache_status",
     "get_hcl_dir",
     "import_hcl_bundle",
+    "is_consumer_drive",
     "load_optional_vsan_csv",
     "load_vsan_hcl_json",
     "lookup_unique_hcl_device",

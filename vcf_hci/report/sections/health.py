@@ -105,6 +105,8 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
 
     def _is_critical(d: Dict[str, Any]) -> bool:
         end = d.get("endurance_remaining_pct")
+        if end in (255, "255", "255%"):
+            end = None
         c_warn = d.get("critical_warnings")
         asp = d.get("available_spare_pct")
         thresh = d.get("available_spare_threshold")
@@ -113,20 +115,22 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
             spare_below = asp <= thresh
         return bool(
             d.get("failure_predicted")
-            or (isinstance(end, (int, float)) and end < 20)
+            or (isinstance(end, (int, float)) and 0 <= end < 20 and end != 255)
             or (isinstance(c_warn, (int, float)) and c_warn > 0)
             or spare_below
         )
 
     def _is_warning(d: Dict[str, Any]) -> bool:
         end = d.get("endurance_remaining_pct")
+        if end in (255, "255", "255%"):
+            end = None
         un_shut = d.get("unsafe_shutdowns")
         m_err = d.get("media_errors")
         temp = d.get("temperature_c")
         poh = d.get("power_on_hours") or (d.get("oem_metrics") or {}).get("power_on_hours")
         _d_is_boot = bool(d.get("is_boot") or d.get("usage_role") == "Boot Drive" or "boot" in str(d.get("category", "")).lower() or any(k in str(d.get("model", "")).upper() for k in ["BOSS", "NS204I"]))
         return bool(
-            (isinstance(end, (int, float)) and 20 <= end < 50)
+            (isinstance(end, (int, float)) and 20 <= end < 50 and end != 255)
             or (isinstance(un_shut, (int, float)) and un_shut > 0)
             or (isinstance(m_err, (int, float)) and m_err > 0)
             or (isinstance(temp, (int, float)) and temp >= 60)
@@ -205,7 +209,9 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         _is_healthy = not _fail_p and _dh not in ("Critical", "Failure", "Warning", "Degraded") and not (isinstance(_c_warn, (int, float)) and _c_warn > 0)
 
         _end = _d.get("endurance_remaining_pct")
-        if isinstance(_end, (int, float)):
+        if _end in (255, "255", "255%"):
+            _end = None
+        if isinstance(_end, (int, float)) and 0 <= _end <= 100 and _end != 255:
             if _end < 20:
                 _end_str = f"<span class='badge danger'>{_end}% (Critical)</span>"
             elif _end < 50:
@@ -494,7 +500,7 @@ def render_bmc_diagnostics_section(data: Optional[Dict[str, Any]]) -> str:
             f"<tr><td style='padding:6px 10px'><strong>OData Collection Expansion</strong></td><td style='padding:6px 10px'>{exp_badge}</td><td style='padding:6px 10px'>{_h(exp_desc)}</td></tr>"
             f"<tr><td style='padding:6px 10px'><strong>HTTP Connection Pipelining</strong></td><td style='padding:6px 10px'>{pipe_badge}</td><td style='padding:6px 10px'>{_h(pipe_desc)}</td></tr>"
             f"<tr><td style='padding:6px 10px'><strong>Inter-Request Pacing Delay</strong></td><td style='padding:6px 10px'>{pacing_badge}</td><td style='padding:6px 10px'>{_h(pacing_desc)}</td></tr>"
-            f"<tr><td style='padding:6px 10px'><strong>HTTP Requests &amp; Latency</strong></td><td style='padding:6px 10px'><code>{req_cnt}</code> requests</td><td style='padding:6px 10px'>Avg BMC GET latency: <code>{avg_lat} ms</code> &middot; Scan duration: <code>{scan_dur} s</code></td></tr>"
+            f"<tr><td style='padding:6px 10px'><strong>HTTP Requests &amp; Latency</strong></td><td style='padding:6px 10px'><code>{req_cnt}</code> requests</td><td style='padding:6px 10px'>Avg BMC GET latency: <code>{avg_lat} ms</code> &middot; Scan duration: <code>{scan_dur} s</code></td></tr>"f"<tr><td style='padding:6px 10px'><strong>Silicon generation</strong></td><td colspan='2' style='padding:6px 10px'><code>{_h(str(diag.get('silicon_generation') or 'n/a'))}</code></td></tr>"f"<tr><td style='padding:6px 10px'><strong>Phase timing</strong></td><td colspan='2' style='padding:6px 10px'>phase1 <code>{_h(str(diag.get('phase1_duration_s') or ''))}</code>s &middot; phase2 <code>{_h(str(diag.get('phase2_duration_s') or ''))}</code>s</td></tr>"f"<tr><td style='padding:6px 10px'><strong>TLS reuse</strong></td><td colspan='2' style='padding:6px 10px'><code>{_h(str(diag.get('tls_reuse_ratio') or ''))}</code> &middot; handshake <code>{_h(str(diag.get('tls_handshake_avg_ms') or ''))}</code> ms</td></tr>"
             f"<tr><td style='padding:6px 10px'><strong>Expansion Fallback Endpoints</strong></td><td style='padding:6px 10px' colspan='2'>{unsupp_str}</td></tr>"
             f"</tbody>"
             f"</table>"

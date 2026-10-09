@@ -4,6 +4,7 @@ VCF Readiness Tool — networking, LLDP & FC HBA report section builders (Layer 
 from typing import Any, Dict, List, Optional, Tuple
 
 from vcf_hci.bcg_links import BCGLinkGenerator
+from vcf_hci.collector.fc_plus import classify_fc_plus
 from vcf_hci.compat_engine import evaluate_npar
 from vcf_hci.hcl import lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
@@ -16,18 +17,43 @@ from vcf_hci.report.components import (
 from vcf_hci.report.helpers import _h, html_escape
 
 
-def render_fc_hba_card(fc_hbas: List[Dict[str, Any]]) -> str:
+def _fc_plus_badge(hba: Dict[str, Any], json_hcl: Optional[Dict[str, Any]] = None) -> str:
+    """E+ or M+ for a physical FC HBA. CNA rows stay on the CNA badge."""
+    if not isinstance(hba, dict) or hba.get("is_cna"):
+        return ""
+    hcl_model = ""
+    if json_hcl:
+        unique = lookup_unique_hcl_device(
+            vid=hba.get("vendor_id", ""),
+            did=hba.get("device_id", ""),
+            svid=hba.get("subsystem_vendor_id", ""),
+            ssid=hba.get("subsystem_id", ""),
+            json_hcl=json_hcl,
+            model_name=hba.get("adapter_name", "") or hba.get("model", ""),
+        )
+        if isinstance(unique, dict):
+            hcl_model = str(unique.get("model") or "")
+    return classify_fc_plus(hba, hcl_model)
+
+
+def render_fc_hba_card(
+    fc_hbas: List[Dict[str, Any]],
+    json_hcl: Optional[Dict[str, Any]] = None,
+) -> str:
     """Render FC HBA summary badge cards (E+ / M+ / Cisco VIC / CNA)."""
-    _emulex_hbas = [h for h in (fc_hbas or []) if h.get("vendor_class") == "emulex" and not h.get("is_cna")]
-    _marvell_hbas = [h for h in (fc_hbas or []) if h.get("vendor_class") == "marvell" and not h.get("is_cna")]
-    _vic_hbas = [h for h in (fc_hbas or []) if h.get("cna_family") == "cisco_vic"]
+    _rows = [h for h in (fc_hbas or []) if isinstance(h, dict)]
+    _emulex_hbas = [h for h in _rows if _fc_plus_badge(h, json_hcl) == "E+"]
+    _marvell_hbas = [h for h in _rows if _fc_plus_badge(h, json_hcl) == "M+"]
+    _vic_hbas = [h for h in _rows if h.get("cna_family") == "cisco_vic"]
     _other_cna_hbas = [
-        h for h in (fc_hbas or [])
+        h for h in _rows
         if h.get("is_cna") and h.get("cna_family") != "cisco_vic"
     ]
     _other_fc_hbas = [
-        h for h in (fc_hbas or [])
-        if not h.get("is_cna") and h.get("vendor_class") not in ("emulex", "marvell")
+        h for h in _rows
+        if not h.get("is_cna")
+        and h.get("cna_family") != "cisco_vic"
+        and _fc_plus_badge(h, json_hcl) == ""
     ]
     _fc_hba_card_html = ""
     if _emulex_hbas:
@@ -171,7 +197,7 @@ def render_network_section(
     """Render Networking tab section, return (tor_switch_map_html, network_section_html, fc_hba_card_html)."""
     bmc_lic = bmc_lic or {}
     data = data or {}
-    fc_hba_card_html = render_fc_hba_card(fc_hbas)
+    fc_hba_card_html = render_fc_hba_card(fc_hbas, json_hcl=json_hcl)
 
     real_nics = [n for n in (nics or []) if not n.get("unsupported_license")]
     nic_blocked_rows = "".join(
@@ -238,14 +264,14 @@ def render_network_section(
             "<span style='color:var(--text-muted)'>—</span>"
         )
 
-        _vc = hba.get("vendor_class", "")
-        if _vc == "emulex":
+        _plus = _fc_plus_badge(hba, json_hcl)
+        if _plus == "E+":
             _vendor_badge = (
                 " <span style='background:#CC092F;color:#fff;font-size:.68rem;"
                 "font-weight:700;padding:.1rem .35rem;border-radius:3px;"
                 "vertical-align:middle'>E+</span>"
             )
-        elif _vc == "marvell":
+        elif _plus == "M+":
             _vendor_badge = (
                 " <span style='background:#0072CE;color:#fff;font-size:.68rem;"
                 "font-weight:700;padding:.1rem .35rem;border-radius:3px;"

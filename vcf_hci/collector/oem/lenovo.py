@@ -140,9 +140,17 @@ class LenovoCollector(GenericCollector):
             res["part_number"] = str(part).strip()
         return res
 
+    def _safe_get(self, endpoint: str, critical: bool = False) -> Optional[dict]:
+        if not hasattr(self, "_get"):
+            return None
+        try:
+            return self._get(endpoint, critical=critical)
+        except TypeError:
+            return self._get(endpoint)
+
     def oem_license_info(self, mgr_data: dict, sys_data: dict) -> dict:
         """Probe Lenovo XCC license status from LicenseService or FoD keys."""
-        lic_svc = self._get("/redfish/v1/LicenseService/Licenses") or {}
+        lic_svc = self._safe_get("/redfish/v1/LicenseService/Licenses", critical=False) or {}
         members = self._get_members(lic_svc) if isinstance(lic_svc, dict) and "Members" in lic_svc else []
         best_tier = "Standard"
         for lic in members:
@@ -154,7 +162,7 @@ class LenovoCollector(GenericCollector):
         # Fallback to Gen-1 XCC Features-on-Demand (FoD)
         if best_tier == "Standard":
             mgr_path = self.mgr_uri or "/redfish/v1/Managers/1"
-            fod_data = self._get(f"{mgr_path}/Oem/Lenovo/FoD/Keys") or {}
+            fod_data = self._safe_get(f"{mgr_path}/Oem/Lenovo/FoD/Keys", critical=False) or {}
             if isinstance(fod_data, dict) and not fod_data.get("error"):
                 fod_members = self._get_members(fod_data) if "Members" in fod_data else fod_data.get("Keys", [])
                 if isinstance(fod_members, list):

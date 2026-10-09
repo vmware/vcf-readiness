@@ -274,7 +274,7 @@ def render_header_and_banners(
         f'<div style="margin-top:.5rem">'
         f'<a href="{bcg_server_url}" target="_blank" class="btn-link" style="font-size:.85rem">🔗 BCG Server Search ↗</a>&nbsp;&nbsp;'
         f'<a href="{bcg_cpu_url}" target="_blank" class="btn-link" style="font-size:.85rem">🧠 BCG CPU Search ↗</a>'
-        f'{("&nbsp;&nbsp;" + f"""<a href="redfish_explorer_{_h(_ip)}.html" target="_blank" class="btn-link" style="font-size:.85rem;color:var(--accent,#38bdf8);font-weight:600;border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect raw Redfish API payloads for this server">🧭 Redfish Explorer ↗</a>""") if _ip else ""}'
+        f'{("&nbsp;&nbsp;" + f"""<a href="redfish_explorer_{_h(_ip)}.html" target="_blank" class="btn-link" style="font-size:.85rem;color:var(--accent,#38bdf8);font-weight:600;border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect raw Redfish API payloads for this server">🧭 Redfish Explorer ↗</a>""") if _ip and (data or {}).get("_explorer_written") else ""}'
         f'</div>'
         f'</div>'
         f'</div>'
@@ -302,7 +302,7 @@ def render_header_and_banners(
         'color:var(--callout-warn-h,#854d0e);display:flex;align-items:center;justify-content:space-between">'
         '<span>📦 <b>Storage Appliance / HCI Node:</b> System identified as a specialized storage appliance. Redfish /Storage endpoint is managed by appliance firmware.</span>'
         '</div>'
-    ) if sys_info.get("is_storage_appliance") else ""
+    ) if sys_info.get("hci_appliance") or sys_info.get("is_storage_appliance") else ""
 
     generic_banner = (
         '<div style="background:var(--callout-info-bg,#eff6ff);border:1px solid var(--callout-info-border,#bfdbfe);'
@@ -347,7 +347,19 @@ def render_header_and_banners(
             f'</div>'
         )
 
-    banners_html = f"{_blade_banner}{_quad_banner}{quick_banner}{wsman_banner}{appliance_banner}{generic_banner}{callout_box}"
+    _finding_rows = ""
+    for _f in (data or {}).get("hardware_findings") or []:
+        if isinstance(_f, dict):
+            _finding_rows += f"<li><code>{_h(str(_f.get('tag') or ''))}</code> {_h(str(_f.get('detail') or ''))}</li>"
+    for _rf in (data or {}).get("readiness_findings") or []:
+        _finding_rows += f"<li>{_h(str(_rf))}</li>"
+    for _rw in (data or {}).get("readiness_warnings") or []:
+        _finding_rows += f"<li>{_h(str(_rw))}</li>"
+    findings_banner = (
+        f'<div style="margin-bottom:1rem"><b>Hardware findings</b><ul>{_finding_rows}</ul></div>'
+        if _finding_rows else ""
+    )
+    banners_html = f"{_blade_banner}{_quad_banner}{quick_banner}{wsman_banner}{appliance_banner}{generic_banner}{findings_banner}{callout_box}"
     return header_html, banners_html
 
 
@@ -401,7 +413,9 @@ def render_alert_rollup(
     )
     _stor_low_endurance = sum(
         1 for ctrl in storage for d in ctrl.get("drives", [])
-        if isinstance(d.get("endurance_remaining_pct"), (int, float)) and d["endurance_remaining_pct"] < 20
+        if isinstance(d.get("endurance_remaining_pct"), (int, float))
+        and 0 <= d["endurance_remaining_pct"] < 20
+        and d["endurance_remaining_pct"] != 255
     )
     if _stor_degraded:
         _rollup_items.append(("danger", f"🔴 {_stor_degraded} degraded drive{'s' if _stor_degraded>1 else ''}", "tab-storage",
@@ -529,7 +543,7 @@ def render_alert_rollup(
         d.get("failure_predicted")
         or d.get("is_failing")
         or ((d.get("pcie_errors") or {}).get("fatal_errors") or 0) > 0
-        or (isinstance(d.get("endurance_remaining_pct"), (int, float)) and d.get("endurance_remaining_pct") < 20)
+        or (isinstance(d.get("endurance_remaining_pct"), (int, float)) and 0 <= d.get("endurance_remaining_pct") < 20 and d.get("endurance_remaining_pct") != 255)
     ))
     def _smart_warn_check(d: dict) -> bool:
         _d_is_boot = bool(d.get("is_boot") or d.get("usage_role") == "Boot Drive" or "boot" in str(d.get("category", "")).lower() or any(k in str(d.get("model", "")).upper() for k in ["BOSS", "NS204I"]))
@@ -540,7 +554,7 @@ def render_alert_rollup(
             or (_p_errs.get("replay_count") or 0) > 50
         )
         return bool(
-            (isinstance(d.get("endurance_remaining_pct"), (int, float)) and 20 <= d.get("endurance_remaining_pct") < 50)
+            (isinstance(d.get("endurance_remaining_pct"), (int, float)) and 20 <= d.get("endurance_remaining_pct") < 50 and d.get("endurance_remaining_pct") != 255)
             or (isinstance(d.get("unsafe_shutdowns"), (int, float)) and d.get("unsafe_shutdowns") > 0)
             or (isinstance(d.get("media_errors"), (int, float)) and d.get("media_errors") > 0)
             or (isinstance(d.get("temperature_c"), (int, float)) and d.get("temperature_c") >= 60)

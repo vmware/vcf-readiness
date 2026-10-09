@@ -801,15 +801,32 @@ def _apply_io_nics_catalog(hcl_index: dict, io_catalog: Optional[dict] = None) -
             if isinstance(existing, dict):
                 existing["io_product_id"] = io_pid
                 existing["io_vcglink"] = io_vcglink
-                if not existing.get("recommended_driver") or existing.get("recommended_driver") in ("N/A", ""):
+                if rec_driver:
+                    existing["recommended_driver"] = rec_driver
+                elif not existing.get("recommended_driver") or existing.get("recommended_driver") in ("N/A", ""):
                     existing["recommended_driver"] = rec_driver or "N/A"
-                if not existing.get("recommended_firmware") or existing.get("recommended_firmware") in ("N/A", ""):
+                if rec_fw:
+                    existing["recommended_firmware"] = rec_fw
+                elif not existing.get("recommended_firmware") or existing.get("recommended_firmware") in ("N/A", ""):
                     existing["recommended_firmware"] = rec_fw or "N/A"
-                if not existing.get("min_firmware") or existing.get("min_firmware") in ("N/A", ""):
+                if min_fw:
+                    existing["min_firmware"] = min_fw
+                elif not existing.get("min_firmware") or existing.get("min_firmware") in ("N/A", ""):
                     existing["min_firmware"] = min_fw or rec_fw or "N/A"
+
+                if not existing.get("model") and model_name:
+                    existing["model"] = model_name
+
+                # Merge supported releases
+                cur_rels = existing.setdefault("releases", [])
+                for r in (releases or []):
+                    if r not in cur_rels:
+                        cur_rels.insert(0, r) if "9.1" in str(r) else cur_rels.append(r)
 
                 if rel_matrix and isinstance(existing.get("release_matrix"), dict):
                     for rel_k, rel_v in rel_matrix.items():
+                        if rel_k not in cur_rels:
+                            cur_rels.insert(0, rel_k) if "9.1" in str(rel_k) else cur_rels.append(rel_k)
                         if rel_k not in existing["release_matrix"]:
                             existing["release_matrix"][rel_k] = rel_v
                         elif isinstance(rel_v, dict) and isinstance(existing["release_matrix"][rel_k], dict):
@@ -817,6 +834,15 @@ def _apply_io_nics_catalog(hcl_index: dict, io_catalog: Optional[dict] = None) -
                             for fw in rel_v.get("firmwares", []):
                                 if fw not in cur_fws:
                                     cur_fws.append(fw)
+
+                if any("9.1" in str(r) for r in cur_rels):
+                    existing["tier"] = "ESXi 9.1 Certified"
+
+                if model_name:
+                    m_up = model_name.strip().upper()
+                    if m_up not in models:
+                        models[m_up] = existing
+                        hcl_index[m_up] = existing
         elif quad and vid and did and svid and ssid:
             item = {
                 "model": model_name,

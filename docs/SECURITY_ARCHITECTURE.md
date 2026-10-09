@@ -423,8 +423,7 @@ To audit heterogeneous server environments (Dell PowerEdge, HPE ProLiant, Lenovo
    - **Resolution:** Evaluated via vendor-specific telemetry adapters:
      - *Dell iDRAC9:* Evaluated via `DellAttributes` (e.g. `WebServer.1.TLSProtocol`, `SysLog.1.securesyslogenable`).
      - *HPE iLO 5/6:* Evaluated via HPE OEM `SecurityService` (e.g. `SecurityState: HighSecurity/FIPS/CNSA`, `DisableWeakCiphers`).
-     - *Lenovo XCC:* Evaluated via Lenovo XCC Security Mode and OneCLI attributes.
-     - *Cisco CIMC:* Evaluated via Cisco standalone management attributes.
+     - *Lenovo XCC / Cisco CIMC:* **Experimental support.** Evaluators use the standard DMTF Redfish eight-control path only. Tier-2 OEM attribute maps and sanitized `*_security.json` fixtures are not yet proven. Callers and `audit_api` surface `oem_support: experimental`. Unknown findings never count as pass. SUDI/KMIP/Security Mode evidence may be collected as annotations but does not invent C-control compliance.
 
 3. **Tier 3: Dell-Specific Controls (11 Controls)**
    - **Controls:** `C18` (Auto-discovery), `C19` (Auto Config/SCP), `C30` (SEKM workflow), `C31`–`C32` (Group Manager), `C48` (Dell System Lockdown), `C55` (LCD control panel), `C56` (BIOS Live Scanning), `C57`–`C58` (Lifecycle Controller import/export), `C59` (Dell Field Service Debug).

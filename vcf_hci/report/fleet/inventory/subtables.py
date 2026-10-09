@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from vcf_hci.constants import BMC_FW_BASELINES
+from vcf_hci.compat.firmware import evaluate_bmc_fw_version
 from vcf_hci.report.fleet.escape import _xe
 from vcf_hci.report.fleet.inventory.chips import (
     _DASH,
@@ -81,7 +81,10 @@ def _build_drives_table(
             for d in ctrl.get("drives") or []:
                 if (d.get("category") or "") == "Empty":
                     continue
+                d_ctrl_name = str(d.get("controller_name") or ctrl_name)
                 ep = d.get("endurance_remaining_pct", "")
+                if ep in (255, "255", "255%"):
+                    ep = "N/A"
                 life = ep if ep != "" else "N/A"
                 cat = str(d.get("category") or "")
                 proto = str(d.get("protocol") or "")
@@ -137,7 +140,7 @@ def _build_drives_table(
                     f"<tr class='{' '.join(row_classes)}' data-host-idx='{idx}' data-ctrl-type='{ctrl_type}'{row_title}>"
                     f"<td><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-storage' style='color:inherit;text-decoration:none;display:block'>"
                     f"<strong>{_pii(hostname, 'host')}</strong><br><small style='color:var(--text-muted,#64748b)'>{_pii(ip, 'ip')}</small></a></td>"
-                    f"<td>{_xe(ctrl_name)}</td>"
+                    f"<td>{_xe(d_ctrl_name)}</td>"
                     f"<td>{_drive_model_link(d, json_hcl)}</td>"
                     f"<td>{_xe(d.get('media_type') or '')}</td>"
                     f"<td>{_xe(d.get('capacity_gb') or '')}</td>"
@@ -474,8 +477,12 @@ def _build_health_table(
                 })
 
             end = d.get("endurance_remaining_pct")
+            if end in (255, "255", "255%"):
+                end = None
             if isinstance(end, (int, float)):
-                if end < 20:
+                if end == 255.0 or end < 0 or end > 100:
+                    end = None
+                elif end < 20:
                     host_alarms.append({
                         "severity": "Critical",
                         "subsystem": "Drive Wear",
@@ -815,6 +822,14 @@ def _build_bmc_hardening_cell(data: dict) -> Tuple[str, str]:
         issue_tags.append(("crit", "TLS < 1.2", f"<span class='inv-bad' title='Legacy TLS protocol active ({_xe(tls_ver)}) — enforce TLS 1.2+'>✗ TLS &lt; 1.2</span>"))
 
     # High-Priority Warnings (Amber ▲)
+    has_unlicensed_sec = any(
+        f.get("status") == "unknown_unlicensed" for f in findings_by_id.values()
+    )
+    if has_unlicensed_sec:
+        unlic_f = next((f for f in findings_by_id.values() if f.get("status") == "unknown_unlicensed"), None)
+        unlic_obs = str((unlic_f or {}).get("observed") or "SecurityService requires iLO Advanced license")
+        issue_tags.append(("warn", "iLO Unlicensed", f"<span class='inv-warn' title='{_xe(unlic_obs)}'>▲ iLO Unlicensed</span>"))
+
     has_http = "C01" in fails or checks_by_feature.get("BMC HTTP (Plaintext)", {}).get("badge") in ("danger", "warning")
     if has_http:
         issue_tags.append(("warn", "HTTP", "<span class='inv-warn' title='Plaintext HTTP web interface enabled without HTTPS redirection'>▲ HTTP</span>"))
@@ -955,16 +970,26 @@ def _build_security_table(
         bmc_fw = str(bm.get("bmc_fw_version") or _DASH)
         bmc_cell = f"<strong>{_xe(bmc_model)}</strong><br><code class='inv-code'>{_xe(bmc_fw)}</code>"
 
-        # Check BMC firmware baseline
-        bmc_model_up = bmc_model.upper()
-        bmc_base = next((BMC_FW_BASELINES[k] for k in BMC_FW_BASELINES if k in bmc_model_up), None)
-        if bmc_base and bmc_fw != _DASH:
-            latest = str(bmc_base.get("latest") or "")
-            min_rec = str(bmc_base.get("min_recommended") or "")
-            if bmc_fw >= latest or (min_rec and bmc_fw >= min_rec):
-                bmc_cell += f" <span class='inv-good' title='Meets certified baseline ({latest})'>✓</span>"
-            else:
-                bmc_cell += f" <span class='inv-bad' title='Upgrade recommended (latest: {latest})'>▲</span>"
+        # Check BMC firmware baseline. Newer than the catalog stays healthy.
+        if bmc_fw != _DASH:
+            bmc_eval = evaluate_bmc_fw_version(
+                bmc_model, bmc_fw, server_model=str(si.get("model") or "")
+            )
+            latest = str(bmc_eval.get("latest_version") or "")
+            currency = bmc_eval.get("currency")
+            age = str(bmc_eval.get("age_note") or "")
+            if currency in ("current", "ahead"):
+                title = f"Meets catalog baseline ({latest})"
+                if age:
+                    title = f"{title}. {age}"
+                bmc_cell += f" <span class='inv-good' title='{_xe(title)}'>✓</span>"
+            elif currency == "behind":
+                title = age or f"Behind catalog latest {latest}"
+                bmc_cell += f" <span class='inv-warn' title='{_xe(title)}'>▲</span>"
+            elif currency == "below_minimum":
+                title = age or f"Below catalog minimum (latest: {latest})"
+                bmc_cell += f" <span class='inv-bad' title='{_xe(title)}'>▲</span>"
+
 
         # CVE Coverage Tier (Green check if current Tier 4, Red X if < Tier 4)
         bios_eval = si.get("bios_eval") or {}

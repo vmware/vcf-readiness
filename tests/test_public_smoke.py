@@ -87,7 +87,7 @@ class TestPublicSmoke(unittest.TestCase):
                 "NOTICE", "THIRD_PARTY_LICENSES.md", "README.md", "pyproject.toml",
                 "vcfr_collector.py", "vcfr_web.py", "redfish_collector.py", "redfish_web.py",
                 ".gitignore",
-                "docs/INSTALL.md", "docs/OEM_REFERENCE.md", "docs/adding-oem-support.md",
+                "docs/INSTALL.md", "docs/OEM_REFERENCE.md", "docs/REDFISH_MONITORING_GUIDE.md", "docs/adding-oem-support.md",
                 "docs/SECURITY_ARCHITECTURE.md", "docs/CREDENTIAL_VAULT.md",
                 "docs/INVENTORY_REFERENCE.md", "docs/USER_GUIDE_REFERENCE.md",
                 "docs/REMOTE_JUMP_HOST_GUIDE.md", "docs/CUSTOMER_DELIVERABLE_SBOM.md",

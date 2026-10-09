@@ -394,8 +394,24 @@ class _StorageMixin(_CollectorBase):
         result["is_software_raid"] = is_sw_raid
 
         # Tri-mode: device protocols include NVMe alongside SAS or SATA (never software RAID)
-        dp_up = {p.upper() for p in result["device_protocols"]}
-        result["is_trimode"] = "NVME" in dp_up and bool(dp_up & {"SAS", "SATA"}) and not is_sw_raid
+        # An individual controller must support both NVMe AND (SAS or SATA) simultaneously.
+        # Merging device protocols across multiple separate controllers (e.g. onboard SATA + direct NVMe)
+        # must NOT trigger Tri-Mode classification.
+        is_trimode = False
+        if not is_sw_raid:
+            valid_sc = [sc for sc in sc_list if isinstance(sc, dict)]
+            if valid_sc:
+                for sc in valid_sc:
+                    sc_dp = {str(p).upper() for p in (sc.get("SupportedDeviceProtocols") or [])}
+                    if "NVME" in sc_dp and bool(sc_dp & {"SAS", "SATA"}):
+                        is_trimode = True
+                        break
+            else:
+                top_dp = {str(p).upper() for p in (ctrl_json.get("SupportedDeviceProtocols") or [])}
+                if "NVME" in top_dp and bool(top_dp & {"SAS", "SATA"}):
+                    is_trimode = True
+
+        result["is_trimode"] = is_trimode
         return result
 
     def _collect_ctrl_port_pcie_errors(self, ctrl: dict, sc_candidates: list) -> Tuple[Optional[dict], list]:
@@ -524,6 +540,317 @@ class _StorageMixin(_CollectorBase):
             else:
                 self._request_cache[url] = data
 
+    def _disaggregate_storage_controller(
+        self,
+        ctrl_info: dict,
+        sc_candidates: Optional[list] = None,
+        pcie_cache: Optional[list] = None,
+    ) -> list:
+        """Disaggregate composite or mixed-protocol storage units into distinct controllers.
+
+        Splits controllers when:
+        1. Both NVMe (PCIe) and SATA/SAS/AHCI drives are attached to the same non-TriMode controller, OR
+        2. The storage unit represents a composite multi-controller subsystem (e.g. AMI MegaRAC /
+           ASRock / ASUS StorageUnit) where SATA and NVMe are artificially lumped together.
+
+        Direct-Attached NVMe drives on PCIe slots/risers receive dedicated controller entries with
+        'N/A' firmware (preventing drive firmware leakage like E2MU200 into controller headers).
+        Onboard SATA/AHCI controllers are matched to their motherboard chipset PCI identities
+        (e.g. AMD FCH SATA Controller 1022:7901 or Intel PCH SATA AHCI).
+        """
+        drives = ctrl_info.get("drives", [])
+        if not drives:
+            return [ctrl_info]
+
+        is_trimode = bool(ctrl_info.get("is_trimode", False))
+        if is_trimode:
+            return [ctrl_info]
+
+        # Categorize attached drives
+        nvme_drives = []
+        sata_sas_drives = []
+        other_drives = []
+
+        for drv in drives:
+            proto = str(drv.get("protocol") or "").strip().upper()
+            cat = str(drv.get("category") or "").strip().upper()
+            is_nvme = proto in ("NVME", "PCIE", "CXL") or "NVME" in cat
+            is_sata_sas = proto in ("SATA", "SAS", "AHCI") or "SATA" in cat or "SAS" in cat
+            if is_nvme:
+                nvme_drives.append(drv)
+            elif is_sata_sas:
+                sata_sas_drives.append(drv)
+            else:
+                other_drives.append(drv)
+
+        c_name = str(ctrl_info.get("name") or "").upper()
+        c_id = str(ctrl_info.get("id") or "").upper()
+        is_composite_name = any(
+            p in c_name or p in c_id
+            for p in ("STORAGE SUBSYSTEM", "STORAGE UNIT", "STORAGEUNIT", "SUBSYSTEM")
+        )
+        has_multi_sc = False
+        if sc_candidates and isinstance(sc_candidates, list):
+            distinct_sc = {str(sc.get("Name") or "").strip() for sc in sc_candidates if isinstance(sc, dict) and sc.get("Name")}
+            has_multi_sc = len(distinct_sc) > 1
+
+        should_split = (bool(nvme_drives) and bool(sata_sas_drives)) or (
+            (has_multi_sc or is_composite_name) and (bool(nvme_drives) or bool(sata_sas_drives))
+        )
+
+        if not should_split:
+            return [ctrl_info]
+
+        # Separate volumes between SATA and NVMe
+        vol_list = ctrl_info.get("volumes", [])
+        sata_volumes = []
+        nvme_volumes = []
+
+        for vol in vol_list:
+            v_drv_uris = {str(u).lower() for u in (vol.get("drive_uris") or [])}
+            v_drv_ids = {str(i).lower() for i in (vol.get("drive_ids") or [])}
+            v_name = str(vol.get("name") or "").lower()
+            v_id = str(vol.get("id") or "").lower()
+
+            linked_to_sata = any(
+                (str(d.get("id", "")).lower() in v_drv_ids)
+                or (str(d.get("name", "")).lower() in v_drv_ids)
+                or (str(d.get("@odata.id", "")).lower() in v_drv_uris)
+                or (str(d.get("id", "")).lower() in v_name)
+                for d in sata_sas_drives
+            )
+            linked_to_nvme = any(
+                (str(d.get("id", "")).lower() in v_drv_ids)
+                or (str(d.get("name", "")).lower() in v_drv_ids)
+                or (str(d.get("@odata.id", "")).lower() in v_drv_uris)
+                or (str(d.get("id", "")).lower() in v_name)
+                for d in nvme_drives
+            )
+            if linked_to_sata and not linked_to_nvme:
+                sata_volumes.append(vol)
+            elif linked_to_nvme and not linked_to_sata:
+                nvme_volumes.append(vol)
+            else:
+                if sata_sas_drives:
+                    sata_volumes.append(vol)
+                else:
+                    nvme_volumes.append(vol)
+
+        results = []
+
+        # ── 1. Direct-Attached NVMe Controller ───────────────────────────
+        if nvme_drives:
+            slot_hint = ""
+            for d in nvme_drives:
+                s_lbl = d.get("slot_label") or d.get("pcie_slot") or ""
+                if s_lbl:
+                    slot_hint = s_lbl
+                    break
+
+            if not slot_hint and pcie_cache:
+                for d in nvme_drives:
+                    d_id = str(d.get("id") or "").lower()
+                    d_name = str(d.get("name") or "").lower()
+                    for p in pcie_cache:
+                        raw_p = p.get("_raw") if isinstance(p.get("_raw"), dict) else {}
+                        funcs = raw_p.get("_expanded_func_objects") or p.get("functions") or []
+                        matched_p = False
+                        for f in funcs:
+                            if not isinstance(f, dict):
+                                continue
+                            d_links = (f.get("Links") or {}).get("Drives") or []
+                            for dl in d_links:
+                                if isinstance(dl, dict):
+                                    dl_uri = str(dl.get("@odata.id") or "").lower()
+                                    if (d_id and dl_uri.endswith("/" + d_id)) or (d_name and dl_uri.endswith("/" + d_name)):
+                                        matched_p = True
+                                        break
+                            if matched_p:
+                                break
+                        if matched_p:
+                            raw_tag = str(raw_p.get("AssetTag") or "").strip()
+                            m_slot = re.match(r'^PCIE(\d+)$', raw_tag, re.I)
+                            if m_slot:
+                                slot_hint = f"PCIe Slot {m_slot.group(1)}"
+                            elif p.get("slot_label"):
+                                slot_hint = p.get("slot_label")
+                            elif raw_tag and not raw_tag.upper().startswith("TAG-"):
+                                slot_hint = raw_tag
+                            if slot_hint:
+                                break
+                    if slot_hint:
+                        break
+
+            if slot_hint:
+                nvme_name = f"Direct Attached NVMe ({slot_hint})"
+                nvme_model = f"Direct Attached NVMe ({slot_hint})"
+                slot_slug = re.sub(r'[^A-Za-z0-9_]', '_', slot_hint)
+                nvme_id = f"{ctrl_info.get('id', 'Storage')}_NVMe_{slot_slug}"
+            else:
+                nvme_name = "Direct Attached NVMe / PCIe Riser"
+                nvme_model = "Direct Attached NVMe / PCIe Riser"
+                nvme_id = f"{ctrl_info.get('id', 'Storage')}_NVMe"
+
+            nvme_ctrl = dict(ctrl_info)
+            nvme_ctrl.update({
+                "id": nvme_id,
+                "name": nvme_name,
+                "ctrl_model": nvme_model,
+                "ctrl_firmware": "N/A",  # Direct pass-through has no separate controller firmware
+                "device_protocols": ["NVMe"],
+                "is_trimode": False,
+                "is_software_raid": False,
+                "has_logical_volumes": bool(nvme_volumes),
+                "volumes": nvme_volumes,
+                "drives": nvme_drives,
+                "bbu_health": "N/A",
+                "bbu_badge": "N/A",
+                "vendor_id": "",
+                "device_id": "",
+                "subsystem_vendor_id": "",
+                "subsystem_id": "",
+                "pci_quad": "",
+                "pci_pair": "",
+                "is_boot_ctrl": any(d.get("is_boot") for d in nvme_drives),
+            })
+            for d in nvme_drives:
+                d["controller_name"] = nvme_name
+                d["controller_id"] = nvme_id
+                d["controller_fw"] = "N/A"
+            results.append(nvme_ctrl)
+
+        # ── 2. Onboard SATA / AHCI Controller ────────────────────────────
+        if sata_sas_drives:
+            sata_pci = None
+            if pcie_cache:
+                for d in sata_sas_drives:
+                    d_id = str(d.get("id") or "").lower()
+                    d_name = str(d.get("name") or "").lower()
+                    for p in pcie_cache:
+                        raw_p = p.get("_raw") if isinstance(p.get("_raw"), dict) else {}
+                        funcs = raw_p.get("_expanded_func_objects") or p.get("functions") or []
+                        matched_p = False
+                        for f in funcs:
+                            if not isinstance(f, dict):
+                                continue
+                            d_links = (f.get("Links") or {}).get("Drives") or []
+                            for dl in d_links:
+                                if isinstance(dl, dict):
+                                    dl_uri = str(dl.get("@odata.id") or "").lower()
+                                    if (d_id and dl_uri.endswith("/" + d_id)) or (d_name and dl_uri.endswith("/" + d_name)):
+                                        matched_p = True
+                                        break
+                            if matched_p:
+                                break
+                        if matched_p:
+                            sata_pci = p
+                            break
+                    if sata_pci:
+                        break
+
+                if not sata_pci:
+                    for p in pcie_cache:
+                        raw_p = p.get("_raw") if isinstance(p.get("_raw"), dict) else {}
+                        funcs = raw_p.get("_expanded_func_objects") or p.get("functions") or []
+                        for f in funcs:
+                            if not isinstance(f, dict):
+                                continue
+                            cc = str(f.get("ClassCode") or "").lower()
+                            if cc.startswith("0x0106") or cc.startswith("0x0101"):
+                                sata_pci = p
+                                break
+                        if sata_pci:
+                            break
+
+                if not sata_pci:
+                    for p in pcie_cache:
+                        p_desc = str(p.get("name") or p.get("description") or "").upper()
+                        if "SATA" in p_desc or "AHCI" in p_desc:
+                            sata_pci = p
+                            break
+
+            vid = str(sata_pci.get("vendor_id") if sata_pci else "").lower()
+            did = str(sata_pci.get("device_id") if sata_pci else "").lower()
+            svid = str(sata_pci.get("subsystem_vendor_id") if sata_pci else "").lower()
+            ssid = str(sata_pci.get("subsystem_id") if sata_pci else "").lower()
+            pquad = str(sata_pci.get("pci_quad") if sata_pci else "")
+            ppair = str(sata_pci.get("pci_pair") if sata_pci else "")
+
+            cpu_vendor = ""
+            if hasattr(self, "sys_summary") and isinstance(self.sys_summary, dict):
+                cpu_vendor = str(
+                    self.sys_summary.get("cpu_summary", {}).get("vendor")
+                    or self.sys_summary.get("cpu_summary", {}).get("model")
+                    or ""
+                ).upper()
+            if not cpu_vendor and hasattr(self, "sys_model"):
+                cpu_vendor = str(self.sys_model or "").upper()
+
+            if did == "7901" or "7901" in pquad or vid == "1022" or svid == "1022" or "AMD" in cpu_vendor or "EPYC" in cpu_vendor:
+                sata_name = "AMD FCH SATA Controller (AHCI)"
+                sata_model = "AMD FCH SATA Controller [AHCI mode]"
+            elif vid == "8086" or svid == "8086" or "INTEL" in cpu_vendor or "XEON" in cpu_vendor:
+                sata_name = "Intel PCH SATA AHCI Controller"
+                sata_model = "Intel PCH SATA AHCI Controller"
+            elif vid == "1b21" or "1b21" in pquad:
+                sata_name = "ASMedia SATA AHCI Controller"
+                sata_model = "ASMedia ASM106x SATA Controller"
+            else:
+                sata_name = "Onboard SATA AHCI Controller"
+                sata_model = "Onboard SATA AHCI Controller"
+
+            sata_sc_id = ""
+            for d in sata_sas_drives:
+                d_ctrl = d.get("controller_name")
+                if d_ctrl and ("SATA" in d_ctrl or "AHCI" in d_ctrl):
+                    sata_sc_id = d_ctrl
+                    break
+            if not sata_sc_id:
+                sata_sc_id = f"{ctrl_info.get('id', 'Storage')}_SATA"
+
+            sata_ctrl = dict(ctrl_info)
+            sata_ctrl.update({
+                "id": sata_sc_id,
+                "name": sata_name,
+                "ctrl_model": sata_model,
+                "ctrl_firmware": "N/A",  # Onboard SATA has no separate firmware
+                "device_protocols": ["AHCI", "SATA"],
+                "is_trimode": False,
+                "is_software_raid": False,
+                "has_logical_volumes": bool(sata_volumes),
+                "volumes": sata_volumes,
+                "drives": sata_sas_drives,
+                "bbu_health": "N/A",
+                "bbu_badge": "N/A",
+                "vendor_id": vid or ("1022" if "AMD" in sata_name else ""),
+                "device_id": did or ("7901" if "AMD" in sata_name else ""),
+                "subsystem_vendor_id": svid or ("1022" if "AMD" in sata_name else ""),
+                "subsystem_id": ssid or ("7901" if "AMD" in sata_name else ""),
+                "pci_quad": pquad or ("1022:7901:1022:7901" if "AMD" in sata_name else ""),
+                "pci_pair": ppair or ("1022:7901" if "AMD" in sata_name else ""),
+                "is_boot_ctrl": any(d.get("is_boot") for d in sata_sas_drives) or bool(sata_volumes),
+            })
+            for d in sata_sas_drives:
+                d["controller_name"] = sata_name
+                d["controller_id"] = sata_sc_id
+                d["controller_fw"] = "N/A"
+            results.append(sata_ctrl)
+
+        # ── 3. Other Drives ──────────────────────────────────────────────
+        if other_drives:
+            other_ctrl = dict(ctrl_info)
+            other_ctrl.update({
+                "id": f"{ctrl_info.get('id', 'Storage')}_Other",
+                "name": f"{ctrl_info.get('name', 'Storage')} (Other Drives)",
+                "drives": other_drives,
+                "volumes": [],
+                "has_logical_volumes": False,
+                "ctrl_firmware": "N/A",
+            })
+            results.append(other_ctrl)
+
+        return results
+
     def collect_storage_subsystem(self, pcie_cache: Optional[list] = None) -> list:
         storage_data = []
 
@@ -574,11 +901,17 @@ class _StorageMixin(_CollectorBase):
             ):
                 syntax = getattr(self, "expand_syntax", None) or "."
                 expand_ep = f"{ep}?$expand={syntax}($levels=1)"
-                coll = self._get(expand_ep, critical=False)
+                try:
+                    coll = self._get(expand_ep, critical=False)
+                except TypeError:
+                    coll = self._get(expand_ep)
                 if not coll or not isinstance(coll, dict) or coll.get("error"):
                     alt_syntax = "*" if syntax == "." else "."
                     expand_ep_alt = f"{ep}?$expand={alt_syntax}($levels=1)"
-                    coll = self._get(expand_ep_alt, critical=False)
+                    try:
+                        coll = self._get(expand_ep_alt, critical=False)
+                    except TypeError:
+                        coll = self._get(expand_ep_alt)
                 if not coll or not isinstance(coll, dict) or coll.get("error"):
                     unsupported_endpoints.add(ep)
                     coll = None
@@ -833,14 +1166,18 @@ class _StorageMixin(_CollectorBase):
             if isinstance(ctrl.get("StorageControllers"), list):
                 sc_candidates.extend(self._expand_odata_stubs(ctrl.get("StorageControllers")))
 
+            # Check if sc_candidates contains multiple distinct controllers (e.g. AMI MegaRAC / ASRock StorageUnit)
+            _distinct_sc_names = {str(sc.get("Name") or "").strip() for sc in sc_candidates if isinstance(sc, dict) and sc.get("Name")}
+            _has_multi_sc = len(_distinct_sc_names) > 1
+
             for sc in sc_candidates:
                 if isinstance(sc, dict):
-                    if not ctrl_fw:
+                    if not ctrl_fw and not _has_multi_sc:
                         ctrl_fw = self._extract_fw_version(sc.get("FirmwareVersion") or sc.get("FirmwarePackageVersion"))
-                    if not ctrl_model:
+                    if not ctrl_model and not _has_multi_sc:
                         ctrl_model = str(sc.get("Model") or sc.get("PartNumber") or "").strip()
                     sc_name = str(sc.get("Name") or "").strip()
-                    if sc_name and sc_name.upper() not in _generic_names:
+                    if sc_name and sc_name.upper() not in _generic_names and not _has_multi_sc:
                         if (
                             not ctrl_name
                             or ctrl_name == "Storage Controller"
@@ -852,7 +1189,10 @@ class _StorageMixin(_CollectorBase):
                 if ctrl_fw and ctrl_model:
                     break
 
-            if ctrl_model and (
+            if _has_multi_sc:
+                if not ctrl_name or ctrl_name == ctrl_id or ctrl_name.upper() in _generic_names:
+                    ctrl_name = f"Storage Subsystem ({ctrl_id})"
+            elif ctrl_model and (
                 ctrl_name.upper() in _generic_names
                 or ctrl_name.upper().startswith("HPE SMART STORAGE ARRAY")
                 or ctrl_name.upper().startswith("SMART STORAGE ARRAY")
@@ -876,7 +1216,7 @@ class _StorageMixin(_CollectorBase):
 
             _is_known_non_trimode = any(
                 p in ctrl_name_up_local or p in ctrl_id_up_local
-                for p in ["AHCI", "SATA", "INTEL", "VMD", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS", "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355"]
+                for p in ["AHCI", "SATA", "INTEL", "VMD", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS", "GLOTRENDS", "PU41", "BIFURCATION", "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355"]
             ) or _is_sw_raid
             if not ctrl_pcie["is_trimode"] and not _is_sw_raid:
                 ctrl_pcie["is_trimode"] = (
@@ -935,6 +1275,8 @@ class _StorageMixin(_CollectorBase):
 
             # Volume / Virtual Disk details
             volumes_list = []
+            vol_drive_uris = set()
+            vol_drive_ids = set()
             vol_members = vols if vols else hpe_ld
             if not vol_members and get_nested(ctrl, "Volumes", "@odata.id"):
                 vol_members = self._get_members(ctrl["Volumes"]["@odata.id"])
@@ -947,6 +1289,13 @@ class _StorageMixin(_CollectorBase):
                     v_obj = self._get(v_uri) or {}
                     if not v_obj or v_obj.get("error"):
                         continue
+                    # Collect drives attached to this volume
+                    for dr_ref in ((v_obj.get("Links") or {}).get("Drives") or []):
+                        if isinstance(dr_ref, dict):
+                            d_uri = dr_ref.get("@odata.id") or dr_ref.get("href")
+                            if d_uri:
+                                vol_drive_uris.add(d_uri)
+                                vol_drive_ids.add(d_uri.rstrip("/").split("/")[-1])
                     v_name = str(v_obj.get("LogicalDriveName") or v_obj.get("Name") or v_obj.get("Id") or "Volume").strip()
                     v_type = str(v_obj.get("VolumeType") or v_obj.get("RAIDType") or (f"RAID {v_obj['Raid']}" if v_obj.get("Raid") else "") or v_obj.get("LogicalDriveType") or "RAID").strip()
                     cap_bytes = v_obj.get("CapacityBytes")
@@ -1093,12 +1442,62 @@ class _StorageMixin(_CollectorBase):
                 finally:
                     pool.shutdown(wait=False, cancel_futures=True)
 
+            # Pre-index sc_candidates for precise per-drive controller matching
+            sc_by_sn: dict = {}
+            sc_by_port: dict = {}
+            for sc_item in sc_candidates:
+                if not isinstance(sc_item, dict):
+                    continue
+                sc_sn = str(sc_item.get("SerialNumber") or "").strip()
+                if sc_sn and sc_sn.lower() not in ("not available", "none", "unknown", "n/a"):
+                    sc_by_sn[sc_sn] = sc_item
+                    sc_by_sn[sc_sn.upper()] = sc_item
+                sc_m_id = str(sc_item.get("MemberId") or "").strip()
+                if sc_m_id:
+                    sc_by_port[sc_m_id] = sc_item
+                sc_nm = str(sc_item.get("Name") or "").strip()
+                if sc_nm:
+                    sc_by_port[sc_nm] = sc_item
+
             for dr_data in drive_jsons:
                 if isinstance(dr_data, dict):
+                    matched_sc = None
+                    d_sn = str(dr_data.get("SerialNumber") or "").strip()
+                    if d_sn and d_sn in sc_by_sn:
+                        matched_sc = sc_by_sn[d_sn]
+                    elif d_sn and d_sn.upper() in sc_by_sn:
+                        matched_sc = sc_by_sn[d_sn.upper()]
+                    else:
+                        d_id = str(dr_data.get("Id") or "").strip()
+                        port_m = re.search(r'Port[-_]?(\d+)', d_id, re.I)
+                        if port_m and port_m.group(1) in sc_by_port:
+                            matched_sc = sc_by_port[port_m.group(1)]
+
+                    drv_ctrl_name = ctrl_name
+                    drv_ctrl_pcie = ctrl_pcie
+                    if matched_sc:
+                        drv_ctrl_name = matched_sc.get("Name") or ctrl_name
+                        sc_dp = [str(p) for p in (matched_sc.get("SupportedDeviceProtocols") or [])]
+                        if sc_dp:
+                            drv_ctrl_pcie = dict(ctrl_pcie)
+                            drv_ctrl_pcie["device_protocols"] = sc_dp
+                            dp_up = {p.upper() for p in sc_dp}
+                            drv_ctrl_pcie["is_trimode"] = "NVME" in dp_up and bool(dp_up & {"SAS", "SATA"})
+
+                    dr_uri = str(dr_data.get("@odata.id") or "").strip()
+                    dr_id = str(dr_data.get("Id") or "").strip()
+                    dr_has_lv = (
+                        ((dr_uri and dr_uri in vol_drive_uris) or (dr_id and dr_id in vol_drive_ids))
+                        if (vol_drive_uris or vol_drive_ids)
+                        else has_lv
+                    )
+
                     parsed = self._parse_drive_details(
-                        ctrl_id, ctrl_name, dr_data, has_lv,
-                        ctrl_pcie=ctrl_pcie, pcie_cache=pcie_cache)
+                        ctrl_id, drv_ctrl_name, dr_data, dr_has_lv,
+                        ctrl_pcie=drv_ctrl_pcie, pcie_cache=pcie_cache,
+                        controller_json=matched_sc)
                     if parsed:
+                        parsed["controller_name"] = drv_ctrl_name
                         ctrl_info["drives"].append(parsed)
 
             # Record seen controller identifiers
@@ -1123,7 +1522,17 @@ class _StorageMixin(_CollectorBase):
                 continue
             seen_drive_serials.update(ctrl_drive_sns)
 
-            storage_data.append(ctrl_info)
+            split_controllers = self._disaggregate_storage_controller(
+                ctrl_info, sc_candidates=sc_candidates, pcie_cache=pcie_cache
+            )
+            for split_c in split_controllers:
+                c_id_item = split_c.get("id")
+                if c_id_item:
+                    seen_ctrl_ids.add(c_id_item)
+                c_quad_item = split_c.get("pci_quad")
+                if c_quad_item and c_quad_item not in ("N/A", "0000:0000:0000:0000"):
+                    seen_ctrl_pci_quads.add(c_quad_item)
+                storage_data.append(split_c)
 
         # ── OEM storage fallback (e.g. Cisco nuova XML plugin) ───────────
         if not storage_data or all(len(c.get("drives", [])) == 0 for c in storage_data):

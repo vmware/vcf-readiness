@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1128" role="img" aria-labelledby="oemMapTitle oemMapDesc">
+  <title id="oemMapTitle">OEM families and the Redfish decisions each generation requires</title>
+  <desc id="oemMapDesc">A map from the service-root expand flags to each server vendor, then to the generation, silicon, expand syntax, worker ceiling, and the sub-decision that has produced a bad scan.</desc>
+  <style>
+    .card { fill: var(--vcf-card, #fff); }
+    .label { fill: var(--vcf-text, #243038); font-family: inherit; }
+    .muted { fill: var(--vcf-muted, #5c6b73); font-family: inherit; }
+    .vendor-text, .legend-text { fill: #fff; font-family: inherit; }
+    .arrow { stroke: var(--vcf-border, #c5d0d6); fill: none; }
+  </style>
+  <rect class="card" x="8" y="8" width="1064" height="52" rx="8" stroke="var(--vcf-border, #c5d0d6)"/>
+  <text class="label" x="24" y="30" font-size="13" font-weight="700">Service root ExpandQuery, read once</text>
+  <text class="muted" x="24" y="48" font-size="12">ExpandAll uses star. NoLinks without ExpandAll uses a period. Neither flag means member GETs for the whole host.</text>
+
+  <!-- Dell -->
+  <rect class="vendor" x="12" y="78" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="122" text-anchor="middle" font-size="15" font-weight="700">Dell</text>
+  <text class="vendor-text" x="86" y="142" text-anchor="middle" font-size="11">iDRAC</text>
+  <line class="arrow" x1="160" y1="128" x2="176" y2="128"/>
+  <rect class="card off" x="176" y="78" width="280" height="100" rx="8" stroke="#c44747" stroke-width="2.5"/>
+  <text class="label" x="190" y="100" font-size="13" font-weight="700">13G · iDRAC8 · Pilot-3</text>
+  <text class="muted" x="190" y="118" font-size="12">No expand · 2 workers · legacy TLS</text>
+  <text class="muted" x="190" y="136" font-size="12">Three workers: 481 ms to 2,111 ms</text>
+  <text class="muted" x="190" y="154" font-size="12">R630, R730xd, R930</text>
+  <line class="arrow" x1="456" y1="128" x2="472" y2="128"/>
+  <rect class="card fast" x="472" y="78" width="280" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="486" y="100" font-size="13" font-weight="700">14G16G · iDRAC9</text>
+  <text class="muted" x="486" y="118" font-size="12">Star or period · level 1 · 34 workers</text>
+  <text class="muted" x="486" y="136" font-size="12">AMD Rome models clamped to 2</text>
+  <text class="muted" x="486" y="154" font-size="12">About 68 sessions. Leak locks 1800 s</text>
+  <line class="arrow" x1="752" y1="128" x2="768" y2="128"/>
+  <rect class="card fast" x="768" y="78" width="292" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="782" y="100" font-size="13" font-weight="700">17G · iDRAC10 · Arbel</text>
+  <text class="muted" x="782" y="118" font-size="12">Star or period · level 1 · 5 workers</text>
+  <text class="muted" x="782" y="136" font-size="12">Flat latency. About 20 sessions</text>
+  <text class="muted" x="782" y="154" font-size="12">Skip Installed when Current exists</text>
+
+  <!-- HPE -->
+  <rect class="vendor" x="12" y="194" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="238" text-anchor="middle" font-size="15" font-weight="700">HPE</text>
+  <text class="vendor-text" x="86" y="258" text-anchor="middle" font-size="11">iLO</text>
+  <line class="arrow" x1="160" y1="244" x2="176" y2="244"/>
+  <rect class="card off" x="176" y="194" width="280" height="100" rx="8" stroke="#c44747" stroke-width="2.5"/>
+  <text class="label" x="190" y="216" font-size="13" font-weight="700">Gen9 · iLO 4</text>
+  <text class="muted" x="190" y="234" font-size="12">No ProtocolFeaturesSupported</text>
+  <text class="muted" x="190" y="252" font-size="12">No expand · 2 workers</text>
+  <text class="muted" x="190" y="270" font-size="12">Member GETs only</text>
+  <line class="arrow" x1="456" y1="244" x2="472" y2="244"/>
+  <rect class="card partial" x="472" y="194" width="280" height="100" rx="8" stroke="#c47d00" stroke-width="2.5"/>
+  <text class="label" x="486" y="216" font-size="13" font-weight="700">Gen10 / Gen11 · iLO 5 / 6</text>
+  <text class="muted" x="486" y="234" font-size="12">Period only · level 1 · 3 workers</text>
+  <text class="muted" x="486" y="252" font-size="12">Star returns 400. Retry ResourceNotReady</text>
+  <text class="muted" x="486" y="270" font-size="12">LOM on BaseNetworkAdapters</text>
+  <line class="arrow" x1="752" y1="244" x2="768" y2="244"/>
+  <rect class="card fast" x="768" y="194" width="292" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="782" y="216" font-size="13" font-weight="700">Gen12 · iLO 7</text>
+  <text class="muted" x="782" y="234" font-size="12">Star through level 5 · 45 workers</text>
+  <text class="muted" x="782" y="252" font-size="12">Zero pacing when pipelining is on</text>
+  <text class="muted" x="782" y="270" font-size="12">Under 103 ms. Ratio spike is not saturation</text>
+
+  <!-- Lenovo -->
+  <rect class="vendor" x="12" y="310" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="354" text-anchor="middle" font-size="15" font-weight="700">Lenovo</text>
+  <text class="vendor-text" x="86" y="374" text-anchor="middle" font-size="11">XCC</text>
+  <line class="arrow" x1="160" y1="360" x2="176" y2="360"/>
+  <rect class="card fast" x="176" y="310" width="280" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="190" y="332" font-size="13" font-weight="700">V1 / V2 · XCC · Pilot-4</text>
+  <text class="muted" x="190" y="350" font-size="12">Star · level 2 · 3 workers</text>
+  <text class="muted" x="190" y="368" font-size="12">Session cap 16, not raisable</text>
+  <text class="muted" x="190" y="386" font-size="12">SR630 V2 is not XCC2</text>
+  <line class="arrow" x1="456" y1="360" x2="472" y2="360"/>
+  <rect class="card fast" x="472" y="310" width="280" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="486" y="332" font-size="13" font-weight="700">V3 / V4 · XCC2 / XCC3</text>
+  <text class="muted" x="486" y="350" font-size="12">AST2600 · level 2 · 4 workers</text>
+  <text class="muted" x="486" y="368" font-size="12">Zero pacing. Five workers saturates</text>
+  <text class="muted" x="486" y="386" font-size="12">Ports and functions in one GET</text>
+  <line class="arrow" x1="752" y1="360" x2="768" y2="360"/>
+  <rect class="card gap" x="768" y="310" width="292" height="100" rx="8" stroke="#7a5ea8" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <text class="label" x="782" y="332" font-size="13" font-weight="700">Still open</text>
+  <text class="muted" x="782" y="350" font-size="12">One BMC baseline row for all XCC</text>
+  <text class="muted" x="782" y="368" font-size="12">RAID 940 lanes are the slot uplink</text>
+  <text class="muted" x="782" y="386" font-size="12">No five-year firmware date alert</text>
+
+  <!-- Cisco -->
+  <rect class="vendor" x="12" y="426" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="470" text-anchor="middle" font-size="15" font-weight="700">Cisco</text>
+  <text class="vendor-text" x="86" y="490" text-anchor="middle" font-size="11">CIMC</text>
+  <line class="arrow" x1="160" y1="476" x2="176" y2="476"/>
+  <rect class="card off" x="176" y="426" width="280" height="100" rx="8" stroke="#c44747" stroke-width="2.5"/>
+  <text class="label" x="190" y="448" font-size="13" font-weight="700">M4 / M5</text>
+  <text class="muted" x="190" y="466" font-size="12">No expand · 23 workers · 0.10 s floor</text>
+  <text class="muted" x="190" y="484" font-size="12">Ports are already inline</text>
+  <text class="muted" x="190" y="502" font-size="12">Manager is /Managers/CIMC</text>
+  <line class="arrow" x1="456" y1="476" x2="472" y2="476"/>
+  <rect class="card fast" x="472" y="426" width="280" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="486" y="448" font-size="13" font-weight="700">M6+ · M7 · M8</text>
+  <text class="muted" x="486" y="466" font-size="12">Star · level 2 · 4 workers</text>
+  <text class="muted" x="486" y="484" font-size="12">CIMC 4.3(6) and later</text>
+  <text class="muted" x="486" y="502" font-size="12">VIC pre-cache or expand barely helps</text>
+
+  <!-- Supermicro -->
+  <rect class="vendor" x="12" y="542" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="586" text-anchor="middle" font-size="15" font-weight="700">Supermicro</text>
+  <text class="vendor-text" x="86" y="606" text-anchor="middle" font-size="11">ATEN / AST</text>
+  <line class="arrow" x1="160" y1="592" x2="176" y2="592"/>
+  <rect class="card off" x="176" y="542" width="280" height="100" rx="8" stroke="#c44747" stroke-width="2.5"/>
+  <text class="label" x="190" y="564" font-size="13" font-weight="700">X10 / X11</text>
+  <text class="muted" x="190" y="582" font-size="12">No expand · 23 workers · 0.10 s floor</text>
+  <text class="muted" x="190" y="600" font-size="12">HTML 404s, not JSON errors</text>
+  <text class="muted" x="190" y="618" font-size="12">Storage path is SimpleStorage</text>
+  <line class="arrow" x1="456" y1="592" x2="472" y2="592"/>
+  <rect class="card partial" x="472" y="542" width="280" height="100" rx="8" stroke="#c47d00" stroke-width="2.5"/>
+  <text class="label" x="486" y="564" font-size="13" font-weight="700">X12 / X13 / X14 · AST2600</text>
+  <text class="muted" x="486" y="582" font-size="12">Still SimpleStorage · 34 workers</text>
+  <text class="muted" x="486" y="600" font-size="12">KeepAlive. Session cap stays 16</text>
+  <text class="muted" x="486" y="618" font-size="12">DCMS license blocks /Storage</text>
+
+  <!-- GIGABYTE -->
+  <rect class="vendor" x="12" y="658" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="702" text-anchor="middle" font-size="15" font-weight="700">GIGABYTE</text>
+  <text class="vendor-text" x="86" y="722" text-anchor="middle" font-size="11">MegaRAC</text>
+  <line class="arrow" x1="160" y1="708" x2="176" y2="708"/>
+  <rect class="card fast" x="176" y="658" width="280" height="100" rx="8" stroke="#1f8a4c" stroke-width="2.5"/>
+  <text class="label" x="190" y="680" font-size="13" font-weight="700">AMI MegaRAC · /Self</text>
+  <text class="muted" x="190" y="698" font-size="12">Star through level 5 · 4 workers</text>
+  <text class="muted" x="190" y="716" font-size="12">Drive slot is Oem.GBT</text>
+  <text class="muted" x="190" y="734" font-size="12">Skip collection-member discovery</text>
+
+  <!-- ASRock -->
+  <rect class="vendor" x="12" y="774" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="818" text-anchor="middle" font-size="15" font-weight="700">ASRock Rack</text>
+  <text class="vendor-text" x="86" y="838" text-anchor="middle" font-size="11">ROMED8</text>
+  <line class="arrow" x1="160" y1="824" x2="176" y2="824"/>
+  <rect class="card gap" x="176" y="774" width="280" height="100" rx="8" stroke="#7a5ea8" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <text class="label" x="190" y="796" font-size="13" font-weight="700">Same MegaRAC family</text>
+  <text class="muted" x="190" y="814" font-size="12">/Self roots, like GIGABYTE</text>
+  <text class="muted" x="190" y="832" font-size="12">Lab scraper only. Not in the public export</text>
+  <text class="muted" x="190" y="850" font-size="12">BIOS P4.30 is not a Dell ROM</text>
+
+  <!-- Quanta -->
+  <rect class="vendor" x="12" y="890" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="934" text-anchor="middle" font-size="15" font-weight="700">Quanta</text>
+  <text class="vendor-text" x="86" y="954" text-anchor="middle" font-size="11">QCT</text>
+  <line class="arrow" x1="160" y1="940" x2="176" y2="940"/>
+  <rect class="card off" x="176" y="890" width="280" height="100" rx="8" stroke="#c44747" stroke-width="2.5"/>
+  <text class="label" x="190" y="912" font-size="13" font-weight="700">/Self roots · no expand</text>
+  <text class="muted" x="190" y="930" font-size="12">23 workers</text>
+  <text class="muted" x="190" y="948" font-size="12">Shallow crawls are tolerated</text>
+  <text class="muted" x="190" y="966" font-size="12">Drive OEM key is Quanta_RackScale</text>
+
+  <!-- Other -->
+  <rect class="vendor" x="12" y="1006" width="148" height="100" rx="8" fill="#0b6e99"/>
+  <text class="vendor-text" x="86" y="1050" text-anchor="middle" font-size="15" font-weight="700">Intel / other</text>
+  <text class="vendor-text" x="86" y="1070" text-anchor="middle" font-size="11">Generic</text>
+  <line class="arrow" x1="160" y1="1056" x2="176" y2="1056"/>
+  <rect class="card off" x="176" y="1006" width="280" height="100" rx="8" stroke="#c44747" stroke-width="2.5"/>
+  <text class="label" x="190" y="1028" font-size="13" font-weight="700">GenericCollector</text>
+  <text class="muted" x="190" y="1046" font-size="12">Standard DMTF resources only</text>
+  <text class="muted" x="190" y="1064" font-size="12">Eight security controls</text>
+  <text class="muted" x="190" y="1082" font-size="12">No OEM fast path</text>
+</svg>

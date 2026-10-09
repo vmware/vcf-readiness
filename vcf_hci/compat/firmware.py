@@ -5,26 +5,30 @@ import re
 from typing import Optional
 
 from ..collector.pci_utils import normalize_pci_id, select_best_pci_pair_entry
-from ..constants import BMC_FW_BASELINES, NVME_FW_BASELINES
+from ..constants import NVME_FW_BASELINES
 from ..logging_utils import parse_version_tuple
+from .firmware_currency import (
+    _cmp,
+    classify_currency,
+    currency_badge,
+    parse_version,
+    resolve_bmc_baseline,
+)
 
 
-def evaluate_bmc_fw_version(bmc_model: str, installed_version: str) -> dict:
-    """Evaluate BMC/management-controller firmware against BMC_FW_BASELINES.
+def evaluate_bmc_fw_version(
+    bmc_model: str,
+    installed_version: str,
+    server_model: str = "",
+    release_date: str = "",
+) -> dict:
+    """Evaluate BMC firmware against BMC_FW_BASELINES.
 
-    Returns a dict with 'badge', 'spectre_status', and 'spectre_badge' keys,
-    mirroring the evaluate_bios_version() interface for consistent HTML rendering.
-    bmc_model is matched as a case-insensitive substring of the BMC_FW_BASELINES key.
+    Generation-specific rows win over a shared iDRAC9 key. A version newer than
+    the catalog snapshot is healthy. An older version carries an age note.
     """
-    key_up = str(bmc_model or "").upper().strip()
-    if "13G" in key_up and "IDRAC" not in key_up:
-        key_up = "IDRAC8"
-    elif any(g in key_up for g in ("14G", "15G", "16G")) and "IDRAC" not in key_up:
-        key_up = "IDRAC9"
-    elif "17G" in key_up and "IDRAC" not in key_up:
-        key_up = "IDRAC10"
     installed_str = str(installed_version or "N/A")
-    baseline = next((BMC_FW_BASELINES[k] for k in BMC_FW_BASELINES if k in key_up or key_up in k), None)
+    baseline_key, baseline = resolve_bmc_baseline(bmc_model, installed_str, server_model)
     if not baseline:
         return {
             "badge": f"<span class='badge info'>ℹ️ {installed_str}</span>",
@@ -34,35 +38,48 @@ def evaluate_bmc_fw_version(bmc_model: str, installed_version: str) -> dict:
             "update_recommended": False,
             "is_outdated": False,
             "upgrade_recommendation": "",
+            "currency": "unverified",
+            "age_note": "",
+            "baseline_key": None,
         }
-    inst = parse_version_tuple(installed_str)
-    latest = parse_version_tuple(baseline["latest"])
-    min_rec = parse_version_tuple(baseline["min_recommended"])
-    min_sp = parse_version_tuple(baseline.get("min_spectre", "0"))
-    update_rec = inst < latest
-    is_outdated = inst < min_rec
-    if inst >= latest:
-        badge = f"<span class='badge success'>\U0001f7e2 Up-to-Date ({installed_str})</span>"
-    elif inst >= min_rec:
-        badge = f"<span class='badge warning'>\U0001f7e1 Update Available ({installed_str} | Latest: {baseline['latest']})</span>"
-    else:
-        badge = f"<span class='badge danger'>\U0001f534 Outdated ({installed_str} | Latest: {baseline['latest']})</span>"
-    spectre_status = "ok" if inst >= min_sp else "exposed"
-    spectre_badge = (
-        f"<span class='badge success'>\U0001f6e1️ OK (≥ {baseline['min_spectre']})</span>"
-        if spectre_status == "ok"
-        else f"<span class='badge danger'>⚠️ Pre-Spectre BMC: {installed_version} — min {baseline['min_spectre']}</span>"
-    )
-    rec_msg = f"Recommend {bmc_model or 'BMC'} firmware upgrade from v{installed_str} to v{baseline['latest']}." if update_rec else ""
+    verdict = classify_currency(installed_str, baseline, installed_date=release_date)
+    badge = currency_badge(installed_str, verdict, bios=False)
+    spectre_status, spectre_badge = _bmc_spectre_badge(installed_str, baseline)
+    rec_msg = ""
+    if verdict["update_recommended"]:
+        rec_msg = (
+            f"Recommend {bmc_model or 'BMC'} firmware upgrade from v{installed_str} "
+            f"to v{verdict['latest_version']}."
+        )
+        if verdict.get("age_note"):
+            rec_msg = f"{rec_msg} Installed build is {verdict['age_note']}."
     return {
         "badge": badge,
         "spectre_status": spectre_status,
         "spectre_badge": spectre_badge,
-        "latest_version": baseline["latest"],
-        "update_recommended": update_rec,
-        "is_outdated": is_outdated,
+        "latest_version": verdict["latest_version"],
+        "update_recommended": verdict["update_recommended"],
+        "is_outdated": verdict["is_outdated"],
         "upgrade_recommendation": rec_msg,
+        "currency": verdict["currency"],
+        "age_note": verdict["age_note"],
+        "baseline_key": baseline_key,
     }
+
+
+def _bmc_spectre_badge(installed_str: str, baseline: dict) -> tuple:
+    if baseline.get("unverified_family"):
+        return "unverified", "<span class='badge info'>ℹ️ No BMC Baseline</span>"
+    _fam, inst_nums, _kind = parse_version(installed_str)
+    _sf, sp_nums, _sk = parse_version(str(baseline.get("min_spectre") or "0"))
+    if inst_nums and sp_nums:
+        covered = _cmp(inst_nums, sp_nums) >= 0
+    else:
+        covered = parse_version_tuple(installed_str) >= parse_version_tuple(str(baseline.get("min_spectre") or "0"))
+    floor = baseline.get("min_spectre", "0")
+    if covered:
+        return "ok", f"<span class='badge success'>\U0001f6e1️ OK (≥ {floor})</span>"
+    return "exposed", f"<span class='badge danger'>⚠️ Pre-Spectre BMC: {installed_str} — min {floor}</span>"
 
 
 def _parse_fw_version_tuple(v_str: str) -> tuple:
@@ -141,6 +158,9 @@ def evaluate_driver_firmware_recommendation(
         matched_entry = models[key]
     elif key and key in hcl:
         matched_entry = hcl[key]
+
+    if isinstance(matched_entry, list) and matched_entry:
+        matched_entry = matched_entry[0]
 
     rec_driver = ""
     rec_fw = ""

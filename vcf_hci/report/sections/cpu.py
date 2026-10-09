@@ -354,6 +354,15 @@ def render_cpu_deep_section(
         for k, v in _dd_spec_rows
     )
     _dd_full_spec_table = f"<table style='width:100%;border-collapse:collapse'><tbody>{_dd_spec_tbl}</tbody></table>"
+    _socket_bits = []
+    if _mst:
+        for _sk, _sv in _mst.items():
+            if _sv:
+                _socket_bits.append(f"<li>{_h(str(_sk))}: {_h(str(_sv))}</li>")
+    _socket_block = (
+        "<h3>Multi-socket telemetry</h3><ul>" + "".join(_socket_bits) + "</ul>"
+        if _socket_bits else ""
+    )
 
     # CPU topology diagram
     _topo_diagram_html = ""
@@ -711,7 +720,7 @@ def render_cpu_deep_section(
         f'<h4 style="margin:0 0 .4rem 0;font-size:.88rem;color:var(--primary)">Cache Hierarchy</h4>'
         f'{_cache_table}'
         f'<h4 style="margin:.9rem 0 .4rem 0;font-size:.88rem;color:var(--primary)">Processor Specifications</h4>'
-        f'{_dd_full_spec_table}'
+        f'{_socket_block}{_dd_full_spec_table}'
         f'</div>'
         f'<div>'
         f'<h4 style="margin:0 0 .4rem 0;font-size:.88rem;color:var(--primary)">NUMA &amp; Chiplet Architecture</h4>'

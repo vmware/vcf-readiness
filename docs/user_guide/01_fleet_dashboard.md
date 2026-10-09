@@ -30,6 +30,7 @@ When an enterprise BMC experiences socket timeouts, response delays, or throttle
   - Outdated BMC firmware containing known Redfish daemon memory leaks or resource deadlocks.
   - Transient web server thread exhaustion inside the BMC embedded management subsystem.
   - Network latency, packet loss, or firewall inspection overhead between the scanning workstation and the BMC IP.
+- **How the collector avoids this:** see the [Redfish Monitoring Guide](../REDFISH_MONITORING_GUIDE.md) for session caps, expand syntax, and the per-generation worker ceilings.
 - **Recommended Remediation:**
   - **Dell iDRAC:** Upgrade iDRAC9 firmware to current baseline and execute a soft reset: `racadm racreset`.
   - **HPE iLO:** Upgrade iLO 5/6 firmware and reset the management processor: `ilorest reset`.

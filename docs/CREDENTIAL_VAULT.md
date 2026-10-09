@@ -188,3 +188,4 @@ The web UI Jump hosts table allows full management without recreation:
 - **Multi-Subnet Input**: The Subnets input field supports multiple CIDRs separated by commas (e.g. `192.0.2.0/24, 192.0.3.0/24, 10.0.0.0/16`).
 
 The web UI Jump hosts section uses the same records. Test connection checks Python 3.9+, a writable `/tmp`, and free space. It does not print key material.
+	

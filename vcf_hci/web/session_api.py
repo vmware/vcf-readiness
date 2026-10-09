@@ -16,8 +16,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 if TYPE_CHECKING:
     from http.server import SimpleHTTPRequestHandler
@@ -41,7 +41,6 @@ from vcf_hci import (
 from vcf_hci.logging_utils import create_pinned_connection, sanitize_filename
 from vcf_hci.tls_utils import (
     build_bmc_opener,
-    build_pinned_opener,
     build_ssl_context,
     format_ssl_error,
     inspect_server_certificate,
@@ -177,7 +176,7 @@ class SessionApiMixin(_ApiMixinBase):
     def _api_test_creds(self) -> None:
         body = self._read_json_body()
         raw_ip = body.get("ip", "").strip()
-        user = body.get("username", "root")
+        user = (body.get("username") or "").strip() or "root"
         pwd = body.get("password", "")
         verify_ssl = bool(body.get("verify_ssl", False))
         ca_bundle = body.get("ca_bundle", None) or None
@@ -190,6 +189,20 @@ class SessionApiMixin(_ApiMixinBase):
             self._send_json({"error": f"Target '{raw_ip}' is a prohibited cloud metadata endpoint."}, 400)
             return
 
+        # Security gate: require pinned thumbprints or CA bundle if TLS verification is requested
+        if verify_ssl and not ca_bundle and not pinned_thumbprints:
+            self._send_json(
+                {
+                    "ok": False,
+                    "code": 495,
+                    "detail": "Certificate thumbprints required when Ignore TLS is unchecked. Review and pin certificates or enable Ignore TLS.",
+                    "requires_tofu": True,
+                    "tested_ip": raw_ip,
+                },
+                400,
+            )
+            return
+
         # Expand ranges/CIDR and select candidate targets (e.g. "10.0.0.10-12" → ["10.0.0.10", "10.0.0.11", "10.0.0.12"])
         target_candidates = [raw_ip]
         try:
@@ -199,13 +212,31 @@ class SessionApiMixin(_ApiMixinBase):
         except Exception:
             pass
 
+        is_batch = bool(body.get("batch", False))
+        if is_batch:
+            self._handle_batch_test_creds(
+                raw_ip=raw_ip,
+                target_candidates=target_candidates,
+                default_user=user,
+                default_pwd=pwd,
+                body=body,
+                verify_ssl=verify_ssl,
+                ca_bundle=ca_bundle,
+                pinned_thumbprints=pinned_thumbprints,
+                use_vault=use_vault,
+            )
+            return
+
         selected_ip = target_candidates[0]
-        if len(target_candidates) > 1:
+        candidate_hint = (body.get("candidate_ip") or "").strip()
+        if candidate_hint and candidate_hint in target_candidates and not is_cloud_metadata_target(candidate_hint):
+            selected_ip = candidate_hint
+        elif len(target_candidates) > 1:
             def _check_tcp(cand: str) -> Optional[str]:
                 if is_cloud_metadata_target(cand):
                     return None
                 try:
-                    with socket.create_connection((cand, 443), timeout=0.6):
+                    with socket.create_connection((cand, 443), timeout=0.5):
                         return cand
                 except OSError:
                     pass
@@ -216,13 +247,19 @@ class SessionApiMixin(_ApiMixinBase):
                     pass
                 return None
 
-            probe_slice = target_candidates[:min(len(target_candidates), 16)]
-            with ThreadPoolExecutor(max_workers=min(len(probe_slice), 8)) as ex:
-                results = list(ex.map(_check_tcp, probe_slice))
-            for res in results:
-                if res:
-                    selected_ip = res
-                    break
+            probe_slice = target_candidates[:min(len(target_candidates), 64)]
+            with ThreadPoolExecutor(max_workers=min(len(probe_slice), 32)) as ex:
+                futures = [ex.submit(_check_tcp, cand) for cand in probe_slice]
+                for fut in as_completed(futures):
+                    try:
+                        res = fut.result()
+                        if res:
+                            selected_ip = res
+                            for f in futures:
+                                f.cancel()
+                            break
+                    except Exception:
+                        pass
 
         ip = selected_ip
         if is_cloud_metadata_target(ip):
@@ -252,14 +289,19 @@ class SessionApiMixin(_ApiMixinBase):
         ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
         opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
         token = base64.b64encode(f"{user}:{pwd}".encode()).decode()
-        # Test authenticated Redfish endpoint (/redfish/v1/Systems or /redfish/v1/Managers)
+        # Test authenticated Redfish endpoint (fast SessionService endpoints before heavier Systems collection)
         # Note: /redfish/v1 root document is unauthenticated on most BMCs and ignores credentials.
-        test_endpoints = [f"https://{ip}/redfish/v1/Systems", f"https://{ip}/redfish/v1/Managers"]
+        test_endpoints = [
+            f"https://{ip}/redfish/v1/SessionService/Sessions",
+            f"https://{ip}/redfish/v1/SessionService",
+            f"https://{ip}/redfish/v1/Systems",
+            f"https://{ip}/redfish/v1/Managers",
+        ]
         last_error = None
         for ep in test_endpoints:
             req = urllib.request.Request(ep, headers={"Authorization": f"Basic {token}"})
             try:
-                with opener.open(req, timeout=5) as resp:
+                with opener.open(req, timeout=3.5) as resp:
                     self._send_json({"ok": True, "code": resp.status, "tested_ip": ip})
                     return
             except urllib.error.HTTPError as e:
@@ -268,8 +310,8 @@ class SessionApiMixin(_ApiMixinBase):
                 if e.code in (401, 403):
                     self._send_json({"ok": False, "code": e.code, "detail": "Invalid credentials or unauthorized", "tested_ip": ip})
                     return
-                # If 404, try next endpoint
-                if e.code == 404:
+                # If 404 or 405, try next endpoint
+                if e.code in (404, 405):
                     continue
                 self._send_json({"ok": False, "code": e.code, "detail": str(e.reason), "tested_ip": ip})
                 return
@@ -292,6 +334,180 @@ class SessionApiMixin(_ApiMixinBase):
             self._send_json({"ok": False, "code": last_error.code, "detail": str(last_error.reason), "tested_ip": ip})
         else:
             self._send_json({"ok": False, "code": 0, "detail": "Connection failed", "tested_ip": ip})
+
+    def _handle_batch_test_creds(
+        self,
+        raw_ip: str,
+        target_candidates: List[str],
+        default_user: str,
+        default_pwd: str,
+        body: dict,
+        verify_ssl: bool,
+        ca_bundle: Optional[str],
+        pinned_thumbprints: Optional[dict],
+        use_vault: bool,
+    ) -> None:
+        for cand in target_candidates:
+            if is_cloud_metadata_target(cand):
+                self._send_json({"error": f"Target '{cand}' is a prohibited cloud metadata endpoint."}, 400)
+                return
+
+        per_host_input = body.get("creds", [])
+        creds_map: Dict[str, Tuple[str, str]] = {}
+        if isinstance(per_host_input, list):
+            for item in per_host_input:
+                if isinstance(item, dict) and item.get("ip"):
+                    u = str(item.get("user") or default_user).strip() or "root"
+                    p = str(item.get("pass") or default_pwd)
+                    creds_map[str(item["ip"])] = (u, p)
+
+        is_remote = False
+        try:
+            rem = self._is_remote_server()
+            if isinstance(rem, bool):
+                is_remote = rem
+        except Exception:
+            pass
+
+        v = vault_session.get() if (use_vault and not is_remote) else None
+
+        def _check_tcp_batch(cand: str) -> Tuple[str, bool]:
+            try:
+                with socket.create_connection((cand, 443), timeout=0.8):
+                    return cand, True
+            except OSError:
+                pass
+            try:
+                with socket.create_connection((cand, 80), timeout=0.4):
+                    return cand, True
+            except OSError:
+                pass
+            return cand, False
+
+        probe_workers = max(1, min(len(target_candidates), 64))
+        reachable_set: Set[str] = set()
+        with ThreadPoolExecutor(max_workers=probe_workers) as ex:
+            tcp_futures = [ex.submit(_check_tcp_batch, cand) for cand in target_candidates]
+            for fut in as_completed(tcp_futures):
+                try:
+                    cip, is_up = fut.result()
+                    if is_up:
+                        reachable_set.add(cip)
+                except Exception:
+                    pass
+
+        ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
+        opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
+
+        def _test_single_host_auth(target_ip: str) -> Dict[str, Any]:
+            u, p = creds_map.get(target_ip, (default_user, default_pwd))
+            if (not p or use_vault) and v is not None:
+                pair = v.resolve(target_ip)
+                if pair:
+                    u, p = pair
+            if not p:
+                return {
+                    "ip": target_ip,
+                    "reachable": True,
+                    "auth_ok": False,
+                    "code": 0,
+                    "detail": "Password is required",
+                }
+
+            token = base64.b64encode(f"{u}:{p}".encode()).decode()
+            test_eps = [
+                f"https://{target_ip}/redfish/v1/SessionService/Sessions",
+                f"https://{target_ip}/redfish/v1/SessionService",
+                f"https://{target_ip}/redfish/v1/Systems",
+            ]
+            last_err_code = 0
+            last_err_detail = "Connection failed"
+            for ep in test_eps:
+                req = urllib.request.Request(ep, headers={"Authorization": f"Basic {token}"})
+                try:
+                    with opener.open(req, timeout=3.0) as resp:
+                        return {
+                            "ip": target_ip,
+                            "reachable": True,
+                            "auth_ok": True,
+                            "code": resp.status,
+                        }
+                except urllib.error.HTTPError as e:
+                    if e.code in (401, 403):
+                        return {
+                            "ip": target_ip,
+                            "reachable": True,
+                            "auth_ok": False,
+                            "code": e.code,
+                            "detail": "Invalid credentials or unauthorized",
+                        }
+                    if e.code in (404, 405):
+                        continue
+                    return {
+                        "ip": target_ip,
+                        "reachable": True,
+                        "auth_ok": False,
+                        "code": e.code,
+                        "detail": str(e.reason),
+                    }
+                except (urllib.error.URLError, Exception) as e:
+                    reason = getattr(e, "reason", e)
+                    if isinstance(reason, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
+                        err_info = format_ssl_error(reason if isinstance(reason, Exception) else e, target_ip)
+                        return {
+                            "ip": target_ip,
+                            "reachable": True,
+                            "auth_ok": False,
+                            "code": 0,
+                            "detail": err_info["detail"],
+                        }
+                    return {
+                        "ip": target_ip,
+                        "reachable": True,
+                        "auth_ok": False,
+                        "code": 0,
+                        "detail": str(e),
+                    }
+            return {
+                "ip": target_ip,
+                "reachable": True,
+                "auth_ok": False,
+                "code": last_err_code,
+                "detail": last_err_detail,
+            }
+
+        reachable_list = [t for t in target_candidates if t in reachable_set]
+        auth_workers = max(1, min(len(reachable_list), 32)) if reachable_list else 1
+        host_results: List[Dict[str, Any]] = []
+        if reachable_list:
+            with ThreadPoolExecutor(max_workers=auth_workers) as ex:
+                auth_futures = [ex.submit(_test_single_host_auth, rip) for rip in reachable_list]
+                for fut in as_completed(auth_futures):
+                    try:
+                        host_results.append(fut.result())
+                    except Exception as exc:
+                        logger.debug("Batch auth test failed: %s", exc)
+
+        total = len(target_candidates)
+        reachable_count = len(reachable_set)
+        unreachable_count = total - reachable_count
+        auth_ok_count = sum(1 for r in host_results if r.get("auth_ok"))
+        auth_failed_count = sum(1 for r in host_results if not r.get("auth_ok"))
+        failed_hosts = [r["ip"] for r in host_results if not r.get("auth_ok")]
+        unreachable_hosts = [t for t in target_candidates if t not in reachable_set]
+
+        self._send_json({
+            "ok": bool(auth_ok_count == total and total > 0),
+            "batch": True,
+            "total": total,
+            "reachable": reachable_count,
+            "unreachable": unreachable_count,
+            "auth_ok": auth_ok_count,
+            "auth_failed": auth_failed_count,
+            "results": host_results[:100],
+            "failed_hosts": failed_hosts,
+            "unreachable_hosts": unreachable_hosts,
+        })
 
     # ── Profile / Session ─────────────────────────────────────────────────────
 

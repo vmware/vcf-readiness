@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import zipfile
 from io import BytesIO
@@ -258,6 +259,38 @@ def _build_excel_sheets(
     return sheets
 
 
+_ILLEGAL_XML_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+_INVALID_SHEET_NAME_CHARS_RE = re.compile(r"[\[\]*?:/\\]")
+
+
+def _clean_xml_text(s: Any) -> str:
+    """Strip illegal XML 1.0 characters and apply standard XML entity escaping."""
+    if s is None:
+        return ""
+    val_str = str(s)
+    cleaned = _ILLEGAL_XML_CHARS_RE.sub("", val_str)
+    return _xe(cleaned)
+
+
+def _clean_sheet_name(name: str) -> str:
+    """Sanitize and truncate worksheet name to adhere to OpenXML/Excel limits."""
+    cleaned = _INVALID_SHEET_NAME_CHARS_RE.sub("_", str(name or "Sheet"))
+    cleaned = _ILLEGAL_XML_CHARS_RE.sub("", cleaned).strip("' ")
+    if not cleaned:
+        cleaned = "Sheet"
+    return cleaned[:31]
+
+
+def _cell_ref(col_idx: int, row_idx: int) -> str:
+    """Convert zero-based column and row indexes to Excel A1 notation."""
+    name = ""
+    n = col_idx + 1
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        name = chr(65 + rem) + name
+    return f"{name}{row_idx + 1}"
+
+
 def _write_xlsx(sheets: list) -> bytes:
     """Generate standard openxml .xlsx binary payload using stdlib zipfile and XML."""
     _STYLE = {"header": 1, "green": 2, "yellow": 3, "red": 4}
@@ -288,14 +321,6 @@ def _write_xlsx(sheets: list) -> bytes:
         '</styleSheet>'
     )
 
-    def _cell_ref(col_idx: int, row_idx: int) -> str:
-        name = ""
-        n = col_idx + 1
-        while n:
-            name = chr(64 + n % 26 or 26) + name
-            n = (n - 1) // 26
-        return f"{name}{row_idx + 1}"
-
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         wb_xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -310,7 +335,8 @@ def _write_xlsx(sheets: list) -> bytes:
         sheet_xmls = {}
         for si, sheet in enumerate(sheets, 1):
             sid = f"rId{si + 1}"
-            wb_xml += f'<sheet name="{_xe(sheet["name"])}" sheetId="{si}" r:id="{sid}"/>'
+            sname = _clean_sheet_name(sheet.get("name", f"Sheet{si}"))
+            wb_xml += f'<sheet name="{_clean_xml_text(sname)}" sheetId="{si}" r:id="{sid}"/>'
             rels_xml += (f'<Relationship Id="{sid}" Type="http://schemas.openxmlformats.org/'
                          f'officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{si}.xml"/>')
             ct_overrides += (f'<Override PartName="/xl/worksheets/sheet{si}.xml" '
@@ -318,7 +344,7 @@ def _write_xlsx(sheets: list) -> bytes:
             sx = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                   '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
                   '<sheetData>')
-            for ri, row in enumerate(sheet["rows"]):
+            for ri, row in enumerate(sheet.get("rows", [])):
                 sx += f'<row r="{ri+1}">'
                 for ci, cell in enumerate(row):
                     ref = _cell_ref(ci, ri)
@@ -326,7 +352,7 @@ def _write_xlsx(sheets: list) -> bytes:
                     if isinstance(cell, tuple):
                         val, style_key = cell
                         style = _STYLE.get(style_key, 0)
-                    val_str = _xe(str(val)) if val is not None else ""
+                    val_str = _clean_xml_text(val) if val is not None else ""
                     sx += f'<c r="{ref}" t="inlineStr" s="{style}"><is><t>{val_str}</t></is></c>'
                 sx += '</row>'
             sx += '</sheetData></worksheet>'

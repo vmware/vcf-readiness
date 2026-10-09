@@ -1582,7 +1582,7 @@ JS_SCAN = """
     }
 
     var finalTargets = checkedHosts.length ? checkedHosts.join(',') : targets;
-    var user = document.getElementById('usernameInput').value || 'root';
+    var user = (document.getElementById('usernameInput').value || '').trim() || 'root';
     var pass = document.getElementById('passwordInput').value;
     var useVaultChkEl = document.getElementById('useVaultChk');
     var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);

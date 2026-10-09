@@ -283,7 +283,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
                     faults.append(f"Drive {slot_s}: Predictive Failure Flagged")
                 elif dh not in ("OK", "Ok", "", None):
                     faults.append(f"Drive {slot_s}: {dh}")
-                elif isinstance(d.get("endurance_remaining_pct"), (int, float)) and d["endurance_remaining_pct"] < 20:
+                elif isinstance(d.get("endurance_remaining_pct"), (int, float)) and 0 <= d["endurance_remaining_pct"] < 20 and d["endurance_remaining_pct"] != 255:
                     faults.append(f"Drive {slot_s}: Low Endurance ({d['endurance_remaining_pct']}%)")
                 elif isinstance(d.get("media_errors"), (int, float)) and d["media_errors"] > 0:
                     faults.append(f"Drive {slot_s}: {d['media_errors']} Media Errors")

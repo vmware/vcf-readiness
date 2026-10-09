@@ -16,7 +16,7 @@ from typing import Optional
 
 from vcf_hci.bcg_links import BCGLinkGenerator
 from vcf_hci.compat_engine import check_defective_drive_firmware, evaluate_drive_fw, evaluate_pci_compatibility
-from vcf_hci.constants import KB_TRIMODE
+from vcf_hci.constants import KB_TRIMODE, is_generic_name
 from vcf_hci.hcl import evaluate_drive_hcl_tier, lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h, badge  # noqa: F401
@@ -125,6 +125,10 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps — ESA Qualified</span>"
         else:
             badge_html = f"<span class='badge warning'>🟡 Port {pid}: {spd} Gbps — OSA Only</span>"
+        if p.get("is_management"):
+            badge_html += " <small>(management)</small>"
+        if p.get("speed_source"):
+            badge_html += f"<br><small>speed source: {_h(str(p.get('speed_source')))}</small>"
 
         tx_id = p.get("transceiver_identifier") or ""
         tx_if = p.get("transceiver_interface") or ""
@@ -179,8 +183,14 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if fw and fw != "N/A"
         else "<span style='color:var(--text-muted)'>N/A</span>"
     )
+    display_name = str(nic.get("name") or "").strip()
+    if is_generic_name(display_name):
+        cand_m = str(nic.get("model") or "").strip()
+        if cand_m and not is_generic_name(cand_m):
+            display_name = cand_m
+
     bcg_nic, bcg_vsan_nic = BCGLinkGenerator.io_nic_exact(
-        nic.get("name", ""), fw,
+        display_name or nic.get("name", ""), fw,
         nic.get("vendor_id", ""), nic.get("device_id", ""),
         nic.get("subsystem_vendor_id", ""), nic.get("subsystem_id", "")
     )
@@ -216,8 +226,15 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         pci_badge += f"<br><span class='badge warning' style='font-size:.74rem;'>🟡 NPAR Partitioned ({n_count} virtual functions)</span>"
 
     pci_verdict_html = ""
+    pci_eval = {}
     if vid and did:
-        pci_eval = evaluate_pci_compatibility(vid, did, svid, ssid, nic.get("name", ""), fw, hcl_data=hcl_data)
+        pci_eval = evaluate_pci_compatibility(vid, did, svid, ssid, display_name or nic.get("name", ""), fw, hcl_data=hcl_data)
+        matched_entry = pci_eval.get("matched_entry")
+        if isinstance(matched_entry, list) and matched_entry:
+            matched_entry = matched_entry[0]
+        matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
+        if is_generic_name(display_name) and matched_m:
+            display_name = str(matched_m).strip()
         pci_verdict_html = f"<br>{pci_eval['badge']}"
         if pci_eval.get("rdma_badge"):
             pci_verdict_html += f"<br>{pci_eval['rdma_badge']}"
@@ -239,8 +256,10 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             _io_pid = str(pci_eval["io_product_id"]).strip()
             bcg_nic = BCGLinkGenerator.device_detail(_io_pid, "io")
     elif hcl_data:
-        _unique = lookup_unique_hcl_device(json_hcl=hcl_data, model_name=nic.get("name", ""))
+        _unique = lookup_unique_hcl_device(json_hcl=hcl_data, model_name=display_name or nic.get("name", ""))
         if _unique:
+            if is_generic_name(display_name) and _unique.get("model"):
+                display_name = str(_unique["model"]).strip()
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
             elif _unique.get("product_id"):
@@ -252,6 +271,16 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             elif _unique.get("io_product_id"):
                 _io_pid = str(_unique["io_product_id"]).strip()
                 bcg_nic = BCGLinkGenerator.device_detail(_io_pid, "io")
+
+    if not bcg_nic and nic.get("io_vcglink"):
+        bcg_nic = nic["io_vcglink"]
+    elif not bcg_nic and nic.get("io_product_id"):
+        bcg_nic = BCGLinkGenerator.device_detail(str(nic["io_product_id"]).strip(), "io")
+
+    if not bcg_vsan_nic and nic.get("vcglink"):
+        bcg_vsan_nic = nic["vcglink"]
+    elif not bcg_vsan_nic and nic.get("product_id"):
+        bcg_vsan_nic = BCGLinkGenerator.device_detail(str(nic["product_id"]).strip(), "rdmanic")
 
     ports_html = "<br>".join(port_badges) if port_badges else "<span style='color:var(--text-muted)'>No port data</span>"
     if (nic.get("is_vic_virtual") or nic.get("cna_family") == "cisco_vic" or nic.get("vic_virtual_interfaces")) and nic.get("vic_virtual_interfaces"):
@@ -336,10 +365,23 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             drv = nic.get("cna_fc_driver", "HBA")
             cna_links += f"<br><a href='{nic['cna_fc_bcg_url']}' target='_blank' class='btn-link' style='font-size:.78rem'>BCG FC ({_h(drv)}) ↗</a>"
 
+    mfr = str(nic.get("manufacturer") or "").strip()
+    if not mfr or mfr.lower() in ("unknown", "n/a", "none", "", "null"):
+        matched_entry = pci_eval.get("matched_entry")
+        if isinstance(matched_entry, list) and matched_entry:
+            matched_entry = matched_entry[0]
+        brand_name = matched_entry.get("brand_name") if isinstance(matched_entry, dict) else ""
+        if brand_name:
+            mfr = str(brand_name).strip()
+    if not mfr:
+        mfr = "Unknown"
+    if not display_name:
+        display_name = "Unknown"
+
     return (
-        f"<tr><td><strong>{_h(nic.get('name', 'Unknown'))}</strong>{pci_badge}{pci_verdict_html}<br>"
+        f"<tr><td><strong>{_h(display_name)}</strong>{pci_badge}{pci_verdict_html}<br>"
         f"<small style='color:var(--text-muted)'>PN: {_h(nic.get('part_number', 'N/A'))}</small></td>"
-        f"<td>{_h(nic.get('manufacturer', 'Unknown'))}</td>"
+        f"<td>{_h(mfr)}</td>"
         f"<td>{fw_cell}</td>"
         f"<td>{ports_html}</td>"
         f"<td><a href='{bcg_nic}' target='_blank' class='btn-link'>BCG IO ↗</a>"
@@ -585,13 +627,32 @@ def _chassis_svg(
             ctrl  = d.get("attached_ctrl_name", "") or d.get("controller_id", "Storage Subsystem")
             hlth  = d.get("drive_health", "OK") or "OK"
             end   = d.get("endurance_remaining_pct", "N/A")
-            end_s = f"{end}%" if isinstance(end, (int, float)) else str(end)
+            if isinstance(end, (int, float)):
+                end_s = "N/A" if (end == 255 or end > 100 or end < 0) else f"{end}%"
+            elif str(end).strip() in ("255", "255%"):
+                end_s = "N/A"
+            else:
+                end_s = str(end)
             gen   = d.get("pcie_gen", "")
             lanes = d.get("pcie_lanes_in_use") or d.get("pcie_max_lanes")
             lane_s= f" {gen}x{lanes}" if (gen or lanes) else ""
 
             tip = _h(f"Slot {lbl}: {model} ({cap}GB {proto}{lane_s}) · PN: {pn} · Ctrl: {ctrl} · Health: {hlth} · Endurance: {end_s}".strip())
-            vsan_badge = "vSAN Certified" if is_nv and cap >= 1600 else "vSAN OSA / Compatible" if pop else "N/A"
+            _d_cat = str(d.get("category") or "")
+            _d_is_boot = bool(d.get("is_boot") or _d_cat == "Boot Device")
+            _d_is_consumer = bool(d.get("is_consumer") or _d_cat == "Unsupported Consumer SSD")
+            if _d_is_boot:
+                vsan_badge = "Boot Device (Non-vSAN)"
+            elif _d_is_consumer:
+                vsan_badge = "Unsupported (Consumer SSD)"
+            elif d.get("behind_trimode") or "Tri-Mode" in _d_cat:
+                vsan_badge = "Unsupported (Tri-Mode RAID)"
+            elif is_nv and cap >= 1600 and d.get("vsan_eligible", True):
+                vsan_badge = "vSAN Certified"
+            elif pop and d.get("vsan_eligible"):
+                vsan_badge = "vSAN OSA / Compatible"
+            else:
+                vsan_badge = "Unsupported"
         else:
             model = "Empty Slot"
             pn    = "N/A"
@@ -764,6 +825,8 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
         if not drive.get("populated", True):   # skip empty bay placeholders
             continue
         end_val = drive.get("endurance_remaining_pct", "N/A")
+        if (isinstance(end_val, (int, float)) and (end_val == 255 or end_val > 100 or end_val < 0)) or str(end_val).strip() in ("255", "255%"):
+            end_val = "N/A"
         end_badge = (
             f"<b>{end_val}%</b>"
             if isinstance(end_val, (int, float))
@@ -929,8 +992,9 @@ def _ctrl_meta_html(ctrl: dict, hcl_data: Optional[dict] = None) -> str:
         if pci_eval.get("fw_badge"):
             parts.append(pci_eval["fw_badge"])
 
-    if ctrl.get("bbu_badge"):
-        parts.append(ctrl["bbu_badge"])
+    b_badge = ctrl.get("bbu_badge")
+    if b_badge and b_badge != "N/A":
+        parts.append(b_badge)
 
     vols = ctrl.get("volumes") or []
     if vols:
@@ -952,7 +1016,11 @@ def _ctrl_meta_html(ctrl: dict, hcl_data: Optional[dict] = None) -> str:
     elif cvid and cdid:
         bcg_vsan_url = BCGLinkGenerator.pci_exact(cvid, cdid, csvid, cssid, program="vsanio")
         bcg_io_url   = BCGLinkGenerator.pci_exact(cvid, cdid, csvid, cssid, program="io")
-    elif ctrl_name and str(ctrl_name).upper() not in ("N/A", "UNKNOWN", "STORAGE CONTROLLER"):
+    elif (
+        ctrl_name
+        and str(ctrl_name).upper() not in ("N/A", "UNKNOWN", "STORAGE CONTROLLER")
+        and not any(k in str(ctrl_name).upper() for k in ("DIRECT ATTACHED", "DIRECT-ATTACHED", "PCIE RISER", "PASSTHROUGH"))
+    ):
         bcg_vsan_url = f"https://compatibilityguide.broadcom.com/search?program=vsanio&persona=live&keyword={urllib.parse.quote(ctrl_name)}"
         bcg_io_url   = BCGLinkGenerator.io_device_fw(ctrl_name, fw)
     else:
@@ -993,7 +1061,7 @@ def build_dimm_slot_diagram(memory_subsystem: dict, cpu_summary: Optional[dict] 
     for d in dimm_list:
         s_id = d.get("socket")
         if not s_id or s_id == "Unknown":
-            loc = str(d.get("slot_locator") or d.get("id") or "").upper()
+            loc = str(d.get("slot") or d.get("slot_locator") or d.get("id") or "").upper()
             m_s = re.search(r"(?:PROC|CPU|SOCKET|P)[._\s-]*([1-4])", loc)
             s_id = int(m_s.group(1)) if m_s else 1
 
@@ -1040,7 +1108,7 @@ def build_dimm_slot_diagram(memory_subsystem: dict, cpu_summary: Optional[dict] 
         for ch_num in sorted(chans.keys()):
             dimm_items = chans[ch_num]
             for d in dimm_items:
-                loc = _h(d.get("slot_locator") or d.get("id") or f"Ch {ch_num}")
+                loc = _h(d.get("slot") or d.get("slot_locator") or d.get("id") or f"Ch {ch_num}")
                 cap = d.get("capacity_gb", 0)
                 mtype = _h(d.get("memory_type") or "DRAM")
                 speed = d.get("speed_mhz") or ""

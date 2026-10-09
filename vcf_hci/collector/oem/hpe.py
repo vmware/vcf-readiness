@@ -383,6 +383,7 @@ class HPECollector(GenericCollector):
         # 1. Manager Oem.Hpe properties
         oem_hpe_mgr = get_nested(mgr_data, "Oem", "Hpe", default={})
         hpe_mgr_evidence: Dict[str, Any] = {}
+        clean_lic: Dict[str, Any] = {}
         if isinstance(oem_hpe_mgr, dict) and oem_hpe_mgr:
             hpe_mgr_evidence = {
                 "RequireHostAuthentication": oem_hpe_mgr.get("RequireHostAuthentication"),
@@ -399,6 +400,26 @@ class HPECollector(GenericCollector):
                     "USBFlashDriveEnabled": svc_port.get("USBFlashDriveEnabled"),
                     "MassStorageAuthenticationRequired": svc_port.get("MassStorageAuthenticationRequired"),
                 }
+
+        # Extract and sanitize Oem.Hpe.License
+        raw_lic = oem_hpe_mgr.get("License") if isinstance(oem_hpe_mgr, dict) else None
+        if not raw_lic:
+            raw_lic = get_nested(mgr_data, "Oem", "Hpe", "License", default={})
+        if not raw_lic and hasattr(self, "bmc_license"):
+            b_lic = getattr(self, "bmc_license", {}) or {}
+            if isinstance(b_lic, dict) and b_lic.get("license_name") and b_lic.get("license_name") != "N/A":
+                raw_lic = {"LicenseType": b_lic.get("license_name")}
+
+        if isinstance(raw_lic, dict) and raw_lic:
+            clean_lic = {
+                k: v for k, v in raw_lic.items()
+                if "key" not in str(k).lower() and "secret" not in str(k).lower() and "token" not in str(k).lower() and "password" not in str(k).lower()
+            }
+        elif isinstance(raw_lic, str) and raw_lic.strip():
+            clean_lic = {"LicenseType": raw_lic.strip()}
+
+        if clean_lic:
+            hpe_mgr_evidence["License"] = clean_lic
 
         # 2. Discover SecurityService link from Manager Oem.Hpe before documented fallback
         sec_uri: Optional[str] = None
@@ -420,7 +441,7 @@ class HPECollector(GenericCollector):
         eskm_evidence: Dict[str, Any] = {}
 
         if sec_uri and hasattr(self, "_get"):
-            sec_res = self._get(sec_uri)
+            sec_res = self._get(sec_uri, critical=False)
             if isinstance(sec_res, dict) and not sec_res.get("error"):
                 sec_service_evidence = {
                     "@odata.type": sec_res.get("@odata.type"),
@@ -439,7 +460,7 @@ class HPECollector(GenericCollector):
                 # SecurityDashboard
                 dash_link = sec_links.get("SecurityDashboard")
                 dash_uri = dash_link.get("@odata.id") if isinstance(dash_link, dict) else f"{sec_uri}/SecurityDashboard"
-                dash_res = self._get(dash_uri)
+                dash_res = self._get(dash_uri, critical=False)
                 if isinstance(dash_res, dict) and not dash_res.get("error"):
                     dash_evidence = {
                         "@odata.type": dash_res.get("@odata.type"),
@@ -450,14 +471,14 @@ class HPECollector(GenericCollector):
                     # SecurityParameters
                     params_link = dash_res.get("SecurityParameters")
                     params_uri = params_link.get("@odata.id") if isinstance(params_link, dict) else f"{dash_uri}/SecurityParams"
-                    params_coll = self._get(params_uri)
+                    params_coll = self._get(params_uri, critical=False)
                     if isinstance(params_coll, dict) and not params_coll.get("error"):
                         members = params_coll.get("Members", [])
                         if isinstance(members, list):
                             for m in members:
                                 m_uri = m.get("@odata.id") if isinstance(m, dict) else None
                                 if m_uri:
-                                    p_data = self._get(m_uri)
+                                    p_data = self._get(m_uri, critical=False)
                                     if isinstance(p_data, dict) and not p_data.get("error"):
                                         params_list.append({
                                             "id": p_data.get("Id"),
@@ -472,7 +493,7 @@ class HPECollector(GenericCollector):
                 # CertificateAuthentication
                 ca_link = sec_links.get("CertAuth")
                 ca_uri = ca_link.get("@odata.id") if isinstance(ca_link, dict) else f"{sec_uri}/CertificateAuthentication"
-                ca_res = self._get(ca_uri)
+                ca_res = self._get(ca_uri, critical=False)
                 if isinstance(ca_res, dict) and not ca_res.get("error"):
                     cert_auth_evidence = {
                         "CertificateLoginEnabled": ca_res.get("CertificateLoginEnabled"),
@@ -482,7 +503,7 @@ class HPECollector(GenericCollector):
                 # SSO
                 sso_link = sec_links.get("SSO")
                 sso_uri = sso_link.get("@odata.id") if isinstance(sso_link, dict) else f"{sec_uri}/SSO"
-                sso_res = self._get(sso_uri)
+                sso_res = self._get(sso_uri, critical=False)
                 if isinstance(sso_res, dict) and not sso_res.get("error"):
                     sso_settings = sso_res.get("SSOsettings", {}) if isinstance(sso_res.get("SSOsettings"), dict) else {}
                     sso_evidence = {
@@ -492,7 +513,7 @@ class HPECollector(GenericCollector):
                 # AutomaticCertificateEnrollment
                 ace_link = sec_links.get("AutomaticCertificateEnrollment")
                 ace_uri = ace_link.get("@odata.id") if isinstance(ace_link, dict) else f"{sec_uri}/AutomaticCertificateEnrollment"
-                ace_res = self._get(ace_uri)
+                ace_res = self._get(ace_uri, critical=False)
                 if isinstance(ace_res, dict) and not ace_res.get("error"):
                     ace_evidence = {
                         "AutomaticCertificateEnrollmentSettings": ace_res.get("AutomaticCertificateEnrollmentSettings"),
@@ -501,7 +522,7 @@ class HPECollector(GenericCollector):
                 # ESKM
                 eskm_link = sec_links.get("ESKM")
                 eskm_uri = eskm_link.get("@odata.id") if isinstance(eskm_link, dict) else f"{sec_uri}/ESKM"
-                eskm_res = self._get(eskm_uri)
+                eskm_res = self._get(eskm_uri, critical=False)
                 if isinstance(eskm_res, dict) and not eskm_res.get("error"):
                     eskm_evidence = {
                         "KeyManagerConfig": eskm_res.get("KeyManagerConfig"),
@@ -518,7 +539,7 @@ class HPECollector(GenericCollector):
         if not np_uri and mgr_uri:
             np_uri = f"{mgr_uri}/NetworkProtocol"
         if np_uri and hasattr(self, "_get"):
-            np_res = self._get(np_uri)
+            np_res = self._get(np_uri, critical=False)
             if isinstance(np_res, dict) and not np_res.get("error"):
                 oem_hpe_net = get_nested(np_res, "Oem", "Hpe", default={})
                 if isinstance(oem_hpe_net, dict) and oem_hpe_net:
@@ -533,9 +554,9 @@ class HPECollector(GenericCollector):
         # 5. AccountService Oem.Hpe
         hpe_acct_evidence: Dict[str, Any] = {}
         if hasattr(self, "_get"):
-            acct_res = self._get("/redfish/v1/AccountService")
+            acct_res = self._get("/redfish/v1/AccountService", critical=False)
             if not (isinstance(acct_res, dict) and not acct_res.get("error")):
-                acct_res = self._get("/AccountService")
+                acct_res = self._get("/AccountService", critical=False)
             if isinstance(acct_res, dict) and not acct_res.get("error"):
                 oem_hpe_acct = get_nested(acct_res, "Oem", "Hpe", default={})
                 if isinstance(oem_hpe_acct, dict) and oem_hpe_acct:
@@ -559,6 +580,7 @@ class HPECollector(GenericCollector):
             "sso": sso_evidence,
             "automatic_certificate_enrollment": ace_evidence,
             "eskm": eskm_evidence,
+            "license": clean_lic,
         }
 
     def oem_normalize_bios_attributes(self, raw_attrs: dict) -> dict:

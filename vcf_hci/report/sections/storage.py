@@ -261,7 +261,13 @@ def render_storage_subsystem_section(
     """Render Storage Subsystem section (topology alerts, midplane, bay layout, controller cards, badge label/class)."""
     bmc_lic = bmc_lic or {}
     data = data or {}
-    _drive_table_header = (
+    _hw = [f for f in (data.get("hardware_findings") or []) if isinstance(f, dict) and f.get("section") == "storage"]
+    _hw_html = "".join(
+        f"<li><code>{_h(str(f.get('tag') or ''))}</code> {_h(str(f.get('detail') or ''))}</li>"
+        for f in _hw
+    )
+    _storage_findings_html = f"<ul>{_hw_html}</ul>" if _hw_html else ""
+    _drive_table_header = (_storage_findings_html +
         '<table class="table" style="width:100%;margin-top:1rem;border-collapse:collapse">'
         '<thead><tr>'
         '<th>Slot / Location</th>'
@@ -385,7 +391,7 @@ def render_storage_subsystem_section(
                 if not d.get("populated", True):
                     continue
                 d_copy = dict(d)
-                d_copy["attached_ctrl_name"] = ctrl_name
+                d_copy["attached_ctrl_name"] = str(d.get("controller_name") or ctrl_name)
                 _all_host_drives.append(d_copy)
 
         _sku_sys = str(sys_info.get("sku") or "").strip().upper()

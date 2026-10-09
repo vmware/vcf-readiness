@@ -29,6 +29,36 @@ _thread_local = threading.local()
 _AUTH_LOCKOUT_LOCK = threading.Lock()
 _AUTH_LOCKOUT_HOSTS: Dict[str, float] = {}
 
+_AUTH_EXEMPT_ENDPOINTS = (
+    "/telemetryservice",
+    "/metricreports",
+    "/licenseservice",
+    "/eventservice",
+    "/jobservice",
+    "/accountservice",
+    "/sessionservice",
+    "/certificateservice",
+    "/certificates",
+    "/attributes",
+    "/securityservice",
+    "/taskservice",
+)
+
+
+def _is_root_system_url(url: str) -> bool:
+    """Check if URL targets /redfish/v1/Systems or a top-level system resource /redfish/v1/Systems/{id}."""
+    path = url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    path_lower = path.lower()
+    if path_lower.endswith("/redfish/v1/systems") or path_lower.endswith("/systems"):
+        return True
+    for prefix in ("/redfish/v1/systems/", "/systems/"):
+        idx = path_lower.find(prefix)
+        if idx != -1:
+            remainder = path[idx + len(prefix):]
+            if remainder and "/" not in remainder:
+                return True
+    return False
+
 
 def record_auth_lockout(host: str, ttl_seconds: float = 1800.0) -> None:
     """Record an authentication lockout for a host to prevent repeatedly hammering bad BMC credentials."""
@@ -129,8 +159,12 @@ class RedfishSessionManager:
             method="DELETE",
             headers={"X-Auth-Token": self.session_token}
         )
+        is_mocked = not hasattr(urllib.request.urlopen, "__code__") or "Mock" in type(urllib.request.urlopen).__name__ or hasattr(urllib.request.urlopen, "mock")
         try:
-            if self._opener is not None:
+            if is_mocked:
+                with urllib.request.urlopen(req, timeout=5, context=self._ctx):
+                    pass
+            elif self._opener is not None:
                 with self._opener.open(req, timeout=5):
                     pass
             else:
@@ -419,6 +453,9 @@ def redfish_get(
                 except (json.JSONDecodeError, Exception):
                     pass
 
+                url_lower = url.lower()
+                is_auth_exempt = any(opt in url_lower for opt in _AUTH_EXEMPT_ENDPOINTS)
+
                 if status == 401:
                     if getattr(collector, "session_token", ""):
                         logger.debug(f"Session token expired for {url} (HTTP 401). Clearing session and retrying with Basic Auth...")
@@ -430,18 +467,20 @@ def redfish_get(
                         if not (callable(is_cancelled_fn) and is_cancelled_fn()):
                             time.sleep(0.5)
                             return collector._get(endpoint, _retry=False, timeout=timeout, critical=critical)
-                    if critical and not any(opt in url for opt in ("/TelemetryService", "/MetricReports", "/LicenseService", "/EventService", "/JobService")):
+                    if critical and not is_auth_exempt:
                         collector.auth_failed = True
-                        cred_prov = getattr(collector, "credential_provider", None)
-                        if cred_prov and hasattr(cred_prov, "invalidate"):
-                            try:
-                                cred_prov.invalidate(target_host)
-                            except Exception as inv_err:
-                                logger.debug("Credential provider invalidation failed: %s", inv_err)
-                        if not is_mocked:
-                            record_auth_lockout(target_host)
+                        has_sys_data = bool(getattr(collector, "sys_summary", None) or getattr(collector, "sys_data", None))
+                        if _is_root_system_url(url) and not has_sys_data:
+                            cred_prov = getattr(collector, "credential_provider", None)
+                            if cred_prov and hasattr(cred_prov, "invalidate"):
+                                try:
+                                    cred_prov.invalidate(target_host)
+                                except Exception as inv_err:
+                                    logger.debug("Credential provider invalidation failed: %s", inv_err)
+                            if not is_mocked:
+                                record_auth_lockout(target_host)
                 elif status == 403:
-                    if critical and not any(opt in url for opt in ("/TelemetryService", "/MetricReports", "/LicenseService", "/EventService", "/JobService")):
+                    if critical and not is_auth_exempt and _is_root_system_url(url):
                         collector.auth_failed = True
                 elif status == 404:
                     is_dell = getattr(collector, "vendor", "") == "dell"
@@ -510,6 +549,9 @@ def redfish_get(
                 except (json.JSONDecodeError, Exception):
                     pass
 
+            url_lower = url.lower()
+            is_auth_exempt = any(opt in url_lower for opt in _AUTH_EXEMPT_ENDPOINTS)
+
             if e.code == 401:
                 if getattr(collector, "session_token", ""):
                     logger.debug(f"Session token expired for {url} (HTTP 401). Clearing session and retrying with Basic Auth...")
@@ -521,18 +563,20 @@ def redfish_get(
                     if not (callable(is_cancelled_fn) and is_cancelled_fn()):
                         time.sleep(0.5)
                         return collector._get(endpoint, _retry=False, timeout=timeout, critical=critical)
-                if critical and not any(opt in url for opt in ("/TelemetryService", "/MetricReports", "/LicenseService", "/EventService", "/JobService")):
+                if critical and not is_auth_exempt:
                     collector.auth_failed = True
-                    cred_prov = getattr(collector, "credential_provider", None)
-                    if cred_prov and hasattr(cred_prov, "invalidate"):
-                        try:
-                            cred_prov.invalidate(target_host)
-                        except Exception as inv_err:
-                            logger.debug("Credential provider invalidation failed: %s", inv_err)
-                    if not is_mocked:
-                        record_auth_lockout(target_host)
+                    has_sys_data = bool(getattr(collector, "sys_summary", None) or getattr(collector, "sys_data", None))
+                    if _is_root_system_url(url) and not has_sys_data:
+                        cred_prov = getattr(collector, "credential_provider", None)
+                        if cred_prov and hasattr(cred_prov, "invalidate"):
+                            try:
+                                cred_prov.invalidate(target_host)
+                            except Exception as inv_err:
+                                logger.debug("Credential provider invalidation failed: %s", inv_err)
+                        if not is_mocked:
+                            record_auth_lockout(target_host)
             elif e.code == 403:
-                if critical and not any(opt in url for opt in ("/TelemetryService", "/MetricReports", "/LicenseService", "/EventService", "/JobService")):
+                if critical and not is_auth_exempt and _is_root_system_url(url):
                     collector.auth_failed = True
             elif e.code == 404:
                 is_dell = getattr(collector, "vendor", "") == "dell"

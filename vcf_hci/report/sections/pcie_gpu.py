@@ -13,7 +13,15 @@ from vcf_hci.report.helpers import _h
 def render_pcie_slot_section(pcie_slots: List[Dict[str, Any]], page_salt: str, json_hcl: Optional[Dict[str, Any]] = None) -> str:
     """Render PCIe slot inventory accordion."""
     if not pcie_slots:
-        return ""
+        return (
+            "<h2>PCIe Slot Inventory</h2>"
+            "<div class='card' style='padding:20px;border-left:4px solid var(--text-muted);background:var(--card-bg);margin-bottom:16px;'>"
+            "<div style='font-weight:600;font-size:1rem;color:var(--text-color);margin-bottom:6px;'>No Physical PCIe Slots Reported by BMC</div>"
+            "<div style='color:var(--text-muted);font-size:0.875rem;line-height:1.5;'>"
+            "The BMC controller on this host did not expose physical PCIe slot records under <code>/redfish/v1/Chassis/{id}/PCIeSlots</code> "
+            "or peripheral telemetry. Discovered NICs and NVMe storage devices are detailed in their respective report sections."
+            "</div></div>"
+        )
 
     _total_slots = len(pcie_slots)
     _populated_slots = sum(1 for s in pcie_slots if s.get("populated"))
@@ -62,31 +70,33 @@ def render_pcie_slot_section(pcie_slots: List[Dict[str, Any]], page_salt: str, j
                 _is_storage_slot = True
                 _is_net_slot = False
 
-            if _is_net_slot:
-                if _svid and _sdid:
-                    _bcg_link = BCGLinkGenerator.pci_exact(_svid, _sdid, _ssvid, _sssid, program="io", release_filter=True, device_type="Network")
-                elif _unique_item and _unique_item.get("vcglink"):
-                    _bcg_link = _unique_item["vcglink"]
-                elif _pid:
-                    _bcg_link = BCGLinkGenerator.device_detail(_pid, "rdmanic")
+            _bcg_link = _s.get("bcg_url") or ""
+            if not _bcg_link:
+                if _is_net_slot:
+                    if _svid and _sdid:
+                        _bcg_link = BCGLinkGenerator.pci_exact(_svid, _sdid, _ssvid, _sssid, program="io", release_filter=True, device_type="Network")
+                    elif _unique_item and _unique_item.get("vcglink"):
+                        _bcg_link = _unique_item["vcglink"]
+                    elif _pid:
+                        _bcg_link = BCGLinkGenerator.device_detail(_pid, "rdmanic")
+                    else:
+                        _bcg_link = BCGLinkGenerator.io_device_fw(_dev_name, "")
+                elif _is_nvme_slot:
+                    _slot_prog = "ssd"
+                    if _pid:
+                        _bcg_link = BCGLinkGenerator.device_detail(_pid, _slot_prog)
+                    elif _svid and _sdid:
+                        _bcg_link = BCGLinkGenerator.pci_exact(_svid, _sdid, _ssvid, _sssid, program=_slot_prog)
+                    else:
+                        _bcg_link = BCGLinkGenerator.io_device_fw(_dev_name, "")
                 else:
-                    _bcg_link = BCGLinkGenerator.io_device_fw(_dev_name, "")
-            elif _is_nvme_slot:
-                _slot_prog = "ssd"
-                if _pid:
-                    _bcg_link = BCGLinkGenerator.device_detail(_pid, _slot_prog)
-                elif _svid and _sdid:
-                    _bcg_link = BCGLinkGenerator.pci_exact(_svid, _sdid, _ssvid, _sssid, program=_slot_prog)
-                else:
-                    _bcg_link = BCGLinkGenerator.io_device_fw(_dev_name, "")
-            else:
-                _slot_prog = _hcl_prog if _hcl_prog else "io"
-                if _svid and _sdid:
-                    _bcg_link = BCGLinkGenerator.pci_exact(_svid, _sdid, _ssvid, _sssid, program="io", release_filter=True)
-                elif _pid:
-                    _bcg_link = BCGLinkGenerator.device_detail(_pid, _slot_prog)
-                else:
-                    _bcg_link = BCGLinkGenerator.io_device_fw(_dev_name, "")
+                    _slot_prog = _hcl_prog if _hcl_prog else "io"
+                    if _svid and _sdid:
+                        _bcg_link = BCGLinkGenerator.pci_exact(_svid, _sdid, _ssvid, _sssid, program="io", release_filter=True)
+                    elif _pid:
+                        _bcg_link = BCGLinkGenerator.device_detail(_pid, _slot_prog)
+                    else:
+                        _bcg_link = BCGLinkGenerator.io_device_fw(_dev_name, "")
 
             _pci_cell = f"<code style='font-size:.76rem;background:var(--pci-bg);color:var(--pci-color);padding:1px 4px;border-radius:3px;'>{_h(_pci_quad)}</code>" if _pci_quad else "<span style='color:var(--text-muted)'>—</span>"
 
@@ -132,12 +142,12 @@ def render_pcie_slot_section(pcie_slots: List[Dict[str, Any]], page_salt: str, j
 
     return (
         f"<h2>PCIe Slot Inventory</h2>"
-        f"<details class='accordion'>"
+        f"<details class='accordion' open>"
         f"<summary>"
         f"<div>&#128268; PCIe Slots &nbsp;"
         f"<span class='badge {_summary_cls}'>{_populated_slots} of {_total_slots} slots populated</span>"
         f"</div>"
-        f"<span style='font-size:.85rem;color:var(--primary)'>Expand Slot Details &#9662;</span>"
+        f"<span style='font-size:.85rem;color:var(--primary)'>PCIe Slot Details &#9662;</span>"
         f"</summary>"
         f"<div class='accordion-body'>"
         f"<table><thead><tr>"

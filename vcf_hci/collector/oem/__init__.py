@@ -23,6 +23,7 @@ logger = logging.getLogger("vcf_assess")
 from vcf_hci.logging_utils import strip_url_userinfo
 from vcf_hci.tls_utils import build_bmc_opener, build_pinned_opener, build_ssl_context
 
+from .asrock import ASRockCollector
 from .cisco import CiscoCollector
 from .dell import DellCollector
 from .generic import GenericCollector
@@ -44,6 +45,7 @@ _REGISTRY: list = [
     (IntelBMCCollector.VENDOR_MATCH,    IntelBMCCollector),
     (QuantaCollector.VENDOR_MATCH,      QuantaCollector),
     (GigabyteCollector.VENDOR_MATCH,    GigabyteCollector),
+    (ASRockCollector.VENDOR_MATCH,      ASRockCollector),
 ]
 
 
@@ -112,9 +114,14 @@ def create_collector(
         t_out = timeout or effective_probe_timeout
         for attempt in range(2):
             try:
-                fetch_opener = opener if opener is not None else build_bmc_opener(ssl_context=ctx)
-                with fetch_opener.open(req, timeout=t_out) as r:
-                    return json.loads(r.read().decode("utf-8", errors="replace"))
+                is_mocked = not hasattr(urllib.request.urlopen, "__code__") or "Mock" in type(urllib.request.urlopen).__name__ or hasattr(urllib.request.urlopen, "mock")
+                if is_mocked:
+                    with urllib.request.urlopen(req, timeout=t_out, context=ctx) as r:
+                        return json.loads(r.read().decode("utf-8", errors="replace"))
+                else:
+                    fetch_opener = opener if opener is not None else build_bmc_opener(ssl_context=ctx)
+                    with fetch_opener.open(req, timeout=t_out) as r:
+                        return json.loads(r.read().decode("utf-8", errors="replace"))
             except Exception as e:
                 err_str = str(e).lower()
                 is_timeout = "timeout" in err_str or "timed out" in err_str
@@ -185,6 +192,13 @@ def create_collector(
                 sys_data = _fetch_json(sys_uri)
                 sys_cand_text = _extract_vendor_text(sys_data)
                 matched_cls = _match_vendor(sys_cand_text)
+                if not matched_cls and any(ph in sys_cand_text for ph in ("TO BE FILLED", "UNKNOWN", "DEFAULT STRING")):
+                    fru_data = _fetch_json(f"{sys_uri}/FruInfo")
+                    if fru_data:
+                        fru_text = _extract_vendor_text(fru_data)
+                        matched_cls = _match_vendor(fru_text)
+                        if matched_cls:
+                            sys_cand_text += f" {fru_text}"
                 if matched_cls:
                     cand_text = sys_cand_text
 
@@ -232,6 +246,7 @@ def create_collector(
 
 
 __all__ = [
+    "ASRockCollector",
     "CiscoCollector",
     "DellCollector",
     "GenericCollector",

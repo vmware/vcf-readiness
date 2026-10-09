@@ -55,13 +55,17 @@ def evaluate_pci_compatibility(
         exact_match = quads[quad]
     elif quad and quad in hcl:
         exact_match = hcl[quad]
+    if isinstance(exact_match, list) and exact_match:
+        exact_match = exact_match[0]
 
     if exact_match:
-        releases = exact_match.get("releases", []) if isinstance(exact_match, dict) else []
-        if not releases and isinstance(exact_match, dict):
+        releases = list(exact_match.get("releases", [])) if isinstance(exact_match, dict) else []
+        if isinstance(exact_match, dict):
             rel_mat = exact_match.get("release_matrix") or exact_match.get("releaseMatrix")
             if isinstance(rel_mat, dict):
-                releases = list(rel_mat.keys())
+                for k in rel_mat:
+                    if k not in releases:
+                        releases.append(k)
         tier_str = str(exact_match.get("tier", exact_match) if isinstance(exact_match, dict) else exact_match).upper()
         rel_str = " ".join(str(r).upper() for r in releases) + " " + tier_str
 

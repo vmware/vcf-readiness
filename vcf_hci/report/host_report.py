@@ -121,6 +121,8 @@ def generate_host_html_report(
     bcg_server_url = BCGLinkGenerator.server(_vendor_str, _model_str, cpu_info)
     bcg_cpu_url = BCGLinkGenerator.cpu(cpu_info.get("model", ""), cpu_info.get("processor_id", ""))
 
+    from vcf_hci.report.explorer_link import try_write_explorer
+    try_write_explorer(data, output_filepath)
     header_html, banners_html = render_header_and_banners(
         sys_info, host_os, _page_salt, quick_mode, _data_src, _wsman_proto_label, bcg_server_url, bcg_cpu_url, obfuscated, data.get("collector_class"), data=data
     )
@@ -347,14 +349,14 @@ def generate_host_html_report(
             <h2 style="margin:0">Recent System Event Log (SEL / IML)</h2>
             <div style="display:flex;gap:8px;align-items:center;">
                 {_sel_guide_btn}
-                {f'<a href="redfish_explorer_{_ip}.html?fixture=sel" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect SEL/IML in Redfish Explorer">🧭 Inspect SEL in Redfish ↗</a>' if _ip else ''}
+                {f'<a href="redfish_explorer_{_ip}.html?fixture=sel" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect SEL/IML in Redfish Explorer">🧭 Inspect SEL in Redfish ↗</a>' if _ip and data.get("_explorer_written") else ''}
             </div>
         </div>
         <table><thead><tr><th>Severity</th><th>Message ID</th><th>Alarm Details</th><th>Timestamp</th></tr></thead><tbody>{sel_rows}</tbody></table>
     </div>
 
     <div id="tab-cpu" class="tab-pane">
-        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=cpu" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Processors in Redfish Explorer">🧭 Inspect CPU in Redfish ↗</a></div>' if _ip else ''}
+        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=cpu" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Processors in Redfish Explorer">🧭 Inspect CPU in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_cpu_deep_section_html}
     </div>
 
@@ -363,7 +365,7 @@ def generate_host_html_report(
             <h2 style="margin:0">BIOS &amp; Performance Settings</h2>
             <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
                 {_tuning_guide_btn}
-                {f'<a href="redfish_explorer_{_ip}.html?fixture=bios" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect BIOS & Boot in Redfish Explorer">🧭 Inspect BIOS in Redfish ↗</a>' if _ip else ''}
+                {f'<a href="redfish_explorer_{_ip}.html?fixture=bios" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect BIOS & Boot in Redfish Explorer">🧭 Inspect BIOS in Redfish ↗</a>' if _ip and data.get("_explorer_written") else ''}
             </div>
         </div>
         {_boot_order_section}
@@ -371,7 +373,7 @@ def generate_host_html_report(
     </div>
 
     <div id="tab-memory" class="tab-pane">
-        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=memory" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Memory in Redfish Explorer">🧭 Inspect Memory in Redfish ↗</a></div>' if _ip else ''}
+        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=memory" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Memory in Redfish Explorer">🧭 Inspect Memory in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_mem_section_html}
         {tel_section}
     </div>
@@ -379,7 +381,7 @@ def generate_host_html_report(
     <div id="tab-storage" class="tab-pane">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
             <h2 style="margin:0">Storage Subsystem</h2>
-            {f'<a href="redfish_explorer_{_ip}.html?fixture=storage" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Storage in Redfish Explorer">🧭 Inspect Storage in Redfish ↗</a>' if _ip else ''}
+            {f'<a href="redfish_explorer_{_ip}.html?fixture=storage" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Storage in Redfish Explorer">🧭 Inspect Storage in Redfish ↗</a>' if _ip and data.get("_explorer_written") else ''}
         </div>
         <details class="accordion" open>
             <summary>
@@ -399,13 +401,13 @@ def generate_host_html_report(
     {'<div id="tab-gpu" class="tab-pane">' + gpu_section + '</div>' if gpus else ''}
 
     <div id="tab-network" class="tab-pane">
-        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=network" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Network Adapters in Redfish Explorer">🧭 Inspect NICs in Redfish ↗</a></div>' if _ip else ''}
+        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=network" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Network Adapters in Redfish Explorer">🧭 Inspect NICs in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_tor_switch_map_html}
         {network_section_html}
     </div>
 
     <div id="tab-health" class="tab-pane">
-        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=power" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Power & Thermals in Redfish Explorer">🧭 Inspect Power &amp; Thermal in Redfish ↗</a></div>' if _ip else ''}
+        {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=power" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Power & Thermals in Redfish Explorer">🧭 Inspect Power &amp; Thermal in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_bmc_health_section}
         {_jobq_health_section}
         {thermal_section_html}

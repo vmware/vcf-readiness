@@ -65,7 +65,7 @@ from vcf_hci.collector.pci_utils import (
     normalize_pci_id,
     pcie_has_fc_candidates,
 )
-from vcf_hci.constants import GENERIC_NAME_BLOCKLIST
+from vcf_hci.constants import is_generic_name
 from vcf_hci.logging_utils import get_nested
 
 _STORAGE_ARRAY_OUI_TABLE = [
@@ -846,6 +846,9 @@ class _NetworkMixin(_CollectorBase):
                     # Exact duplicate
                     if uid in seen_ids:
                         continue
+                    # Skip BMC virtual management NICs early
+                    if re.search(r"virtual(?:nic|ethernet)", str(uid), re.I) or re.search(r"virtual(?:nic|ethernet)", str(adapter.get("Name") or ""), re.I):
+                        continue
                     # Sub-interface / partition of a NetworkAdapter already captured
                     adapter_mac = _clean_mac_address(adapter.get("MACAddress"))
                     parent_uid = _get_parent_iface_id(
@@ -998,14 +1001,14 @@ class _NetworkMixin(_CollectorBase):
                     # ── Resolve display name and OEM model info ─────────────────────
                     resolved_name = self._resolve_product_name(adapter, pcie_cache)
                     # For EthernetInterfaces, supplement bare names with OEM fields
-                    if is_eth_iface_ep and (resolved_name.lower() in GENERIC_NAME_BLOCKLIST or not resolved_name.strip()):
+                    if is_eth_iface_ep and is_generic_name(resolved_name):
                         dell_nic = get_nested(adapter, "Oem", "Dell", "DellNIC", default={})
                         oem_name = dell_nic.get("ProductName") or dell_nic.get("BusProtocol") or ""
                         if not oem_name:
                             # HPE iLO: AdapterDetails carries human-readable product name
                             hpe_det = get_nested(adapter, "Oem", "Hpe", "AdapterDetails", default={})
                             oem_name = hpe_det.get("Name") or hpe_det.get("Model") or ""
-                        if oem_name and oem_name.lower() not in GENERIC_NAME_BLOCKLIST:
+                        if oem_name and not is_generic_name(oem_name):
                             resolved_name = oem_name
 
                     # Exclude pure Fibre Channel controllers (handled by collect_fc_hbas)
@@ -1405,8 +1408,11 @@ class _NetworkMixin(_CollectorBase):
                         is_npar = _evaluate_npar_partitions(npar_partitions, len(dynamic_ports), is_vic=is_vic)
                         is_vic_virtual = False
 
-                    # Skip BMC virtual management NICs — generic name + no port data
-                    if resolved_name.lower() in GENERIC_NAME_BLOCKLIST and not dynamic_ports:
+                    # Skip BMC virtual management NICs — e.g. VirtualNic, VirtualEthernet, or generic name + no port data
+                    if re.search(r"virtual(?:nic|ethernet)", str(uid), re.I) or re.search(r"virtual(?:nic|ethernet)", str(adapter.get("Name") or ""), re.I):
+                        logger.debug("Skipping BMC USB virtual NIC %s", uid)
+                        continue
+                    if is_generic_name(resolved_name) and not dynamic_ports:
                         continue
 
                     # Firmware version: standard field first, then OEM hook fallbacks
@@ -1417,11 +1423,43 @@ class _NetworkMixin(_CollectorBase):
                     if not pci_info["pci_quad"] and pcie_cache:
                         pci_info = match_pcie_cache(adapter, pcie_cache, get_fn=self._get)
                     if not pci_info["pci_quad"]:
-                        pci_info = match_firmware_inventory_pci(str(resolved_name or adapter.get("Name") or ""), get_fn=self._get)
+                        fw_pci = match_firmware_inventory_pci(str(resolved_name or adapter.get("Name") or ""), get_fn=self._get)
+                        if fw_pci.get("pci_quad"):
+                            pci_info = fw_pci
+                        else:
+                            for k, v in fw_pci.items():
+                                if v and not pci_info.get(k):
+                                    pci_info[k] = v
+
+                    if is_generic_name(resolved_name):
+                        quad = pci_info.get("pci_quad")
+                        pair = pci_info.get("pci_pair")
+                        if quad or pair:
+                            try:
+                                from vcf_hci.hcl.loader import load_io_nics_catalog
+                                cat = load_io_nics_catalog()
+                                if isinstance(cat, dict):
+                                    h_dev = cat.get("quads", {}).get(quad)
+                                    if not h_dev and pair:
+                                        p_items = cat.get("pairs", {}).get(pair)
+                                        if p_items:
+                                            from vcf_hci.collector.pci_utils import select_best_pci_pair_entry
+                                            h_dev = select_best_pci_pair_entry(
+                                                p_items,
+                                                svid=pci_info.get("subsystem_vendor_id", ""),
+                                                ssid=pci_info.get("subsystem_id", ""),
+                                            )
+                                    if isinstance(h_dev, dict) and h_dev.get("model"):
+                                        resolved_name = str(h_dev["model"]).strip()
+                                        adapter["resolved_name"] = resolved_name
+                                        if h_dev.get("brand_name") and manufacturer in ("Unknown", "N/A", "", None):
+                                            manufacturer = h_dev["brand_name"]
+                            except Exception:
+                                pass
 
                     # Suppress orphaned generic EthernetInterfaces when physical NICs are already present
                     is_generic_or_partition = (
-                        resolved_name.lower() in GENERIC_NAME_BLOCKLIST
+                        is_generic_name(resolved_name)
                         or bool(re.search(r"\b(?:Partition\s+\d+|Embedded NIC\s+\d+\s+Port\s+\d+)\b", resolved_name, re.IGNORECASE))
                     )
                     if (is_eth_iface_ep
@@ -1466,6 +1504,21 @@ class _NetworkMixin(_CollectorBase):
 
                     adapter_max_speed = max((p.get("current_speed_gbps") or 0 for p in dynamic_ports), default=0)
                     adapter_speed = adapter_max_speed if adapter_max_speed > 0 else None
+                    if not adapter_speed or adapter_speed <= 0:
+                        m_speeds = re.findall(r"\b(400|200|100|50|40|25|10|1)\s*(?:G(?:bE|b|E)?|Gigabit)\b", resolved_name, re.IGNORECASE)
+                        if m_speeds:
+                            inferred_speed = max(float(x) for x in m_speeds)
+                            adapter_speed = int(inferred_speed) if inferred_speed == int(inferred_speed) else round(inferred_speed, 2)
+                        elif re.search(r"\b(?:X550|X540|X520)\b", resolved_name, re.IGNORECASE):
+                            adapter_speed = 10
+                        elif re.search(r"\b(?:ConnectX[-_]?[56]|CX[-_]?[56])\b", resolved_name, re.IGNORECASE):
+                            adapter_speed = 100
+                        elif re.search(r"\b(?:ConnectX[-_]?4|CX[-_]?4)\b", resolved_name, re.IGNORECASE):
+                            adapter_speed = 25
+                        if adapter_speed and adapter_speed > 0:
+                            for p in dynamic_ports:
+                                if not p.get("current_speed_gbps"):
+                                    p["current_speed_gbps"] = adapter_speed
                     mfg_resolved = infer_nic_manufacturer(manufacturer, pci_info, resolved_name)
 
                     # Safeguard: do not add pure Fibre Channel HBAs to Ethernet nic_list
@@ -1541,6 +1594,8 @@ class _NetworkMixin(_CollectorBase):
                 "firmware_version": "N/A",
                 "ports": [],
             })
+        from vcf_hci.collector.hardware_findings import annotate_port_contract
+        annotate_port_contract(nic_list)
         return nic_list
 
 
@@ -1633,7 +1688,7 @@ class _NetworkMixin(_CollectorBase):
                         continue
 
                 resolved_hba_name = (
-                    model_str if (raw_name.lower() in GENERIC_NAME_BLOCKLIST or not raw_name) and model_str
+                    model_str if is_generic_name(raw_name) and model_str
                     else (raw_name or model_str or adapter_id or "FC HBA")
                 )
 

@@ -862,23 +862,67 @@ class _SystemMixin(_CollectorBase):
                 if cu not in chassis_candidates:
                     chassis_candidates.append(cu)
 
-        if (model in ("Unknown Server", "", None) or vendor in ("Unknown Vendor", "", None) or serial_num in ("Unknown", "", None)) and chassis_candidates:
+        _placeholder_vendors = {
+            "TO BE FILLED BY O.E.M.", "DEFAULT STRING", "SYSTEM MANUFACTURER",
+            "UNKNOWN VENDOR", "UNKNOWN", "",
+        }
+
+        if (model in ("Unknown Server", "", None) or vendor.upper().strip() in _placeholder_vendors or serial_num in ("Unknown", "", None, "To Be Filled By O.E.M.")) and chassis_candidates:
             for c_uri in chassis_candidates:
                 c_obj = self._get(c_uri) or {}
                 if model in ("Unknown Server", "", None):
                     c_model = c_obj.get("Model") or c_obj.get("Name")
                     if c_model and str(c_model).lower() not in ("chassis", "enclosure", "unknown"):
                         model = str(c_model).strip()
-                if vendor in ("Unknown Vendor", "", None):
+                if vendor.upper().strip() in _placeholder_vendors:
                     c_vendor = c_obj.get("Manufacturer") or c_obj.get("Vendor")
-                    if c_vendor:
+                    if c_vendor and str(c_vendor).upper().strip() not in _placeholder_vendors:
                         vendor = str(c_vendor).strip()
-                if serial_num in ("Unknown", "", None):
+                if serial_num in ("Unknown", "", None, "To Be Filled By O.E.M."):
                     c_sn = c_obj.get("SerialNumber")
-                    if c_sn and str(c_sn).lower() not in ("unknown", "none", ""):
+                    if c_sn and str(c_sn).upper().strip() not in ("UNKNOWN", "NONE", "", "TO BE FILLED BY O.E.M."):
                         serial_num = str(c_sn).strip()
-                if model not in ("Unknown Server", "", None) and vendor not in ("Unknown Vendor", "", None) and serial_num not in ("Unknown", "", None):
+                if model not in ("Unknown Server", "", None) and vendor.upper().strip() not in _placeholder_vendors and serial_num not in ("Unknown", "", None, "To Be Filled By O.E.M."):
                     break
+
+        # Normalize known whitebox motherboards where SMBIOS vendor was left as default
+        if vendor.upper().strip() in _placeholder_vendors:
+            _model_up = model.upper().strip()
+            if "ROMED8" in _model_up or "EPYCD8" in _model_up or "GENOAD8" in _model_up or "BERGAMOD8" in _model_up or "SP3" in _model_up:
+                vendor = "ASRock Rack"
+            elif _model_up.startswith(("X11", "X12", "X13", "H11", "H12", "H13", "SYS-")):
+                vendor = "Supermicro"
+            elif _model_up.startswith(("MZ31", "MZ32", "MZ71", "MZ72")):
+                vendor = "Gigabyte"
+
+        # FruInfo fallback for whitebox / OEM platforms where SMBIOS DMI was unpopulated
+        _bad_sn = serial_num.upper().strip() in ("UNKNOWN", "", "NONE", "TO BE FILLED BY O.E.M.", "DEFAULT STRING")
+        _bad_vendor = vendor.upper().strip() in _placeholder_vendors
+        _bad_model = model in ("Unknown Server", "", None, "To Be Filled By O.E.M.")
+        fru_board_part = ""
+        if (_bad_sn or _bad_vendor or _bad_model) and self.sys_uri:
+            fru_info = self._get(f"{self.sys_uri}/FruInfo")
+            if isinstance(fru_info, dict):
+                board = fru_info.get("Board") or {}
+                prod = fru_info.get("Product") or {}
+                chassis = fru_info.get("Chassis") or {}
+
+                b_mfg = str(board.get("Manufacturer") or prod.get("Manufacturer") or "").strip()
+                b_prod = str(board.get("ProductName") or prod.get("ProductName") or "").strip()
+                b_sn = str(board.get("SerialNumber") or prod.get("SerialNumber") or chassis.get("SerialNumber") or "").strip()
+                b_part = str(board.get("PartNumber") or prod.get("PartNumber") or "").strip()
+                if b_part:
+                    fru_board_part = b_part
+
+                if _bad_vendor and b_mfg and b_mfg.upper().strip() not in _placeholder_vendors:
+                    if b_mfg.upper() in ("ASROCKRACK", "ASROCK"):
+                        vendor = "ASRock Rack"
+                    else:
+                        vendor = b_mfg
+                if _bad_model and b_prod and b_prod.upper().strip() not in _placeholder_vendors:
+                    model = b_prod
+                if _bad_sn and b_sn and b_sn.upper().strip() not in ("UNKNOWN", "NONE", "", "TO BE FILLED BY O.E.M.", "DEFAULT STRING"):
+                    serial_num = b_sn
 
         # ── Server SKU / product number ───────────────────────────────────────
         # DMTF standard: System.SKU  |  HPE OEM fallback: Oem.Hpe.ProductId
@@ -886,6 +930,7 @@ class _SystemMixin(_CollectorBase):
             self.oem_sku(data)
             or data.get("SKU")
             or ((data.get("Oem") or {}).get("Hpe") or {}).get("ProductId")
+            or fru_board_part
             or ""
         ).strip().upper()
         if sku_raw.upper() == serial_num.upper():
@@ -1073,6 +1118,7 @@ class _SystemMixin(_CollectorBase):
             "chassis_management_info": chassis_mgmt,
             "serial_number": serial_num,
             "system_uuid": str(data.get("UUID") or "").strip(),
+            "asset_tag": str(data.get("AssetTag") or "").strip(),
             "bios_version": bios_version,
             "bios_release_date": bios_date,
             "bios_eval": {},
@@ -1190,7 +1236,21 @@ class _SystemMixin(_CollectorBase):
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
 
-        for dimm in dimm_jsons:
+        # Inspect DIMMs to detect duplicate locators, DevType pattern, or 0-indexed sockets
+        raw_locators = [str(d.get("DeviceLocator") or "").strip() for d in dimm_jsons if d.get("DeviceLocator")]
+        locators_are_duplicate = len(dimm_jsons) > 1 and len(set(raw_locators)) <= 1
+        has_devtype_pattern = any(
+            re.search(r"DevType\d+[_-]?", str(d.get("Id") or d.get("Name") or ""), re.IGNORECASE)
+            for d in dimm_jsons
+        )
+        raw_ml_sockets = [
+            int(d.get("MemoryLocation", {}).get("Socket"))
+            for d in dimm_jsons
+            if isinstance(d.get("MemoryLocation"), dict) and d.get("MemoryLocation", {}).get("Socket") is not None
+        ]
+        socket_is_zero_indexed = bool(raw_ml_sockets and min(raw_ml_sockets) == 0)
+
+        for dimm_idx, dimm in enumerate(dimm_jsons):
             status = dimm.get("Status")
             if not isinstance(status, dict):
                 status = {}
@@ -1198,7 +1258,24 @@ class _SystemMixin(_CollectorBase):
             state = str(raw_state).strip() if raw_state is not None else ""
             raw_health = status.get("Health")
             health = str(raw_health).strip() if raw_health is not None else "OK"
-            slot = str(dimm.get("DeviceLocator") or dimm.get("Id") or "Unknown")
+
+            dimm_id = str(dimm.get("Id") or "").strip()
+            dimm_name = str(dimm.get("Name") or "").strip()
+            dev_locator = str(dimm.get("DeviceLocator") or "").strip()
+
+            cleaned_id = re.sub(r"^DevType\d+[_-]?", "", dimm_id, flags=re.IGNORECASE).strip()
+            cleaned_name = re.sub(r"^DevType\d+[_-]?", "", dimm_name, flags=re.IGNORECASE).strip()
+            for cand in (cleaned_id, cleaned_name):
+                m_dimm = re.match(r"^DIMM(\d+)$", cand, re.IGNORECASE)
+                if m_dimm:
+                    cleaned_id = f"DIMM {m_dimm.group(1)}"
+                    break
+
+            if locators_are_duplicate or has_devtype_pattern or not dev_locator:
+                slot = cleaned_id or cleaned_name or dev_locator or f"DIMM {dimm_idx}"
+            else:
+                slot = dev_locator or cleaned_id or cleaned_name or "Unknown"
+
             cap_mib = int(dimm.get("CapacityMiB") or 0)
 
             is_populated = cap_mib > 0 and (state in ("Enabled", "OK", "StandbyOnline", "Unknown", "") or raw_state is None) and health.upper() not in ("CRITICAL", "FAILED")
@@ -1213,7 +1290,7 @@ class _SystemMixin(_CollectorBase):
                 ml_socket = mem_loc.get("Socket")
                 ml_channel = mem_loc.get("Channel")
 
-                loc = str(dimm.get("DeviceLocator") or dimm.get("Id") or "").upper().strip()
+                loc = slot.upper().strip()
                 parsed_sock = None
                 parsed_chan = None
 
@@ -1271,13 +1348,17 @@ class _SystemMixin(_CollectorBase):
                         parsed_chan = m_ch.group(1)
 
                 if ml_socket is not None:
-                    final_sock = int(ml_socket)
+                    final_sock = int(ml_socket) + 1 if socket_is_zero_indexed else int(ml_socket)
                 elif parsed_sock is not None:
                     final_sock = parsed_sock
                 else:
                     final_sock = 1
+                if final_sock == 0:
+                    final_sock = 1
 
-                if ml_channel is not None:
+                bogus_channel_telemetry = locators_are_duplicate or has_devtype_pattern
+
+                if ml_channel is not None and not bogus_channel_telemetry:
                     if isinstance(ml_channel, int):
                         final_chan = chr(ord('A') + (ml_channel % max(1, channels_per_socket)))
                     else:
@@ -1285,17 +1366,31 @@ class _SystemMixin(_CollectorBase):
                 elif parsed_chan is not None:
                     final_chan = parsed_chan
                 else:
-                    raw_slot = mem_loc.get("Slot")
-                    if raw_slot is None and loc.isdigit():
+                    m_slot_num = re.search(r"\bDIMM\s*(\d+)\b", slot, re.IGNORECASE)
+                    raw_slot = None
+                    if m_slot_num:
+                        raw_slot = int(m_slot_num.group(1))
+                    elif mem_loc.get("Slot") is not None:
+                        raw_slot = int(mem_loc["Slot"])
+                    elif loc.isdigit():
                         raw_slot = int(loc)
-                    if isinstance(raw_slot, int) and raw_slot > 0 and channels_per_socket > 0:
+
+                    if isinstance(raw_slot, int) and channels_per_socket > 0:
                         # Map numeric slots (e.g. 1..32 on dual-socket Lenovo ThinkSystem SR650 V4)
-                        # Dual-rank / 2-DPC layouts with 16 slots per socket and 8 channels:
-                        # S1 pairs (1,2)->A, (3,4)->B, (5,6)->C, (7,8)->D, (9,10)->E, (11,12)->F, (13,14)->G, (15,16)->H
-                        # S2 pairs (17,18)->A, (19,20)->B, ... (31,32)->H
-                        slot_in_sock = (raw_slot - 1) % (channels_per_socket * 2)
-                        chan_idx = slot_in_sock // 2
-                        final_chan = chr(ord('A') + (chan_idx % channels_per_socket))
+                        # or 1-DPC slots (0..7 on AMD EPYC single socket)
+                        if total_slots <= channels_per_socket * max(1, cpu_count):
+                            chan_idx = raw_slot % channels_per_socket
+                            final_chan = chr(ord('A') + chan_idx)
+                        else:
+                            slot_1based = raw_slot if raw_slot > 0 else (raw_slot + 1)
+                            slot_in_sock = (slot_1based - 1) % (channels_per_socket * 2)
+                            chan_idx = slot_in_sock // 2
+                            final_chan = chr(ord('A') + (chan_idx % channels_per_socket))
+                    elif ml_channel is not None:
+                        if isinstance(ml_channel, int):
+                            final_chan = chr(ord('A') + (ml_channel % max(1, channels_per_socket)))
+                        else:
+                            final_chan = str(ml_channel).strip().upper()
                     else:
                         final_chan = "A"
 
@@ -1339,6 +1434,9 @@ class _SystemMixin(_CollectorBase):
 
                 dimm_list.append({
                     "slot": slot,
+                    "slot_locator": slot,
+                    "id": dimm_id,
+                    "name": dimm_name,
                     "capacity_gb": cap_gb,
                     "type": dimm.get("MemoryType", "DRAM"),
                     "speed_mhz": operating_spd,

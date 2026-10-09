@@ -54,6 +54,8 @@ def _format_observed(observed: Any) -> str:
             return "[Object Data]"
         if any(k in s.lower() for k in ("secret", "password", "hash", "private")):
             return "[Protected]"
+        if "SecurityService requires" in s:
+            return s
         if len(s) > 60:
             return s[:57] + "…"
         return s
@@ -499,12 +501,8 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
         catalog_callout = (
             f"<div style='background:rgba(202,138,4,0.1);border-left:3px solid var(--warning,#ca8a04);"
             f"padding:.75rem 1rem;border-radius:4px;margin-bottom:1rem;font-size:.85rem'>"
-            f"<strong>⚠️ 17G AMD vSAN Ready Node Solution Catalog Advisory:</strong> "
-            f"Installed BIOS <code>{_h(str(catalog_drift.get('current_value')))}</code> diverges from the certified Dell vSAN Ready Node Firmware Catalog baseline "
-            f"(<code>{_h(str(catalog_drift.get('expected_value')))}</code>). While Dell pushes cumulative bare-metal patches to general support pages, "
-            f"VMware and Dell hold vSAN catalog releases until full cluster I/O qualification. Flashing standalone BIOS ahead of catalog qualification can trigger "
-            f"vLCM/vSphere Health Non-Compliance, PCIe ACS timing variations, and known 17G AMD AGESA warm-reboot memory initialization lockups ('Please wait while the system is initializing...'). "
-            f"For production vSAN Ready Nodes, stay on or revert to v1.6.4."
+            f"<strong>BIOS catalog age:</strong> "
+            f"{_h(str(catalog_drift.get('rationale') or ''))}"
             f"</div>"
         )
 
@@ -964,6 +962,7 @@ def render_security_card_and_accordion(
 
     _scan_data = data or {}
     bmc_sec_audit = _scan_data.get("bmc_security_audit") or {}
+    _matrix_id = str(bmc_sec_audit.get("matrix_id") or "dmtf-8")
     _findings = bmc_sec_audit.get("findings") or []
     _findings_by_id = {
         f.get("control_id"): f
@@ -972,6 +971,10 @@ def render_security_card_and_accordion(
     }
 
     _oob_checks = bmc_sec_cfg.get("checks", [])
+    _sec_rows += (
+        f"<tr><td colspan='3' style='font-size:.82rem;padding:.35rem .75rem'>"
+        f"Security matrix: <code>{_h(_matrix_id)}</code></td></tr>"
+    )
     _legacy_hdr_text = (
         "Legacy BMC Security Checks (Compatibility Reference — Normalized Audit Findings Below Take Precedence)"
         if _findings
@@ -1035,7 +1038,9 @@ def render_security_card_and_accordion(
                 _feat_lbl = f"{_h(_oc_feat)} <span style='font-size:.72rem;color:var(--text-muted);font-weight:normal'>[Legacy &mdash; {_matched_cid} authoritative]</span>"
                 _cf = _findings_by_id[_matched_cid]
                 _cf_stat = _cf.get("status", "")
-                _note_extra = f"<span style='font-size:.78rem;color:var(--primary);display:block;margin-top:.2rem'>ℹ️ Normalized audit finding {_matched_cid} ({_h(_cf_stat)}) is authoritative.</span>"
+                _cf_obs = _cf.get("observed")
+                _cf_extra_msg = f" &mdash; {_h(str(_cf_obs))}" if (_cf_stat == "unknown_unlicensed" and _cf_obs) else ""
+                _note_extra = f"<span style='font-size:.78rem;color:var(--primary);display:block;margin-top:.2rem'>ℹ️ Normalized audit finding {_matched_cid} ({_h(_cf_stat)}{_cf_extra_msg}) is authoritative.</span>"
                 _sec_rows += (
                     f"<tr><td style='padding-left:1.1rem'>{_feat_lbl}</td>"
                     f"<td><span class='badge {_oc_bdg}'>{_h(_oc['label'])}</span></td>"
@@ -1096,7 +1101,9 @@ def render_security_card_and_accordion(
                 _feat_lbl = f"{_h(_f_name)} <span style='font-size:.72rem;color:var(--text-muted);font-weight:normal'>[Legacy &mdash; {_matched_cid} authoritative]</span>"
                 _cf = _findings_by_id[_matched_cid]
                 _cf_stat = _cf.get("status", "")
-                _note_extra = f"<span style='font-size:.78rem;color:var(--primary);display:block;margin-top:.2rem'>ℹ️ Normalized audit finding {_matched_cid} ({_h(_cf_stat)}) is authoritative.</span>"
+                _cf_obs = _cf.get("observed")
+                _cf_extra_msg = f" &mdash; {_h(str(_cf_obs))}" if (_cf_stat == "unknown_unlicensed" and _cf_obs) else ""
+                _note_extra = f"<span style='font-size:.78rem;color:var(--primary);display:block;margin-top:.2rem'>ℹ️ Normalized audit finding {_matched_cid} ({_h(_cf_stat)}{_cf_extra_msg}) is authoritative.</span>"
                 _sec_rows += (
                     f"<tr><td style='padding-left:1.1rem'>{_feat_lbl}</td>"
                     f"<td><span class='badge {_f_bdg}'>{_h(_f_lbl)}</span></td>"

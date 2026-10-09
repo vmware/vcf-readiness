@@ -1082,7 +1082,7 @@ class DellCollector(GenericCollector):
         ])
 
         for p in paths:
-            resp = self._get(p)
+            resp = self._get(p, critical=False)
             if resp and isinstance(resp, dict) and not resp.get("error"):
                 attrs = resp.get("Attributes")
                 if isinstance(attrs, dict) and attrs:
@@ -1099,7 +1099,7 @@ class DellCollector(GenericCollector):
                 f"{mgr}/Oem/Dell/DellAttributes/DataStore",
             ]
             # Dynamically inspect Links.Oem.Dell.DellAttributes on Manager
-            mgr_obj = self._get(mgr) if mgr else None
+            mgr_obj = self._get(mgr, critical=False) if mgr else None
             if isinstance(mgr_obj, dict):
                 dell_links = (
                     get_nested(mgr_obj, "Links", "Oem", "Dell", "DellAttributes", default=[])
@@ -1130,7 +1130,7 @@ class DellCollector(GenericCollector):
 
         cert_count = 0
         if getattr(self, "mgr_uri", None):
-            cert_res = self._get(f"{self.mgr_uri}/Certificates")
+            cert_res = self._get(f"{self.mgr_uri}/Certificates", critical=False)
             if cert_res and isinstance(cert_res, dict) and not cert_res.get("error"):
                 members = cert_res.get("Members")
                 if isinstance(members, (list, tuple)):
@@ -1205,7 +1205,7 @@ class DellCollector(GenericCollector):
             if hasattr(self, "_fetch_expanded_collection"):
                 res = self._fetch_expanded_collection(ep)
             else:
-                res = self._get(ep)
+                res = self._get(ep, critical=False)
             if res and isinstance(res, dict) and ("Members" in res or "Members@odata.count" in res):
                 target_ep = ep
                 coll_data = res
@@ -1272,6 +1272,10 @@ class DellCollector(GenericCollector):
         Dell iDRAC (14G–17G, iDRAC9 ≥ 3.00, iDRAC10) supports OData $expand=*($levels=1)
         on FirmwareInventory, EthernetInterfaces, ThermalSubsystem/Fans, and Memory.
         """
+        # LIBRARY_13G_NO_EXPAND: iDRAC8 rejects $expand. 14G-17G keep the map below.
+        _model = str((getattr(self, "sys_summary", None) or {}).get("model") or getattr(self, "sys_model", "") or "").upper()
+        if any(tok in _model for tok in ("R630", "R730", "R930", "T630", "13G")):
+            return ExpandableCollectionsMap({})
         sys_uri = getattr(self, "sys_uri", None) or "/redfish/v1/Systems/System.Embedded.1"
         chassis_uri = getattr(self, "chassis_uri", None) or "/redfish/v1/Chassis/System.Embedded.1"
         mgr_uri = getattr(self, "mgr_uri", None) or "/redfish/v1/Managers/iDRAC.Embedded.1"

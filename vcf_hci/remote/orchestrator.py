@@ -108,7 +108,7 @@ def unpinned_jump_hosts(
 
     unpinned: List[Dict[str, Any]] = []
     seen = set()
-    for jid in routes.keys():
+    for jid in routes:
         if jid in seen:
             continue
         seen.add(jid)
@@ -169,7 +169,7 @@ def run_fanout(
         raise RemoteExecError("no targets to scan")
 
     from vcf_hci.remote.executor import HostKeyRequiredError
-    for jid in routes.keys():
+    for jid in routes:
         profile_row = jump_hosts.get(jid) or {}
         if not profile_row.get("host_key"):
             raise HostKeyRequiredError(

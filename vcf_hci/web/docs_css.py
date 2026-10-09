@@ -479,4 +479,19 @@ DOCS_CSS = """\
     }
 
     .docs-img { max-width: 100%; height: auto; border-radius: var(--vcf-radius); }
+
+    .oem-map-wrap {
+      overflow-x: auto;
+      margin: 1rem 0 1.5rem;
+      padding: .25rem;
+      background: var(--vcf-bg);
+      border: 1px solid var(--vcf-border);
+      border-radius: 8px;
+    }
+    .oem-map-wrap svg {
+      display: block;
+      width: 100%;
+      min-width: 920px;
+      height: auto;
+    }
 """

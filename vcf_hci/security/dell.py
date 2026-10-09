@@ -1223,12 +1223,23 @@ def evaluate_c19_autoconfig(attrs: Dict[str, Any]) -> Dict[str, Any]:
             evidence=ev,
         )
 
+    if enabled is True:
+        return control_finding(
+            control_id="C19",
+            status="fail",
+            expected="Disabled or HTTPS transfer enforced",
+            observed="Enabled (DHCP AutoConfig active)",
+            reason_code=ReasonCode.OEM_REDFISH_FAIL,
+            evidence=ev,
+        )
+
+    # Auto / HTTPS / unrecognized multi-value enums → ambiguous, not silent fail
     return control_finding(
         control_id="C19",
-        status="fail",
+        status="unknown_ambiguous",
         expected="Disabled or HTTPS transfer enforced",
-        observed="Enabled (DHCP AutoConfig active)",
-        reason_code=ReasonCode.OEM_REDFISH_FAIL,
+        observed=f"Unrecognized AutoConfig value: {raw_val!r}",
+        reason_code=ReasonCode.AMBIGUOUS_EVIDENCE,
         evidence=ev,
     )
 

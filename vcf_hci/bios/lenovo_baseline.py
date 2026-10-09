@@ -116,53 +116,61 @@ def evaluate_lenovo_bios_baseline(
     rules: List[Dict[str, Any]] = []
 
     # ── Rule 1: Intel Virtualization Technology (VT-x) ──────────────────────
-    vtx_val = attrs.get("Processors_IntelVirtualizationTechnology") or attrs.get("ProcVirtualization")
+    vtx_val = attrs.get("Processors_IntelVirtualizationTechnology") or attrs.get("ProcVirtualization") or attrs.get("CbsCmnCpuSvmMode") or attrs.get("SVM")
     if vtx_val is not None and str(vtx_val).strip():
         val = str(vtx_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "Processors_IntelVirtualizationTechnology",
-                "setting_name": "Intel Virtualization Technology (VT-x)",
+                "setting_name": "Intel Virtualization Technology (VT-x / AMD-V)",
                 "current_value": val,
                 "expected_value": "Enabled",
                 "severity": None,
                 "status": "compliant",
-                "rationale": "Hardware-assisted CPU virtualization (Intel VT-x) is enabled. Required for ESXi 64-bit guest VMs.",
-                "citation": "vSphere 9.0 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "rationale": "Hardware-assisted CPU virtualization (VT-x / AMD-V) is enabled. Required for ESXi 64-bit guest VMs.",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Hardware-Assisted CPU Virtualization (VT-x and AMD-V™) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
             rules.append({
                 "attribute": "Processors_IntelVirtualizationTechnology",
-                "setting_name": "Intel Virtualization Technology (VT-x)",
+                "setting_name": "Intel Virtualization Technology (VT-x / AMD-V)",
                 "current_value": val,
                 "expected_value": "Enabled",
                 "severity": "blocker",
                 "status": "drifted",
-                "rationale": f"Intel VT-x is Disabled ({val}). ESXi cannot run virtual machines without hardware virtualization support. Hard blocker for VCF deployment.",
-                "citation": "vSphere 9.0 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "rationale": f"Hardware virtualization is Disabled ({val}). ESXi cannot run virtual machines without hardware virtualization support. Hard blocker for VCF deployment.",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Hardware-Assisted CPU Virtualization (VT-x and AMD-V™) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
     else:
         rules.append({
             "attribute": "Processors_IntelVirtualizationTechnology",
-            "setting_name": "Intel Virtualization Technology (VT-x)",
+            "setting_name": "Intel Virtualization Technology (VT-x / AMD-V)",
             "current_value": "Not Exposed",
             "expected_value": "Enabled",
             "severity": None,
             "status": "not_applicable",
             "rationale": "Intel VT-x attribute not exposed in BIOS telemetry.",
-            "citation": "vSphere 9.0 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+            "citation": "VMware vSphere 9.0 Performance Best Practices, Hardware-Assisted CPU Virtualization (VT-x and AMD-V™) (p. 12)",
             "citation_url": VMWARE_PERF_GUIDE_URL,
         })
 
     # ── Rule 2: Intel VT-d (Directed I/O) ───────────────────────────────────
-    vtd_val = attrs.get("DevicesandIOPorts_IntelVTforDirectedIOVTd") or attrs.get("IntelVTforDirectedIOVTd")
+    vtd_val = (
+        attrs.get("DevicesandIOPorts_IntelVTforDirectedIOVTd")
+        or attrs.get("IntelVTforDirectedIOVTd")
+        or attrs.get("VtdSupport")
+        or attrs.get("IOMMU")
+        or attrs.get("CbsCmnGnbNbIOMMU")
+        or attrs.get("CbsCmnGnbNbIommu")
+        or attrs.get("AmdIoMmu")
+    )
     if vtd_val is not None and str(vtd_val).strip():
         val = str(vtd_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "DevicesandIOPorts_IntelVTforDirectedIOVTd",
                 "setting_name": "Intel VT-d (Directed I/O / IOMMU)",
@@ -170,8 +178,8 @@ def evaluate_lenovo_bios_baseline(
                 "expected_value": "Enabled",
                 "severity": None,
                 "status": "compliant",
-                "rationale": "Intel VT-d (IOMMU) is enabled. Required for PCI pass-through, vSAN Direct, and DPU/SmartNIC operations.",
-                "citation": "vSphere 9.0 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "rationale": "Intel VT-d (IOMMU) is enabled (or Auto). Required for PCI pass-through, vSAN Direct, and DPU/SmartNIC operations.",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Hardware-Assisted I/O MMU Virtualization (VT-d and AMD-Vi) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
@@ -183,7 +191,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": "blocker",
                 "status": "drifted",
                 "rationale": f"Intel VT-d is Disabled ({val}). ESXi cannot isolate PCI memory domains or pass NVMe devices directly to vSAN ESA.",
-                "citation": "vSphere 9.0 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Hardware-Assisted I/O MMU Virtualization (VT-d and AMD-Vi) (p. 12)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
     else:
@@ -195,7 +203,7 @@ def evaluate_lenovo_bios_baseline(
             "severity": None,
             "status": "not_applicable",
             "rationale": "Intel VT-d attribute not exposed in BIOS telemetry.",
-            "citation": "vSphere 9.0 Performance Best Practices, Hardware Virtualization Considerations (p. 18)",
+            "citation": "VMware vSphere 9.0 Performance Best Practices, Hardware-Assisted I/O MMU Virtualization (VT-d and AMD-Vi) (p. 12)",
             "citation_url": VMWARE_PERF_GUIDE_URL,
         })
 
@@ -204,7 +212,7 @@ def evaluate_lenovo_bios_baseline(
     if sriov_val is not None and str(sriov_val).strip():
         val = str(sriov_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "DevicesandIOPorts_SRIOV",
                 "setting_name": "SR-IOV Global Enable",
@@ -213,7 +221,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": None,
                 "status": "compliant",
                 "rationale": "SR-IOV Global Enable is Enabled. PCIe NICs support hardware-assisted Virtual Functions (VFs).",
-                "citation": "vSphere 9.0 Performance Best Practices, Network Hardware Considerations (p. 19)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Single Root I/O Virtualization (SR-IOV) (p. 46)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
@@ -225,7 +233,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": "info",
                 "status": "drifted",
                 "rationale": f"SR-IOV is Disabled ({val}). Informational: Enable if Virtual Functions or direct network pass-through are required.",
-                "citation": "vSphere 9.0 Performance Best Practices, Network Hardware Considerations (p. 19)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Single Root I/O Virtualization (SR-IOV) (p. 46)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
     else:
@@ -237,7 +245,7 @@ def evaluate_lenovo_bios_baseline(
             "severity": None,
             "status": "not_applicable",
             "rationale": "SR-IOV attribute not exposed in BIOS telemetry.",
-            "citation": "vSphere 9.0 Performance Best Practices, Network Hardware Considerations (p. 19)",
+            "citation": "VMware vSphere 9.0 Performance Best Practices, Single Root I/O Virtualization (SR-IOV) (p. 46)",
             "citation_url": VMWARE_PERF_GUIDE_URL,
         })
 
@@ -425,11 +433,11 @@ def evaluate_lenovo_bios_baseline(
         })
 
     # ── Rule 7: CPU Turbo Mode ──────────────────────────────────────────────
-    turbo = attrs.get("Processors_TurboMode") or attrs.get("TurboMode")
+    turbo = attrs.get("Processors_TurboMode") or attrs.get("TurboMode") or attrs.get("CbsCmnCpuCpb")
     if turbo is not None and str(turbo).strip():
         val = str(turbo).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "Processors_TurboMode",
                 "setting_name": "CPU Turbo Mode",
@@ -438,7 +446,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": None,
                 "status": "compliant",
                 "rationale": "CPU Turbo Mode is Enabled. Allows processors to opportunistically boost clock rates above nominal TDP baseline.",
-                "citation": "vSphere 9.0 Performance Best Practices, CPU Performance (p. 17)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, General BIOS Settings (p. 21)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
@@ -450,7 +458,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": "warning",
                 "status": "drifted",
                 "rationale": f"CPU Turbo Mode is Disabled ({val}). Processors cannot scale frequencies dynamically under compute peaks.",
-                "citation": "vSphere 9.0 Performance Best Practices, CPU Performance (p. 17)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, General BIOS Settings (p. 21)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
     else:
@@ -462,16 +470,21 @@ def evaluate_lenovo_bios_baseline(
             "severity": None,
             "status": "not_applicable",
             "rationale": "CPU Turbo Mode attribute not exposed in BIOS telemetry.",
-            "citation": "vSphere 9.0 Performance Best Practices, CPU Performance (p. 17)",
+            "citation": "VMware vSphere 9.0 Performance Best Practices, General BIOS Settings (p. 21)",
             "citation_url": VMWARE_PERF_GUIDE_URL,
         })
 
     # ── Rule 8: Hyper-Threading / SMT ───────────────────────────────────────
-    ht_val = attrs.get("Processors_HyperThreading") or attrs.get("HyperThreading")
+    ht_val = (
+        attrs.get("Processors_HyperThreading")
+        or attrs.get("HyperThreading")
+        or attrs.get("CbsCmnCpuSmtCtrl")
+        or attrs.get("LogicalProc")
+    )
     if ht_val is not None and str(ht_val).strip():
         val = str(ht_val).strip()
         val_lower = val.lower()
-        if "enable" in val_lower:
+        if "enable" in val_lower or "auto" in val_lower:
             rules.append({
                 "attribute": "Processors_HyperThreading",
                 "setting_name": "Hyper-Threading (Logical Processors)",
@@ -480,7 +493,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": None,
                 "status": "compliant",
                 "rationale": "Hyper-Threading is Enabled. Maximizes vCPU scheduling capacity and throughput for ESXi NUMA scheduler.",
-                "citation": "vSphere 9.0 Performance Best Practices, CPU Virtualization (p. 17)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Hyper-Threading (p. 26) & General BIOS Settings (p. 21)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
         else:
@@ -492,7 +505,7 @@ def evaluate_lenovo_bios_baseline(
                 "severity": "warning",
                 "status": "drifted",
                 "rationale": f"Hyper-Threading is Disabled ({val}). Server provides only physical core capacity without SMT execution threads.",
-                "citation": "vSphere 9.0 Performance Best Practices, CPU Virtualization (p. 17)",
+                "citation": "VMware vSphere 9.0 Performance Best Practices, Hyper-Threading (p. 26) & General BIOS Settings (p. 21)",
                 "citation_url": VMWARE_PERF_GUIDE_URL,
             })
     else:
@@ -504,7 +517,7 @@ def evaluate_lenovo_bios_baseline(
             "severity": None,
             "status": "not_applicable",
             "rationale": "Hyper-Threading attribute not exposed in BIOS telemetry.",
-            "citation": "vSphere 9.0 Performance Best Practices, CPU Virtualization (p. 17)",
+            "citation": "VMware vSphere 9.0 Performance Best Practices, Hyper-Threading (p. 26) & General BIOS Settings (p. 21)",
             "citation_url": VMWARE_PERF_GUIDE_URL,
         })
 

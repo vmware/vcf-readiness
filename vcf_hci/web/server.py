@@ -145,7 +145,7 @@ def tls_material_error(
 
 def cert_fingerprint_sha256(cert_path: str) -> str:
     """SHA-256 fingerprint of the first PEM certificate, colon-separated."""
-    with open(cert_path, "r", encoding="ascii", errors="ignore") as fh:
+    with open(cert_path, encoding="ascii", errors="ignore") as fh:
         text = fh.read()
     start = text.find("-----BEGIN CERTIFICATE-----")
     end = text.find("-----END CERTIFICATE-----")
@@ -166,9 +166,7 @@ def _launch_token_acceptable(query_tok: str) -> bool:
             return False
         if _LAUNCH_SESSION is None:
             return True
-        if (time.monotonic() - _LAUNCH_REDEEMED_AT) > _LAUNCH_GRACE_SEC:
-            return False
-        return True
+        return (time.monotonic() - _LAUNCH_REDEEMED_AT) <= _LAUNCH_GRACE_SEC
 
 
 def _redeem_launch_token(query_tok: str) -> Optional[str]:
@@ -807,7 +805,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
             self._api_cancel()
         elif path == "/api/discover":
             self._api_discover()
-        elif path == "/api/test-creds":
+        elif path in ("/api/test-creds", "/api/test-creds-batch"):
             self._api_test_creds()
         elif path == "/api/inspect-cert":
             self._api_inspect_cert()

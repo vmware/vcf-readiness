@@ -18,7 +18,8 @@ from vcf_hci.bios.generic_baseline import evaluate_generic_bios_baseline
 from vcf_hci.bios.hpe_baseline import evaluate_hpe_bios_baseline
 from vcf_hci.bios.lenovo_baseline import evaluate_lenovo_bios_baseline
 from vcf_hci.collector.collect_network import infer_nic_manufacturer
-from vcf_hci.collector.pci_utils import select_best_pci_pair_entry
+from vcf_hci.collector.collect_storage_drive import sanitize_endurance_pct
+from vcf_hci.collector.pci_utils import extract_pci_ids_from_dict, normalize_pci_id, select_best_pci_pair_entry
 from vcf_hci.compat_engine import (
     VCF9CompatibilityEngine,
     check_defective_drive_firmware,
@@ -29,7 +30,8 @@ from vcf_hci.compat_engine import (
     evaluate_drive_fw,
     evaluate_pcie_link_health,
 )
-from vcf_hci.constants import BMC_FW_BASELINES
+from vcf_hci.constants import is_generic_name
+from vcf_hci.hcl import is_consumer_drive, lookup_unique_hcl_device
 from vcf_hci.security.contract import empty_security_evidence
 from vcf_hci.security.evaluation import evaluate_security_controls
 from vcf_hci.security.redaction import redact_security_evidence, redact_security_findings
@@ -159,6 +161,357 @@ def enrich_host_result(
     return data
 
 
+def synthesize_pcie_slots(
+    host_data: Dict[str, Any],
+    json_hcl: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Synthesize PCIe slot records for BMC platforms omitting /PCIeSlots.
+
+    Discovers expansion devices from:
+    1. host_data['pcie_devices'] (Phase 1 collection cache)
+    2. host_data['raw_redfish_capture'] (crawled endpoints matching PCIeDevices)
+    3. Peripheral subsystems: network_adapters, storage_subsystem (NVMe), gpu_accelerators, fc_hbas.
+    """
+    if host_data.get("pcie_slots"):
+        return host_data["pcie_slots"]
+
+    if json_hcl is None:
+        try:
+            from vcf_hci.hcl import load_vsan_hcl_json
+            json_hcl = load_vsan_hcl_json()
+        except Exception as exc:
+            logger.debug("Failed loading vSAN HCL JSON for PCIe slot synthesis: %s", exc)
+            json_hcl = None
+
+    slots: List[Dict[str, Any]] = []
+    seen_quads = set()
+    seen_drives = set()
+
+    # Source A: pcie_devices (populated during Phase 1)
+    pcie_devs = host_data.get("pcie_devices") or []
+    for idx, dev in enumerate(pcie_devs, start=1):
+        if not isinstance(dev, dict):
+            continue
+        raw_dict = dev.get("_raw") or {}
+        raw_desc = str(raw_dict.get("Description") or dev.get("description") or "")
+        raw_name = str(raw_dict.get("Name") or dev.get("name") or "")
+        raw_asset = str(raw_dict.get("AssetTag") or "")
+        dev_class = str(dev.get("device_class") or "").upper()
+        vid = str(dev.get("vendor_id") or "").lower()
+        did = str(dev.get("device_id") or "").lower()
+        svid = str(dev.get("subsystem_vendor_id") or "").lower()
+        ssid = str(dev.get("subsystem_id") or "").lower()
+        p_quad = dev.get("pci_quad") or (
+            f"{vid}:{did}:{svid}:{ssid}" if (vid and did and svid and ssid) else f"{vid}:{did}" if (vid and did) else ""
+        )
+
+        if any(kw in raw_desc for kw in ("BRG Onboard", "UNCL Onboard", "MEM Onboard")):
+            continue
+        if any(kw in raw_desc.lower() for kw in ("root port", "host bridge", "internal bus", "pci-to-pci bridge")):
+            continue
+        if dev_class in ("BRIDGE", "NONESSENTIALINSTRUMENTATION", "ENCRYPTIONCONTROLLER") and not dev.get("slot_label") and not raw_asset:
+            continue
+        if vid == "1022" and not dev.get("slot_label") and not raw_asset and dev_class not in ("NETWORKCONTROLLER", "MASSSTORAGECONTROLLER", "DISPLAYCONTROLLER"):
+            continue
+
+        hcl_item = lookup_unique_hcl_device(vid=vid, did=did, svid=svid, ssid=ssid, json_hcl=json_hcl) if (vid and did and json_hcl) else None
+        dev_name = (
+            (hcl_item.get("model") if hcl_item else None)
+            or (dev.get("name") if dev.get("name") and dev.get("name") != dev.get("id") else None)
+            or dev.get("model")
+            or raw_desc
+            or "PCIe Peripheral"
+        )
+        dev_mfr = (hcl_item.get("vendor") if hcl_item else None) or dev.get("manufacturer") or ""
+
+        slot_label = dev.get("slot_label")
+        if not slot_label:
+            if raw_asset.startswith("PCIE"):
+                slot_label = f"PCIe Slot {raw_asset[4:]} ({raw_asset})"
+            elif raw_asset.upper() == "LAN":
+                slot_label = "Onboard LAN"
+            elif raw_asset and not raw_asset.upper().startswith("TAG-"):
+                slot_label = raw_asset
+            elif "Slot" in raw_desc:
+                slot_m = re.search(r"\bSlot\s+(\d+)\b", raw_desc, re.I)
+                slot_label = f"PCIe Slot {slot_m.group(1)}" if slot_m else raw_desc
+            else:
+                slot_label = f"PCIe Slot {idx}"
+
+        lanes = dev.get("lanes")
+        if not lanes:
+            if "100G" in dev_name or "Dx" in dev_name or dev_class == "PROCESSINGACCELERATORS":
+                lanes = 16
+            elif "25G" in dev_name or "Lx" in dev_name:
+                lanes = 8
+            elif "MASSSTORAGE" in dev_class or "NVME" in dev_name.upper():
+                lanes = 4
+            else:
+                lanes = dev.get("max_pcie_width") or 8
+
+        slots.append({
+            "slot_label":          slot_label,
+            "lanes":               lanes,
+            "pcie_type":           dev.get("pcie_type") or "Gen4",
+            "slot_type":           "FullLength",
+            "hot_pluggable":       False,
+            "state":               "Enabled",
+            "populated":           True,
+            "device_name":         dev_name,
+            "device_manufacturer": dev_mfr,
+            "device_part_number":  dev.get("part_number") or "",
+            "device_serial":       dev.get("serial_number") or "",
+            "device_health":       dev.get("health") or "OK",
+            "functions":           dev.get("functions") or [],
+            "function_count":      dev.get("function_count") or len(dev.get("functions") or []) or 1,
+            "vendor_id":           vid,
+            "device_id":           did,
+            "subsystem_vendor_id": svid,
+            "subsystem_id":        ssid,
+            "pci_quad":            p_quad,
+            "pci_pair":            dev.get("pci_pair") or (f"{vid}:{did}" if (vid and did) else ""),
+            "downgraded":          dev.get("downgraded", False),
+            "downgrade_reason":    dev.get("downgrade_reason", ""),
+            "downgrade_badge":     dev.get("downgrade_badge", ""),
+        })
+        if p_quad:
+            seen_quads.add(p_quad)
+
+    # Source B: raw_redfish_capture (crawled endpoints)
+    if not slots and host_data.get("raw_redfish_capture"):
+        raw = host_data["raw_redfish_capture"]
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                if ("/Chassis/" in k or "/Systems/" in k) and "/PCIeDevices/" in k and "/PCIeFunctions" not in k and not k.endswith("PCIeDevices"):
+                    if not isinstance(v, dict):
+                        continue
+                    desc = str(v.get("Description") or "")
+                    asset = str(v.get("AssetTag") or "")
+                    name = str(v.get("Name") or "")
+                    if any(kw in desc for kw in ("BRG Onboard", "UNCL Onboard", "MEM Onboard")):
+                        continue
+                    if any(kw in desc.lower() for kw in ("root port", "host bridge", "internal bus", "pci-to-pci bridge")):
+                        continue
+                    pci = extract_pci_ids_from_dict(v, get_fn=lambda u: raw.get(u))
+                    vid = pci.get("vendor_id", "")
+                    did = pci.get("device_id", "")
+                    svid = pci.get("subsystem_vendor_id", "")
+                    ssid = pci.get("subsystem_id", "")
+                    quad = pci.get("pci_quad", "")
+                    if vid == "1022" and not asset:
+                        continue
+                    hcl_item = lookup_unique_hcl_device(vid=vid, did=did, svid=svid, ssid=ssid, json_hcl=json_hcl) if (vid and did and json_hcl) else None
+                    dev_name = (
+                        (hcl_item.get("model") if hcl_item else None)
+                        or v.get("Model")
+                        or (name if name != v.get("Id") else "")
+                        or desc
+                        or "PCIe Device"
+                    )
+                    if asset.startswith("PCIE"):
+                        slot_label = f"PCIe Slot {asset[4:]} ({asset})"
+                    elif asset.upper() == "LAN":
+                        slot_label = "Onboard LAN"
+                    elif asset and not asset.upper().startswith("TAG-"):
+                        slot_label = asset
+                    elif "Slot" in desc:
+                        m = re.search(r"\bSlot\s+(\d+)\b", desc)
+                        slot_label = f"PCIe Slot {m.group(1)}" if m else desc
+                    else:
+                        slot_label = f"PCIe Slot ({v.get('Id')})"
+                    lanes = 16 if ("100G" in dev_name or "Dx" in dev_name) else (8 if ("25G" in dev_name or "Lx" in dev_name) else 4)
+                    slots.append({
+                        "slot_label":          slot_label,
+                        "lanes":               lanes,
+                        "pcie_type":           "Gen4",
+                        "slot_type":           "FullLength",
+                        "hot_pluggable":       False,
+                        "state":               "Enabled",
+                        "populated":           True,
+                        "device_name":         dev_name,
+                        "device_manufacturer": (hcl_item.get("vendor") if hcl_item else None) or v.get("Manufacturer") or "",
+                        "device_part_number":  v.get("PartNumber") or "",
+                        "device_serial":       v.get("SerialNumber") or "",
+                        "device_health":       "OK",
+                        "functions":           [],
+                        "function_count":      1,
+                        "vendor_id":           vid,
+                        "device_id":           did,
+                        "subsystem_vendor_id": svid,
+                        "subsystem_id":        ssid,
+                        "pci_quad":            quad,
+                        "pci_pair":            f"{vid}:{did}" if (vid and did) else "",
+                        "downgraded":          False,
+                        "downgrade_reason":    "",
+                        "downgrade_badge":     "",
+                    })
+                    if quad:
+                        seen_quads.add(quad)
+
+    # Source C: Network Adapters, Storage NVMe SSDs, GPUs, FC HBAs
+    # 1. Network Adapters
+    for nic in (host_data.get("network_adapters") or []):
+        if not isinstance(nic, dict):
+            continue
+        name = str(nic.get("name") or nic.get("model") or "")
+        if any(kw in name.lower() for kw in ("virtual", "usb", "bmc")):
+            continue
+        quad = nic.get("pci_quad") or ""
+        slot_label = nic.get("slot") or ""
+        if quad and quad in seen_quads:
+            for s in slots:
+                if s.get("pci_quad") == quad:
+                    s["function_count"] = s.get("function_count", 1) + 1
+                    break
+            continue
+        parts = quad.split(":") if quad else []
+        vid = parts[0] if len(parts) > 0 else ""
+        did = parts[1] if len(parts) > 1 else ""
+        svid = parts[2] if len(parts) > 2 else ""
+        ssid = parts[3] if len(parts) > 3 else ""
+        hcl_item = lookup_unique_hcl_device(vid=vid, did=did, svid=svid, ssid=ssid, json_hcl=json_hcl) if (vid and did and json_hcl) else None
+        dev_name = (hcl_item.get("model") if hcl_item else None) or nic.get("name") or nic.get("model") or "Network Adapter"
+        speed = nic.get("speed_gbps") or 0
+        lanes = 16 if speed >= 100 or "100G" in dev_name else (8 if speed >= 25 or "25G" in dev_name else 4)
+        if not slot_label:
+            slot_label = f"PCIe Network Slot {len(slots)+1}"
+        slots.append({
+            "slot_label":          slot_label,
+            "lanes":               lanes,
+            "pcie_type":           "Gen4",
+            "slot_type":           "FullLength",
+            "hot_pluggable":       False,
+            "state":               "Enabled",
+            "populated":           True,
+            "device_name":         dev_name,
+            "device_manufacturer": (hcl_item.get("vendor") if hcl_item else None) or nic.get("manufacturer") or "",
+            "device_part_number":  nic.get("part_number") or "",
+            "device_serial":       nic.get("serial_number") or "",
+            "device_health":       "OK",
+            "functions":           [{"function_id": 0}],
+            "function_count":      1,
+            "vendor_id":           vid,
+            "device_id":           did,
+            "subsystem_vendor_id": svid,
+            "subsystem_id":        ssid,
+            "pci_quad":            quad,
+            "pci_pair":            f"{vid}:{did}" if (vid and did) else "",
+            "downgraded":          False,
+            "downgrade_reason":    "",
+            "downgrade_badge":     "",
+        })
+        if quad:
+            seen_quads.add(quad)
+
+    # 2. Storage NVMe SSDs
+    for c in (host_data.get("storage_subsystem") or []):
+        if not isinstance(c, dict):
+            continue
+        for drv in c.get("drives", []):
+            if not isinstance(drv, dict):
+                continue
+            model = str(drv.get("model") or "")
+            name = str(drv.get("name") or "")
+            proto = str(drv.get("protocol") or drv.get("bus_protocol") or "")
+            drv_id = str(drv.get("serial_number") or drv.get("name") or drv.get("id") or "")
+            if "nvme" in proto.lower() or "nvme" in name.lower() or "nvme" in model.lower() or drv.get("category") == "vSAN ESA/OSA NVMe":
+                if drv_id and drv_id in seen_drives:
+                    continue
+                if drv_id:
+                    seen_drives.add(drv_id)
+                slots.append({
+                    "slot_label":          f"NVMe Slot ({name})" if name else f"NVMe Slot {len(slots)+1}",
+                    "lanes":               4,
+                    "pcie_type":           "Gen4",
+                    "slot_type":           "M2",
+                    "hot_pluggable":       True,
+                    "state":               "Enabled",
+                    "populated":           True,
+                    "device_name":         model or name or "NVMe Solid State Drive",
+                    "device_manufacturer": drv.get("manufacturer") or "NVMe SSD",
+                    "device_part_number":  drv.get("part_number") or "",
+                    "device_serial":       drv.get("serial_number") or "",
+                    "device_health":       "OK",
+                    "functions":           [{"function_id": 0}],
+                    "function_count":      1,
+                    "vendor_id":           "",
+                    "device_id":           "",
+                    "subsystem_vendor_id": "",
+                    "subsystem_id":        "",
+                    "pci_quad":            "",
+                    "pci_pair":            "",
+                    "downgraded":          False,
+                    "downgrade_reason":    "",
+                    "downgrade_badge":     "",
+                })
+
+    # 3. GPUs
+    for gpu in (host_data.get("gpu_accelerators") or []):
+        if not isinstance(gpu, dict):
+            continue
+        g_name = gpu.get("name") or gpu.get("model") or "GPU Accelerator"
+        g_slot = gpu.get("slot") or f"PCIe GPU Slot {len(slots)+1}"
+        slots.append({
+            "slot_label":          g_slot,
+            "lanes":               gpu.get("lanes") or 16,
+            "pcie_type":           gpu.get("pcie_type") or "Gen4",
+            "slot_type":           "FullLength",
+            "hot_pluggable":       False,
+            "state":               "Enabled",
+            "populated":           True,
+            "device_name":         g_name,
+            "device_manufacturer": gpu.get("manufacturer") or "GPU",
+            "device_part_number":  gpu.get("part_number") or "",
+            "device_serial":       gpu.get("serial_number") or "",
+            "device_health":       "OK",
+            "functions":           [{"function_id": 0}],
+            "function_count":      1,
+            "vendor_id":           gpu.get("vendor_id") or "",
+            "device_id":           gpu.get("device_id") or "",
+            "subsystem_vendor_id": gpu.get("subsystem_vendor_id") or "",
+            "subsystem_id":        gpu.get("subsystem_id") or "",
+            "pci_quad":            gpu.get("pci_quad") or "",
+            "pci_pair":            gpu.get("pci_pair") or "",
+            "downgraded":          False,
+            "downgrade_reason":    "",
+            "downgrade_badge":     "",
+        })
+
+    # 4. FC HBAs
+    for hba in (host_data.get("fc_hbas") or []):
+        if not isinstance(hba, dict):
+            continue
+        h_name = hba.get("model") or hba.get("name") or "FC HBA"
+        h_slot = hba.get("slot") or f"PCIe FC HBA Slot {len(slots)+1}"
+        slots.append({
+            "slot_label":          h_slot,
+            "lanes":               hba.get("lanes") or 8,
+            "pcie_type":           hba.get("pcie_type") or "Gen4",
+            "slot_type":           "FullLength",
+            "hot_pluggable":       False,
+            "state":               "Enabled",
+            "populated":           True,
+            "device_name":         h_name,
+            "device_manufacturer": hba.get("manufacturer") or "Fibre Channel",
+            "device_part_number":  hba.get("part_number") or "",
+            "device_serial":       hba.get("serial_number") or "",
+            "device_health":       "OK",
+            "functions":           [{"function_id": 0}],
+            "function_count":      1,
+            "vendor_id":           hba.get("vendor_id") or "",
+            "device_id":           hba.get("device_id") or "",
+            "subsystem_vendor_id": hba.get("subsystem_vendor_id") or "",
+            "subsystem_id":        hba.get("subsystem_id") or "",
+            "pci_quad":            hba.get("pci_quad") or "",
+            "pci_pair":            hba.get("pci_pair") or "",
+            "downgraded":          False,
+            "downgrade_reason":    "",
+            "downgrade_badge":     "",
+        })
+
+    return slots
+
+
 def _enrich_single_host(
     host_data: Dict[str, Any],
     json_hcl: Optional[Dict[str, Any]] = None,
@@ -169,12 +522,37 @@ def _enrich_single_host(
     if not force and host_data.get("_enriched"):
         return
 
+    if json_hcl is None:
+        try:
+            from vcf_hci.hcl import load_vsan_hcl_json
+            json_hcl = load_vsan_hcl_json()
+        except Exception as exc:
+            logger.debug("Failed loading vSAN HCL JSON: %s", exc)
+            json_hcl = None
+
     system = host_data.get("system")
     if not isinstance(system, dict):
         system = {}
 
     vendor = str(system.get("vendor") or "Unknown Vendor")
     model = str(system.get("model") or "Unknown Server")
+
+    _placeholder_vendors = {
+        "TO BE FILLED BY O.E.M.", "DEFAULT STRING", "SYSTEM MANUFACTURER",
+        "UNKNOWN VENDOR", "UNKNOWN", "",
+    }
+    if vendor.upper().strip() in _placeholder_vendors:
+        _model_up = model.upper().strip()
+        if "ROMED8" in _model_up or "EPYCD8" in _model_up or "GENOAD8" in _model_up or "BERGAMOD8" in _model_up or "SP3" in _model_up:
+            vendor = "ASRock Rack"
+            system["vendor"] = "ASRock Rack"
+        elif _model_up.startswith(("X11", "X12", "X13", "H11", "H12", "H13", "SYS-")):
+            vendor = "Supermicro"
+            system["vendor"] = "Supermicro"
+        elif _model_up.startswith(("MZ31", "MZ32", "MZ71", "MZ72")):
+            vendor = "Gigabyte"
+            system["vendor"] = "Gigabyte"
+
     bios_version = str(system.get("bios_version") or "Unknown")
     bios_date = str(system.get("bios_release_date") or "")
 
@@ -241,25 +619,17 @@ def _enrich_single_host(
             mgr_model = str(bmc_fw_info.get("bmc_model") or "").strip().upper()
 
             if fw_ver != "N/A" and mgr_model:
-                if "13G" in mgr_model and "IDRAC" not in mgr_model:
-                    mgr_model = "IDRAC8"
-                elif any(g in mgr_model for g in ("14G", "15G", "16G")) and "IDRAC" not in mgr_model:
-                    mgr_model = "IDRAC9"
-                elif "17G" in mgr_model and "IDRAC" not in mgr_model:
-                    mgr_model = "IDRAC10"
-                matched_key = None
-                for key in BMC_FW_BASELINES:
-                    if key in mgr_model or key in fw_ver.upper():
-                        matched_key = key
-                        break
-                if matched_key:
-                    bmc_eval = evaluate_bmc_fw_version(matched_key, fw_ver)
-                    if not bmc_fw_info.get("bmc_model") or bmc_fw_info["bmc_model"] in (
-                        "BMC", "13G MONOLITHIC", "14G MONOLITHIC", "15G MONOLITHIC", "16G MONOLITHIC", "17G MONOLITHIC"
-                    ):
-                        bmc_fw_info["bmc_model"] = matched_key
-                else:
-                    bmc_eval = evaluate_bmc_fw_version(mgr_model, fw_ver)
+                bmc_eval = evaluate_bmc_fw_version(mgr_model, fw_ver, server_model=model)
+                matched_key = bmc_eval.get("baseline_key")
+                if matched_key and (
+                    not bmc_fw_info.get("bmc_model")
+                    or bmc_fw_info["bmc_model"] in (
+                        "BMC", "13G MONOLITHIC", "14G MONOLITHIC", "15G MONOLITHIC",
+                        "16G MONOLITHIC", "17G MONOLITHIC",
+                    )
+                ):
+                    bmc_fw_info["bmc_model"] = matched_key
+
 
                 bmc_fw_info["bmc_fw_eval"] = bmc_eval
                 bmc_fw_info["badge"] = bmc_eval.get("badge", "")
@@ -276,17 +646,47 @@ def _enrich_single_host(
             mem_sub["expected_channels_total"] = cpu_count * chan_per_socket
         dimm_list = mem_sub.get("dimm_list")
         if isinstance(dimm_list, list) and chan_per_socket > 0:
+            # Self-heal duplicate "DIMM 0" or identical slot names from older scans or broken BMCs
+            raw_slots = [str(d.get("slot") or "").strip() for d in dimm_list if isinstance(d, dict)]
+            if len(dimm_list) > 1 and len(set(raw_slots)) <= 1:
+                for idx, d in enumerate(dimm_list):
+                    if not isinstance(d, dict):
+                        continue
+                    cand_id = str(d.get("id") or d.get("name") or "").strip()
+                    m_d = re.search(r"DIMM\s*(\d+)", cand_id, re.IGNORECASE)
+                    slot_num = int(m_d.group(1)) if m_d else idx
+                    d["slot"] = f"DIMM {slot_num}"
+                    d["slot_locator"] = f"DIMM {slot_num}"
+
+            # Self-heal 0-indexed sockets across all DIMMs
+            raw_socks = [int(d.get("socket")) for d in dimm_list if isinstance(d, dict) and d.get("socket") is not None]
+            if raw_socks and min(raw_socks) == 0:
+                for d in dimm_list:
+                    if isinstance(d, dict) and d.get("socket") is not None:
+                        d["socket"] = int(d["socket"]) + 1
+
             active_channels_set = set()
             for d in dimm_list:
                 if not isinstance(d, dict):
                     continue
                 slot_str = str(d.get("slot") or "").strip().upper()
                 m_dell = re.search(r"\bDIMM\s+([A-D])\s*(\d+)\b", slot_str)
+                m_dimm_num = re.search(r"\bDIMM\s*(\d+)\b", slot_str)
                 if m_dell:
                     s_idx = ord(m_dell.group(1)) - ord('A') + 1
                     slot_num = int(m_dell.group(2))
                     d["socket"] = s_idx
                     d["channel"] = chr(ord('A') + (slot_num - 1) % chan_per_socket)
+                elif m_dimm_num:
+                    raw_slot = int(m_dimm_num.group(1))
+                    total_board_slots = int(mem_sub.get("slot_count") or mem_sub.get("total_slots") or len(dimm_list))
+                    if total_board_slots <= chan_per_socket * max(1, cpu_count):
+                        d["channel"] = chr(ord('A') + (raw_slot % chan_per_socket))
+                    else:
+                        slot_1based = raw_slot if raw_slot > 0 else (raw_slot + 1)
+                        slot_in_sock = (slot_1based - 1) % (chan_per_socket * 2)
+                        chan_idx = slot_in_sock // 2
+                        d["channel"] = chr(ord('A') + (chan_idx % chan_per_socket))
                 elif slot_str.isdigit():
                     raw_slot = int(slot_str)
                     if raw_slot > 0:
@@ -301,7 +701,10 @@ def _enrich_single_host(
                         d["channel"] = chr(ord('A') + (ch_offset % chan_per_socket))
 
                 if int(d.get("capacity_gb") or 0) > 0:
-                    s_val = d.get("socket", 1)
+                    s_val = int(d.get("socket") or 1)
+                    if s_val == 0:
+                        s_val = 1
+                        d["socket"] = 1
                     ch_final = d.get("channel", "A")
                     active_channels_set.add(f"S{s_val}-Ch{ch_final}")
 
@@ -324,6 +727,29 @@ def _enrich_single_host(
 
     # 6. PCIe Lane Budget Evaluation
     pcie_slots = host_data.get("pcie_slots") or []
+    if not pcie_slots:
+        pcie_slots = synthesize_pcie_slots(host_data, json_hcl=json_hcl)
+        if pcie_slots:
+            host_data["pcie_slots"] = pcie_slots
+
+    # Enrich generic slot device names & manufacturers from HCL
+    if isinstance(pcie_slots, list):
+        for s in pcie_slots:
+            if not isinstance(s, dict):
+                continue
+            d_name = s.get("device_name", "")
+            vid = s.get("vendor_id", "")
+            did = s.get("device_id", "")
+            svid = s.get("subsystem_vendor_id", "")
+            ssid = s.get("subsystem_id", "")
+            if is_generic_name(d_name) and vid and did:
+                hcl_item = lookup_unique_hcl_device(vid=vid, did=did, svid=svid, ssid=ssid, json_hcl=json_hcl)
+                if hcl_item:
+                    s["device_name"] = hcl_item.get("model") or d_name
+                    mfr_raw = str(s.get("device_manufacturer") or "").strip()
+                    if not mfr_raw or is_generic_name(mfr_raw) or re.match(r"^[0-9a-fA-F]{4,8}$", mfr_raw):
+                        s["device_manufacturer"] = hcl_item.get("vendor") or mfr_raw
+
     max_pcie_lanes = (
         int(cpu_summary.get("max_pcie_lanes_per_socket") or 0)
         if isinstance(cpu_summary, dict)
@@ -363,49 +789,96 @@ def _enrich_single_host(
                     str(nic.get("name") or ""),
                 )
 
-            # Check if adapter or all its ports have 0/None speed
-            ports = nic.get("ports") or []
-            max_port_speed = max((float(p.get("current_speed_gbps") or 0) for p in ports if isinstance(p, dict)), default=0.0)
-            nic_speed = float(nic.get("speed_gbps") or 0.0)
+            # Normalize and resolve PCI IDs
+            vid = normalize_pci_id(nic.get("vendor_id") or "")
+            did = normalize_pci_id(nic.get("device_id") or "")
+            svid = normalize_pci_id(nic.get("subsystem_vendor_id") or "")
+            ssid = normalize_pci_id(nic.get("subsystem_id") or "")
+            if vid and did:
+                if not nic.get("pci_pair"):
+                    nic["pci_pair"] = f"{vid}:{did}"
+                if svid and ssid and not nic.get("pci_quad"):
+                    nic["pci_quad"] = f"{vid}:{did}:{svid}:{ssid}"
 
-            if max_port_speed <= 0 and nic_speed <= 0:
-                pci_quad = (nic.get("pci_quad") or "").lower().strip()
-                pci_pair = (nic.get("pci_pair") or "").lower().strip()
-                matched_model = ""
-                matched_speed = 0.0
+            pci_quad = (nic.get("pci_quad") or "").lower().strip()
+            pci_pair = (nic.get("pci_pair") or "").lower().strip()
 
-                if pci_quad or pci_pair:
-                    if io_catalog is None:
-                        try:
-                            from vcf_hci.hcl.loader import load_io_nics_catalog
-                            io_catalog = load_io_nics_catalog()
-                        except Exception:
-                            io_catalog = {}
+            dev = None
+            matched_model = ""
+            matched_speed = 0.0
 
-                    quads = io_catalog.get("quads") or {}
-                    pairs = io_catalog.get("pairs") or {}
-                    dev = None
+            # 1. First check json_hcl if available
+            if json_hcl and isinstance(json_hcl, dict):
+                hcl_quads = json_hcl.get("quads") or json_hcl.get("_pci_quads") or {}
+                if pci_quad and pci_quad in hcl_quads:
+                    dev = hcl_quads[pci_quad]
+                elif pci_quad and pci_quad in json_hcl:
+                    dev = json_hcl[pci_quad]
+                elif pci_pair:
+                    hcl_pairs = json_hcl.get("pairs") or json_hcl.get("_pci_pairs") or {}
+                    if pci_pair in hcl_pairs:
+                        dev = select_best_pci_pair_entry(
+                            hcl_pairs[pci_pair],
+                            model_name=str(nic.get("name") or ""),
+                            svid=svid or nic.get("subsystem_vendor_id", ""),
+                            ssid=ssid or nic.get("subsystem_id", ""),
+                        )
+
+            # 2. Fallback to io_catalog
+            if not dev and (pci_quad or pci_pair):
+                if io_catalog is None:
+                    try:
+                        from vcf_hci.hcl.loader import load_io_nics_catalog
+                        io_catalog = load_io_nics_catalog()
+                    except Exception:
+                        io_catalog = {}
+
+                quads = io_catalog.get("quads") or {}
+                pairs = io_catalog.get("pairs") or {}
+                if pci_quad:
                     for qk, qv in quads.items():
                         if qk.lower() == pci_quad:
                             dev = qv
                             break
-                    if not dev and pci_pair:
-                        if pci_pair in pairs:
-                            dev = select_best_pci_pair_entry(
-                                pairs[pci_pair],
-                                model_name=str(nic.get("name") or ""),
-                                svid=nic.get("vendor_id", ""),
-                                ssid=nic.get("subsystem_id", ""),
-                            )
+                if not dev and pci_pair and pci_pair in pairs:
+                    dev = select_best_pci_pair_entry(
+                        pairs[pci_pair],
+                        model_name=str(nic.get("name") or ""),
+                        svid=svid or nic.get("subsystem_vendor_id", ""),
+                        ssid=ssid or nic.get("subsystem_id", ""),
+                    )
 
-                    if isinstance(dev, dict):
-                        matched_model = dev.get("model") or ""
-                        if dev.get("speed_gbps"):
-                            try:
-                                matched_speed = float(dev["speed_gbps"])
-                            except Exception:
-                                pass
+            if isinstance(dev, dict):
+                matched_model = dev.get("model") or ""
+                if is_generic_name(nic.get("name")) and matched_model:
+                    nic["name"] = matched_model
+                if not nic.get("model") or is_generic_name(nic.get("model")):
+                    if matched_model:
+                        nic["model"] = matched_model
+                if (not nic.get("manufacturer") or str(nic.get("manufacturer")).lower() in ("unknown", "n/a", "none", "", "null")) and dev.get("brand_name"):
+                    nic["manufacturer"] = dev.get("brand_name")
+                if dev.get("product_id") and not nic.get("product_id"):
+                    nic["product_id"] = str(dev["product_id"])
+                if dev.get("io_product_id") and not nic.get("io_product_id"):
+                    nic["io_product_id"] = str(dev["io_product_id"])
+                elif dev.get("product_id") and not nic.get("io_product_id"):
+                    nic["io_product_id"] = str(dev["product_id"])
+                if dev.get("io_vcglink") and not nic.get("io_vcglink"):
+                    nic["io_vcglink"] = str(dev["io_vcglink"])
+                elif dev.get("vcglink") and not nic.get("io_vcglink"):
+                    nic["io_vcglink"] = str(dev["vcglink"])
+                if dev.get("speed_gbps"):
+                    try:
+                        matched_speed = float(dev["speed_gbps"])
+                    except Exception:
+                        pass
 
+            # Check if adapter or all its ports have 0/None speed
+            ports = nic.get("ports") or []
+            max_port_speed = max((float(p.get("current_speed_gbps") or p.get("speed_gbps") or 0) for p in ports if isinstance(p, dict)), default=0.0)
+            nic_speed = float(nic.get("speed_gbps") or 0.0)
+
+            if max_port_speed <= 0 and nic_speed <= 0:
                 if matched_speed <= 0:
                     cand_text = f"{matched_model} {nic.get('name', '')} {nic.get('model', '')} {nic.get('id', '')}"
                     m_speeds = re.findall(r"\b(400|200|100|50|40|25|10|1)\s*(?:G(?:bE|b|E)?|Gigabit)\b", cand_text, re.IGNORECASE)
@@ -424,10 +897,26 @@ def _enrich_single_host(
                     int_or_float = int(matched_speed) if matched_speed == int(matched_speed) else round(matched_speed, 2)
                     nic["speed_gbps"] = int_or_float
                     for p in ports:
-                        if isinstance(p, dict) and (not p.get("current_speed_gbps") or p.get("current_speed_gbps") == 0):
-                            p["current_speed_gbps"] = int_or_float
+                        if isinstance(p, dict):
+                            p_spd = float(p.get("current_speed_gbps") or p.get("speed_gbps") or 0)
+                            if p_spd <= 0:
+                                p["current_speed_gbps"] = int_or_float
+                                if "speed_gbps" in p:
+                                    p["speed_gbps"] = int_or_float
             elif max_port_speed > 0 and nic_speed <= 0:
                 nic["speed_gbps"] = int(max_port_speed) if max_port_speed == int(max_port_speed) else round(max_port_speed, 2)
+
+            # If adapter has a known speed, ensure 0-speed ports inherit it
+            eff_nic_speed = float(nic.get("speed_gbps") or 0.0)
+            if eff_nic_speed > 0:
+                val = int(eff_nic_speed) if eff_nic_speed == int(eff_nic_speed) else round(eff_nic_speed, 2)
+                for p in ports:
+                    if isinstance(p, dict):
+                        p_spd = float(p.get("current_speed_gbps") or p.get("speed_gbps") or 0)
+                        if p_spd <= 0:
+                            p["current_speed_gbps"] = val
+                            if "speed_gbps" in p:
+                                p["speed_gbps"] = val
 
             # Cascade port speed down to virtual interfaces / partitions if missing
             parts = nic.get("vic_virtual_interfaces") or nic.get("npar_partitions") or []
@@ -575,6 +1064,50 @@ def _enrich_single_host(
                             system["persistent_boot_target"] = str(b_name).strip()
                         break
 
+        # Correlate boot drive when system boots local ESXi/OS and no drive is flagged is_boot
+        all_drives = [
+            d for ctrl in storage if isinstance(ctrl, dict)
+            for d in (ctrl.get("drives") or []) if isinstance(d, dict) and d.get("populated", True)
+        ]
+        has_flagged_boot = any(d.get("is_boot") for d in all_drives)
+        if not has_flagged_boot and all_drives:
+            cur_boot_tgt_low = cur_boot_tgt.lower()
+            is_os_boot = (
+                any(k in cur_boot_tgt_low for k in ["esxi", "vmware", "uefi os", "red hat", "windows", "linux", "ubuntu", "centos"])
+                or any(
+                    "safeboot64.efi" in str(b.get("uefi_path", "")).lower()
+                    or "bootx64.efi" in str(b.get("uefi_path", "")).lower()
+                    for b in (system.get("boot_order_details") or [])
+                )
+            )
+            if is_os_boot:
+                nvme_drives = [d for d in all_drives if "NVME" in str(d.get("protocol", "")).upper() or "PCIE" in str(d.get("protocol", "")).upper() or d.get("is_edsff")]
+                sata_drives = [d for d in all_drives if "SATA" in str(d.get("protocol", "")).upper() or "SAS" in str(d.get("protocol", "")).upper()]
+                consumer_drives = [d for d in all_drives if d.get("is_consumer") or is_consumer_drive(d.get("model", ""), d.get("manufacturer", ""))]
+
+                boot_candidate = None
+                if len(consumer_drives) == 1:
+                    boot_candidate = consumer_drives[0]
+                elif len(sata_drives) == 1 and len(nvme_drives) >= 2:
+                    boot_candidate = sata_drives[0]
+                elif consumer_drives and len(nvme_drives) >= 2:
+                    boot_candidate = min(consumer_drives, key=lambda x: x.get("capacity_gb") or 0)
+
+                if boot_candidate:
+                    boot_candidate["is_boot"] = True
+                    boot_candidate["usage_role"] = "Boot Drive"
+                    boot_candidate["category"] = "Boot Device"
+                    boot_candidate["vsan_eligible"] = False
+                    if boot_candidate.get("is_consumer") or is_consumer_drive(boot_candidate.get("model", ""), boot_candidate.get("manufacturer", "")):
+                        boot_candidate["status_badge"] = (
+                            "<span class='badge' style='background:#0284c7;color:#fff'>🚀 Boot Device</span>"
+                            "<br><small style='color:var(--text-muted,#94a3b8);font-size:.75rem'>Consumer SSD (Boot Only — Not vSAN Eligible)</small>"
+                        )
+                    else:
+                        boot_candidate["status_badge"] = (
+                            "<span class='badge info'>⚙️ Boot Device Only (Non-vSAN)</span>"
+                        )
+
         for ctrl in storage:
             if isinstance(ctrl, dict):
                 ctrl_link = evaluate_pcie_link_health(ctrl)
@@ -595,6 +1128,10 @@ def _enrich_single_host(
                 if isinstance(drives, list):
                     for drive in drives:
                         if isinstance(drive, dict):
+                            # Defensively sanitize 255 / invalid endurance telemetry
+                            if "endurance_pct" in drive:
+                                drive["endurance_pct"] = sanitize_endurance_pct(drive.get("endurance_pct"))
+
                             # Evaluate Drive PCIe Link & Signal Degradation
                             if drive.get("pcie_errors") or drive.get("pcie_bus_errors") or drive.get("lanes") or drive.get("negotiated_lanes") or drive.get("max_lanes"):
                                 d_link = evaluate_pcie_link_health(drive)
@@ -657,6 +1194,7 @@ def _enrich_single_host(
             host_data["bmc_security_audit"] = {
                 "schema_version": sec_evidence.get("schema_version", 1),
                 "vendor": sec_evidence.get("vendor", norm_vendor),
+                "matrix_id": sec_evidence.get("_matrix_id") or "dmtf-8",
                 "findings": findings,
                 "summary": {
                     "pass": pass_count,
@@ -1081,5 +1619,7 @@ def _enrich_single_host(
         host_data["assessment_verdict"] = eval_summary
         system["assessment_verdict"] = eval_summary
 
+    from vcf_hci.collector.hardware_findings import annotate_hardware_findings
+    annotate_hardware_findings(host_data)
     host_data["_enriched"] = True
 

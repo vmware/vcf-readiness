@@ -97,7 +97,9 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <div id="sharedCreds" class="form-grid">
         <div class="clr-form-group">
           <label class="clr-control-label">Username</label>
-          <input class="clr-input" id="usernameInput" type="text" value="root" autocomplete="username">
+          <input class="clr-input" id="usernameInput" type="text" autocomplete="username"
+            placeholder="user  or  user@contoso.com">
+          <span class="clr-hint">Defaults to <code>root</code> if blank. Supports local or domain accounts.</span>
         </div>
         <div class="clr-form-group">
           <label class="clr-control-label">Password</label>
@@ -108,8 +110,9 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <p class="text-sm text-muted">Per-host credentials — populated after Probe:</p>
         <div id="perHostRows"></div>
       </div>
-      <div class="flex gap-sm mt-half" style="flex-wrap:wrap">
-        <button class="btn btn-flat btn-sm" id="testCredsBtn">Test Connection</button>
+      <div class="flex gap-sm mt-half" style="flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-flat btn-sm" id="testCredsBtn" type="button">Test Connection</button>
+        <button class="btn btn-outline btn-sm hidden" id="validateFleetCredsBtn" type="button">Validate All Hosts</button>
         <span class="text-sm text-muted" id="testCredsStatus"></span>
       </div>
       <div class="clr-check-row mt-half" id="useVaultRow">
@@ -386,7 +389,8 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
             </div>
             <div class="clr-form-group">
               <label class="clr-control-label">Username</label>
-              <input class="clr-input" id="vaultAddUser" type="text" value="root" autocomplete="off">
+              <input class="clr-input" id="vaultAddUser" type="text" value="root" autocomplete="off"
+                placeholder="user  or  user@contoso.com">
             </div>
             <div class="clr-form-group">
               <label class="clr-control-label">Password</label>

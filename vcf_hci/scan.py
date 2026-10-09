@@ -661,7 +661,7 @@ def scan_hosts(
             if n > COMBINED_HTML_MAX_HOSTS:
                 _log(f"\n[!] Note: Combined report host count ({n}) exceeds soft limit of {COMBINED_HTML_MAX_HOSTS}.")
             try:
-                fleet_path = _generate_combined_html(results, report_paths, outdir)
+                fleet_path = _generate_combined_html(results, report_paths, outdir, json_hcl=json_hcl)
                 if fleet_path:
                     _log(f"\n[✓] Combined report  →  {os.path.basename(fleet_path)}")
             except Exception as exc:
@@ -702,6 +702,7 @@ def scan_hosts(
                         obf_report_paths,
                         outdir,
                         obfuscated=True,
+                        json_hcl=json_hcl,
                     )
                     if _obf_fleet_path:
                         _log(f"[🔒] Obfuscated combined report →  {os.path.basename(_obf_fleet_path)}")

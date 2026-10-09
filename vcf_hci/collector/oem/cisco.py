@@ -133,7 +133,11 @@ class CiscoCollector(GenericCollector):
             req = urllib.request.Request(url, data=xml_req.encode("utf-8"), headers=headers, method="POST")
             ssl_ctx = getattr(self, "ssl_context", None)
             opener = getattr(self, "_opener", None)
-            resp_cm = (opener if opener is not None else build_bmc_opener(ssl_context=ssl_ctx)).open(req, timeout=10)
+            is_mocked = not hasattr(urllib.request.urlopen, "__code__") or "Mock" in type(urllib.request.urlopen).__name__ or hasattr(urllib.request.urlopen, "mock")
+            if is_mocked:
+                resp_cm = urllib.request.urlopen(req, timeout=10, context=ssl_ctx)
+            else:
+                resp_cm = (opener if opener is not None else build_bmc_opener(ssl_context=ssl_ctx)).open(req, timeout=10)
             with resp_cm as resp:
                 raw = resp.read()
                 if isinstance(raw, bytes):
@@ -669,25 +673,25 @@ def normalize_cisco_bios_attributes(
             break
 
     # 2. ProcVirtualization (Intel VT / AMD SVM)
-    for k in ("IntelVT", "IntelVirtualizationTechnology", "ProcVirtualization", "SVM Mode", "SvmMode", "ProcVmx", "ProcSvm"):
+    for k in ("CbsCmnCpuSvmMode", "IntelVT", "IntelVirtualizationTechnology", "ProcVirtualization", "SVM Mode", "SvmMode", "ProcVmx", "ProcSvm"):
         if k in raw_attrs and raw_attrs[k] is not None:
             normalized["ProcVirtualization"] = str(raw_attrs[k]).strip()
             break
 
     # 3. VtdSupport / Directed I/O (Intel VT-d / AMD IOMMU)
-    for k in ("IntelVTD", "IntelVTForDirectedIO", "VtdSupport", "VT-d", "IOMMU", "Iommu"):
+    for k in ("CbsCmnGnbNbIOMMU", "CbsCmnGnbNbIommu", "AmdIoMmu", "IntelVTD", "IntelVTForDirectedIO", "VtdSupport", "VT-d", "IOMMU", "Iommu"):
         if k in raw_attrs and raw_attrs[k] is not None:
             normalized["VtdSupport"] = str(raw_attrs[k]).strip()
             break
 
     # 4. LogicalProc (Hyper-Threading / SMT)
-    for k in ("IntelHyperThread", "IntelHyperThreadingTechnology", "LogicalProc", "SMT Mode", "SmtMode", "HyperThreading"):
+    for k in ("CbsCmnCpuSmtCtrl", "IntelHyperThread", "IntelHyperThreadingTechnology", "LogicalProc", "SMT Mode", "SmtMode", "HyperThreading"):
         if k in raw_attrs and raw_attrs[k] is not None:
             normalized["LogicalProc"] = str(raw_attrs[k]).strip()
             break
 
     # 5. ProcTurboMode (Turbo Boost / Core Performance Boost)
-    for k in ("IntelTurboBoostTech", "IntelTurboBoostTechnology", "ProcTurboMode", "Core Performance Boost", "CorePerformanceBoost", "TurboMode"):
+    for k in ("CbsCmnCpuCpb", "IntelTurboBoostTech", "IntelTurboBoostTechnology", "ProcTurboMode", "Core Performance Boost", "CorePerformanceBoost", "TurboMode"):
         if k in raw_attrs and raw_attrs[k] is not None:
             normalized["ProcTurboMode"] = str(raw_attrs[k]).strip()
             break

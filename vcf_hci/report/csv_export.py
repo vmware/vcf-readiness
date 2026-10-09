@@ -70,12 +70,15 @@ def generate_drives_csv(
         ip = str(si.get("ip") or data.get("host") or "").strip()
         host = str(si.get("hostname") or "").strip()
         for ctrl in data.get("storage_subsystem", []):
-            ctrl_name = str(ctrl.get("name") or ctrl.get("controller_model") or "Controller").strip()
+            base_ctrl_name = str(ctrl.get("name") or ctrl.get("controller_model") or "Controller").strip()
             ctrl_fw = str(ctrl.get("ctrl_firmware") or ctrl.get("firmware_version") or "").strip()
             for d in ctrl.get("drives", []):
                 if not d.get("populated", True) and d.get("category") == "Empty":
                     continue
+                ctrl_name = str(d.get("controller_name") or base_ctrl_name).strip()
                 ep = d.get("endurance_remaining_pct", "")
+                if ep in (255, "255", "255%"):
+                    ep = "N/A"
                 ep_str = f"{ep}%" if (ep != "" and ep != "N/A" and ep is not None) else "N/A"
                 writer.writerow([
                     ip,

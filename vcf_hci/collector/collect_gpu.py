@@ -85,12 +85,44 @@ class _GPUMixin(_CollectorBase):
             link_info = extract_pcie_link_status(dev)
 
             slot = dev.get("Slot") or {}
-            slot_loc = slot.get("Location") or {}
-            part_loc = slot_loc.get("PartLocation") or {}
-            slot_ordinal = part_loc.get("LocationOrdinalValue")
-            slot_label = f"PCIe Slot {slot_ordinal}" if slot_ordinal is not None else ""
+            if isinstance(slot, (str, int)):
+                slot_label = f"PCIe Slot {slot}" if str(slot).isdigit() else str(slot)
+            else:
+                slot_loc = slot.get("Location") or {}
+                part_loc = slot_loc.get("PartLocation") or {}
+                slot_ordinal = part_loc.get("LocationOrdinalValue")
+                slot_label = f"PCIe Slot {slot_ordinal}" if slot_ordinal is not None else ""
+                if not slot_label:
+                    slot_label = slot_loc.get("ServiceLabel") or part_loc.get("ServiceLabel") or ""
+
+            # Check top-level Location / PhysicalLocation
             if not slot_label:
-                slot_label = slot_loc.get("ServiceLabel") or part_loc.get("ServiceLabel") or ""
+                loc = dev.get("PhysicalLocation") or dev.get("Location") or {}
+                if isinstance(loc, dict):
+                    ploc = loc.get("PartLocation") or {}
+                    slot_label = ploc.get("ServiceLabel") or loc.get("ServiceLabel") or ""
+
+            # Check AssetTag (common on AMI MegaRAC / ASRock / Supermicro e.g. PCIE6, PCIE7, LAN)
+            asset_tag = str(dev.get("AssetTag") or "").strip()
+            if asset_tag and not slot_label:
+                if re.match(r"^PCIE\d+$", asset_tag, re.IGNORECASE):
+                    slot_num = re.search(r"\d+", asset_tag).group(0)
+                    slot_label = f"PCIe Slot {slot_num} ({asset_tag})"
+                elif asset_tag.upper() == "LAN":
+                    slot_label = "Onboard LAN"
+                elif not asset_tag.upper().startswith("TAG-"):
+                    slot_label = asset_tag
+
+            # Check Description (e.g. "PCIe Slot 4", avoiding MegaRAC internal bus labels like "0000 SYS Slot 0")
+            desc = str(dev.get("Description") or "").strip()
+            if not slot_label and desc and not re.search(r'\b(?:SYS|UNCL|VGA|MULT)\s+Slot\b', desc, re.I):
+                slot_m = re.search(r"\bSlot\s+([1-9]\d*)\b", desc, re.I)
+                if slot_m:
+                    slot_label = f"PCIe Slot {slot_m.group(1)}"
+                else:
+                    pcie_m = re.search(r"\bPCIE\s*([1-9]\d*)\b", desc, re.I)
+                    if pcie_m:
+                        slot_label = f"PCIe Slot {pcie_m.group(1)}"
 
             pcie_if = dev.get("PCIeInterface") or {}
             lanes = pcie_if.get("LanesInUse") or pcie_if.get("MaxLanes") or slot.get("Lanes")
@@ -98,6 +130,18 @@ class _GPUMixin(_CollectorBase):
             health = str((dev.get("Status") or {}).get("Health") or "").strip()
 
             funcs = extract_pcie_functions(dev, get_fn=self._get)
+
+            # Check function ID/URI for motherboard slot markers (e.g. AMI MegaRAC DevType3_PC30 -> PCIE3, DevType3_PC60 -> PCIE6, DevType3_LANN -> Onboard LAN)
+            if not slot_label:
+                for f_item in funcs:
+                    f_id_str = str(f_item.get("function_id") or f_item.get("name") or f_item.get("uri") or "")
+                    m_pc = re.search(r'(?:DevType\d+_)?PC([1-9])\d*', f_id_str, re.I)
+                    if m_pc:
+                        slot_label = f"PCIe Slot {m_pc.group(1)} (PCIE{m_pc.group(1)})"
+                        break
+                    elif re.search(r'(?:DevType\d+_)?LAN', f_id_str, re.I):
+                        slot_label = "Onboard LAN"
+                        break
 
             f0 = funcs[0] if funcs else {}
             v_id = pci_info["vendor_id"] or f0.get("vendor_id", "")
@@ -167,15 +211,17 @@ class _GPUMixin(_CollectorBase):
                 u_lower = uri.lower()
                 if any(kw in u_lower for kw in _prio_high):
                     return 0
+                if re.search(r'00_[0-9a-f]0_0[0-9a-f]', u_lower):
+                    return 3
                 if any(kw in u_lower for kw in _prio_low):
                     return 2
                 return 1
 
             member_uris.sort(key=_uri_priority_key)
 
-            if len(member_uris) > 30:
-                logger.debug("[%s] Capping PCIe device members from %d to 30 sorted items", getattr(self, "host", "unknown"), len(member_uris))
-                member_uris = member_uris[:30]
+            if len(member_uris) > 64:
+                logger.debug("[%s] Capping PCIe device members from %d to 64 sorted items", getattr(self, "host", "unknown"), len(member_uris))
+                member_uris = member_uris[:64]
 
             start_time = time.time()
             max_duration = 15.0
@@ -225,9 +271,9 @@ class _GPUMixin(_CollectorBase):
                 _append_dev(dev)
 
         # HPE iLO path: /Systems/{id}/PCIeDevices (Gen10 / iLO 5+) or /Systems/{id}/PCIDevices (Gen9 / iLO 4)
-        if self.sys_uri and not pcie_list and not (callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped()):
+        if self.sys_uri and not (callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped()):
             members = self._get_members(f"{self.sys_uri}/PCIeDevices")
-            if not members:
+            if not members and not pcie_list:
                 sys_obj = getattr(self, "sys_data", {}) or {}
                 pci_href = (
                     get_nested(sys_obj, "Oem", "Hp", "links", "PCIDevices", "href")
@@ -239,7 +285,7 @@ class _GPUMixin(_CollectorBase):
                 _append_dev(dev)
 
         # Embedded PCIeDevices fallback: check inline PCIeDevices arrays in System and Chassis roots
-        if not pcie_list and not (callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped()):
+        if not (callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped()):
             candidate_roots = []
             if self.sys_uri:
                 candidate_roots.append(self.sys_uri)
@@ -257,14 +303,15 @@ class _GPUMixin(_CollectorBase):
                             for dev in raw_devs:
                                 if isinstance(dev, dict):
                                     _append_dev(dev)
-                if pcie_list:
-                    break
 
         return pcie_list
 
 
-    def collect_pcie_slots(self) -> list:
-        """Enumerate physical PCIe slots from /Chassis/{id}/PCIeSlots.
+    def collect_pcie_slots(self, pcie_cache: Optional[list] = None) -> list:
+        """Enumerate physical PCIe slots from /Chassis/{id}/PCIeSlots or /Systems/{id}/PCIeSlots.
+
+        Falls back to synthesizing slot inventory from pcie_cache when Redfish BMC slot schemas
+        are omitted or unsupported.
 
         Returns one dict per slot regardless of population state so the report
         can show empty vs occupied at a glance.  Device detail is resolved by
@@ -285,126 +332,237 @@ class _GPUMixin(_CollectorBase):
             device_health       str     "OK", "Warning", "Critical", or ""
         """
         slots: list = []
-        if not self.chassis_uri:
-            return slots
-        data = self._get(f"{self.chassis_uri}/PCIeSlots") or {}
-        raw_slots = data.get("Slots") or []
-        if not raw_slots:
-            return slots
+        raw_slots: list = []
+        if self.chassis_uri:
+            data = self._get(f"{self.chassis_uri}/PCIeSlots") or {}
+            raw_slots = data.get("Slots") or []
+            if not raw_slots and "Members" in data:
+                members = self._get_members(f"{self.chassis_uri}/PCIeSlots")
+                for m in members:
+                    if isinstance(m, dict):
+                        if "PCIeType" in m or "Lanes" in m or "Location" in m:
+                            raw_slots.append(m)
+                        elif m.get("@odata.id"):
+                            slot_obj = self._get(m["@odata.id"])
+                            if isinstance(slot_obj, dict):
+                                raw_slots.append(slot_obj)
 
-        # Collect unique linked PCIeDevice URIs across all slots
-        dev_uris = set()
-        for s in raw_slots:
-            links = s.get("Links") or {}
-            dev_refs = (
-                links.get("PCIeDevice")
-                or links.get("PCIeDevices")
-                or s.get("PCIeDevice")
-                or s.get("PCIeDevices")
-                or []
-            )
-            if isinstance(dev_refs, dict):
-                dev_refs = [dev_refs]
-            for d_ref in dev_refs:
-                if isinstance(d_ref, dict) and d_ref.get("@odata.id"):
-                    dev_uris.add(d_ref.get("@odata.id"))
+        if not raw_slots and self.sys_uri:
+            sys_data = self._get(f"{self.sys_uri}/PCIeSlots") or {}
+            raw_slots = sys_data.get("Slots") or []
+            if not raw_slots and "Members" in sys_data:
+                members = self._get_members(f"{self.sys_uri}/PCIeSlots")
+                for m in members:
+                    if isinstance(m, dict):
+                        if "PCIeType" in m or "Lanes" in m or "Location" in m:
+                            raw_slots.append(m)
+                        elif m.get("@odata.id"):
+                            slot_obj = self._get(m["@odata.id"])
+                            if isinstance(slot_obj, dict):
+                                raw_slots.append(slot_obj)
 
-        # Pre-fetch uncached slot devices concurrently to eliminate serial latency
-        if dev_uris and not (callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped()):
-            max_w = min(getattr(self, "_get_phase_worker_count", lambda d: d)(3), max(1, len(dev_uris)))
-            _wrap_task = getattr(self, "_wrap_phase_task", lambda fn: fn)
-            pool = ThreadPoolExecutor(max_workers=max_w)
-            try:
-                futures = [pool.submit(_wrap_task(self._get), uri) for uri in dev_uris]
-                wait(futures, timeout=15.0)
-            finally:
-                pool.shutdown(wait=False, cancel_futures=True)
+        if raw_slots:
+            # Collect unique linked PCIeDevice URIs across all slots
+            dev_uris = set()
+            for s in raw_slots:
+                links = s.get("Links") or {}
+                dev_refs = (
+                    links.get("PCIeDevice")
+                    or links.get("PCIeDevices")
+                    or s.get("PCIeDevice")
+                    or s.get("PCIeDevices")
+                    or []
+                )
+                if isinstance(dev_refs, dict):
+                    dev_refs = [dev_refs]
+                for d_ref in dev_refs:
+                    if isinstance(d_ref, dict) and d_ref.get("@odata.id"):
+                        dev_uris.add(d_ref.get("@odata.id"))
 
-        for idx, s in enumerate(raw_slots, start=1):
-            pcie_type_raw = s.get("PCIeType") or ""
-            # Normalise "Gen3" / "PCIeGen3" / "Generation3" → "Gen3"
-            gen_match = re.search(r"(\d)", pcie_type_raw)
-            pcie_type = f"Gen{gen_match.group(1)}" if gen_match else (pcie_type_raw or None)
+            # Pre-fetch uncached slot devices concurrently to eliminate serial latency
+            if dev_uris and not (callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped()):
+                max_w = min(getattr(self, "_get_phase_worker_count", lambda d: d)(3), max(1, len(dev_uris)))
+                _wrap_task = getattr(self, "_wrap_phase_task", lambda fn: fn)
+                pool = ThreadPoolExecutor(max_workers=max_w)
+                try:
+                    futures = [pool.submit(_wrap_task(self._get), uri) for uri in dev_uris]
+                    wait(futures, timeout=15.0)
+                finally:
+                    pool.shutdown(wait=False, cancel_futures=True)
 
-            lanes_raw = s.get("Lanes")
-            lanes = int(lanes_raw) if isinstance(lanes_raw, (int, float)) and lanes_raw else None
+            for idx, s in enumerate(raw_slots, start=1):
+                pcie_type_raw = s.get("PCIeType") or ""
+                # Normalise "Gen3" / "PCIeGen3" / "Generation3" → "Gen3"
+                gen_match = re.search(r"(\d)", pcie_type_raw)
+                pcie_type = f"Gen{gen_match.group(1)}" if gen_match else (pcie_type_raw or None)
 
-            slot_type = s.get("SlotType") or None
-            hot_pluggable = bool(s.get("HotPluggable", False))
-            state = (s.get("Status") or {}).get("State") or "Unknown"
+                lanes_raw = s.get("Lanes")
+                lanes = int(lanes_raw) if isinstance(lanes_raw, (int, float)) and lanes_raw else None
 
-            # Build a human-readable label — vendors sometimes put it in Location
-            location = s.get("Location") or {}
-            loc_info = location.get("PartLocation") or {}
-            label_raw = (
-                loc_info.get("ServiceLabel")
-                or location.get("ServiceLabel")
-                or s.get("PhysicalLocation", {}).get("PartLocation", {}).get("ServiceLabel")
-                or ""
-            )
-            slot_label = label_raw.strip() if label_raw else f"PCIe Slot {idx}"
+                slot_type = s.get("SlotType") or None
+                hot_pluggable = bool(s.get("HotPluggable", False))
+                state = (s.get("Status") or {}).get("State") or "Unknown"
 
-            # Resolve linked PCIe device (if any)
-            links = s.get("Links") or {}
-            # The DMTF schema uses "PCIeDevice" (singular) as an array
-            dev_refs = (
-                links.get("PCIeDevice")
-                or links.get("PCIeDevices")
-                or s.get("PCIeDevice")
-                or s.get("PCIeDevices")
-                or []
-            )
-            if isinstance(dev_refs, dict):
-                dev_refs = [dev_refs]
+                # Build a human-readable label — vendors sometimes put it in Location
+                location = s.get("Location") or {}
+                loc_info = location.get("PartLocation") or {}
+                label_raw = (
+                    loc_info.get("ServiceLabel")
+                    or location.get("ServiceLabel")
+                    or s.get("PhysicalLocation", {}).get("PartLocation", {}).get("ServiceLabel")
+                    or ""
+                )
+                slot_label = label_raw.strip() if label_raw else f"PCIe Slot {idx}"
 
-            populated = bool(dev_refs)
-            device_name = device_manufacturer = device_part_number = device_serial = device_health = ""
-            pci_info = {"vendor_id": "", "device_id": "", "subsystem_vendor_id": "", "subsystem_id": "", "pci_quad": "", "pci_pair": ""}
-            link_info = {"downgraded": False, "reason": "", "badge": ""}
-            funcs = []
+                # Resolve linked PCIe device (if any)
+                links = s.get("Links") or {}
+                # The DMTF schema uses "PCIeDevice" (singular) as an array
+                dev_refs = (
+                    links.get("PCIeDevice")
+                    or links.get("PCIeDevices")
+                    or s.get("PCIeDevice")
+                    or s.get("PCIeDevices")
+                    or []
+                )
+                if isinstance(dev_refs, dict):
+                    dev_refs = [dev_refs]
 
-            if dev_refs:
-                dev_uri = dev_refs[0].get("@odata.id") if isinstance(dev_refs[0], dict) else None
-                if dev_uri:
-                    dev = self._get(dev_uri) or {}
-                    device_name = str(dev.get("Name") or dev.get("Model") or "").strip()
-                    device_manufacturer = str(dev.get("Manufacturer") or "").strip()
-                    device_part_number = str(dev.get("PartNumber") or "").strip()
-                    device_serial = str(dev.get("SerialNumber") or "").strip()
-                    device_health = str((dev.get("Status") or {}).get("Health") or "").strip()
-                    pci_info = extract_pci_ids_from_dict(dev, get_fn=self._get)
-                    link_info = extract_pcie_link_status(dev)
-                    funcs = extract_pcie_functions(dev, get_fn=self._get)
+                populated = bool(dev_refs)
+                device_name = device_manufacturer = device_part_number = device_serial = device_health = ""
+                pci_info = {"vendor_id": "", "device_id": "", "subsystem_vendor_id": "", "subsystem_id": "", "pci_quad": "", "pci_pair": ""}
+                link_info = {"downgraded": False, "reason": "", "badge": ""}
+                funcs = []
 
-            slots.append({
-                "slot_label":          slot_label,
-                "lanes":               lanes,
-                "pcie_type":           pcie_type,
-                "slot_type":           slot_type,
-                "hot_pluggable":       hot_pluggable,
-                "state":               state,
-                "populated":           populated,
-                "device_name":         device_name,
-                "device_manufacturer": device_manufacturer,
-                "device_part_number":  device_part_number,
-                "device_serial":       device_serial,
-                "device_health":       device_health,
-                "functions":           funcs,
-                "function_count":      len(funcs),
-                "vendor_id":           pci_info["vendor_id"],
-                "device_id":           pci_info["device_id"],
-                "subsystem_vendor_id": pci_info["subsystem_vendor_id"],
-                "subsystem_id":        pci_info["subsystem_id"],
-                "pci_quad":            pci_info["pci_quad"],
-                "pci_pair":            pci_info["pci_pair"],
-                "current_pcie_type":   link_info.get("current_pcie_type") if populated else None,
-                "max_pcie_type":       link_info.get("max_pcie_type") or pcie_type,
-                "current_pcie_width":  link_info.get("current_pcie_width") if populated else None,
-                "max_pcie_width":      link_info.get("max_pcie_width") or lanes,
-                "downgraded":          link_info["downgraded"],
-                "downgrade_reason":    link_info["reason"],
-                "downgrade_badge":     link_info["badge"],
-            })
+                if dev_refs:
+                    dev_uri = dev_refs[0].get("@odata.id") if isinstance(dev_refs[0], dict) else None
+                    if dev_uri:
+                        dev = self._get(dev_uri) or {}
+                        device_name = str(dev.get("Name") or dev.get("Model") or "").strip()
+                        device_manufacturer = str(dev.get("Manufacturer") or "").strip()
+                        device_part_number = str(dev.get("PartNumber") or "").strip()
+                        device_serial = str(dev.get("SerialNumber") or "").strip()
+                        device_health = str((dev.get("Status") or {}).get("Health") or "").strip()
+                        pci_info = extract_pci_ids_from_dict(dev, get_fn=self._get)
+                        link_info = extract_pcie_link_status(dev)
+                        funcs = extract_pcie_functions(dev, get_fn=self._get)
+
+                slots.append({
+                    "slot_label":          slot_label,
+                    "lanes":               lanes,
+                    "pcie_type":           pcie_type,
+                    "slot_type":           slot_type,
+                    "hot_pluggable":       hot_pluggable,
+                    "state":               state,
+                    "populated":           populated,
+                    "device_name":         device_name,
+                    "device_manufacturer": device_manufacturer,
+                    "device_part_number":  device_part_number,
+                    "device_serial":       device_serial,
+                    "device_health":       device_health,
+                    "functions":           funcs,
+                    "function_count":      len(funcs),
+                    "vendor_id":           pci_info["vendor_id"],
+                    "device_id":           pci_info["device_id"],
+                    "subsystem_vendor_id": pci_info["subsystem_vendor_id"],
+                    "subsystem_id":        pci_info["subsystem_id"],
+                    "pci_quad":            pci_info["pci_quad"],
+                    "pci_pair":            pci_info["pci_pair"],
+                    "current_pcie_type":   link_info.get("current_pcie_type") if populated else None,
+                    "max_pcie_type":       link_info.get("max_pcie_type") or pcie_type,
+                    "current_pcie_width":  link_info.get("current_pcie_width") if populated else None,
+                    "max_pcie_width":      link_info.get("max_pcie_width") or lanes,
+                    "downgraded":          link_info["downgraded"],
+                    "downgrade_reason":    link_info["reason"],
+                    "downgrade_badge":     link_info["badge"],
+                })
+
+        # Fallback: synthesize slot inventory from discovered peripheral devices in pcie_cache
+        if not slots and pcie_cache:
+            for idx, dev in enumerate(pcie_cache, start=1):
+                if not isinstance(dev, dict):
+                    continue
+                raw_dict = dev.get("_raw") or {}
+                raw_desc = str(raw_dict.get("Description") or dev.get("description") or "")
+                raw_name = str(raw_dict.get("Name") or dev.get("name") or "")
+                raw_asset = str(raw_dict.get("AssetTag") or "")
+                dev_class = str(dev.get("device_class") or "").upper()
+                vid = str(dev.get("vendor_id") or "").lower()
+
+                # Filter internal host bridges, root ports, or unclassified onboard chipsets
+                if any(kw in raw_desc for kw in ("BRG Onboard", "UNCL Onboard", "MEM Onboard")):
+                    continue
+                if any(kw in raw_desc.lower() for kw in ("root port", "host bridge", "internal bus", "pci-to-pci bridge")):
+                    continue
+                if dev_class in ("BRIDGE", "NONESSENTIALINSTRUMENTATION", "ENCRYPTIONCONTROLLER") and not dev.get("slot_label") and not raw_asset:
+                    continue
+                if vid == "1022" and not dev.get("slot_label") and not raw_asset and dev_class not in ("NETWORKCONTROLLER", "MASSSTORAGECONTROLLER", "DISPLAYCONTROLLER"):
+                    continue
+
+                slot_label = dev.get("slot_label")
+                if not slot_label:
+                    if raw_asset.startswith("PCIE"):
+                        slot_label = f"PCIe Slot {raw_asset[4:]} ({raw_asset})"
+                    elif raw_asset.upper() == "LAN":
+                        slot_label = "Onboard LAN"
+                    elif raw_asset and not raw_asset.upper().startswith("TAG-"):
+                        slot_label = raw_asset
+                    elif "Slot" in raw_desc:
+                        slot_m = re.search(r"\bSlot\s+(\d+)\b", raw_desc, re.I)
+                        slot_label = f"PCIe Slot {slot_m.group(1)}" if slot_m else raw_desc
+                    else:
+                        slot_label = f"PCIe Slot {idx}"
+
+                lanes = dev.get("lanes")
+                if not lanes:
+                    if "100G" in raw_name or "Dx" in raw_name or dev_class == "PROCESSINGACCELERATORS":
+                        lanes = 16
+                    elif "25G" in raw_name or "Lx" in raw_name:
+                        lanes = 8
+                    elif "MASSSTORAGE" in dev_class or "NVME" in raw_name.upper():
+                        lanes = 4
+                    else:
+                        lanes = dev.get("max_pcie_width") or 8
+
+                pcie_type = dev.get("pcie_type") or dev.get("max_pcie_type") or "Gen4"
+                dev_name = dev.get("name") or dev.get("model") or "PCIe Device"
+                dev_mfr = dev.get("manufacturer") or ""
+                dev_pn = dev.get("part_number") or ""
+                dev_sn = dev.get("serial_number") or ""
+                dev_health = dev.get("health") or "OK"
+
+                funcs = dev.get("functions") or []
+                p_quad = dev.get("pci_quad") or ""
+                p_pair = dev.get("pci_pair") or ""
+
+                slots.append({
+                    "slot_label":          slot_label,
+                    "lanes":               lanes,
+                    "pcie_type":           pcie_type,
+                    "slot_type":           "FullLength",
+                    "hot_pluggable":       False,
+                    "state":               "Enabled",
+                    "populated":           True,
+                    "device_name":         dev_name,
+                    "device_manufacturer": dev_mfr,
+                    "device_part_number":  dev_pn,
+                    "device_serial":       dev_sn,
+                    "device_health":       dev_health,
+                    "functions":           funcs,
+                    "function_count":      dev.get("function_count") or len(funcs) or 1,
+                    "vendor_id":           dev.get("vendor_id") or "",
+                    "device_id":           dev.get("device_id") or "",
+                    "subsystem_vendor_id": dev.get("subsystem_vendor_id") or "",
+                    "subsystem_id":        dev.get("subsystem_id") or "",
+                    "pci_quad":            p_quad,
+                    "pci_pair":            p_pair,
+                    "current_pcie_type":   dev.get("current_pcie_type"),
+                    "max_pcie_type":       dev.get("max_pcie_type") or pcie_type,
+                    "current_pcie_width":  dev.get("current_pcie_width"),
+                    "max_pcie_width":      dev.get("max_pcie_width") or lanes,
+                    "downgraded":          dev.get("downgraded", False),
+                    "downgrade_reason":    dev.get("downgrade_reason", ""),
+                    "downgrade_badge":     dev.get("downgrade_badge", ""),
+                })
 
         return slots
 

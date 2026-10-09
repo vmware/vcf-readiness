@@ -11,7 +11,8 @@ Strictly non-destructive and read-only.
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..logging_utils import parse_version_tuple
+from ..compat.firmware_currency import classify_currency, match_baseline
+from ..constants import BIOS_BASELINES
 
 logger = logging.getLogger("vcf_assess")
 
@@ -1201,64 +1202,53 @@ def evaluate_dell_bios_baseline(
                     "citation_url": oem_guide["url"],
                 })
 
-    # ── Rule 19: 17G AMD BIOS Version & vSAN Ready Node Catalog Alignment ───
+    # ── Rule 19: 17G AMD BIOS currency against the local OEM catalog ────────
+    # A build newer than the snapshot is healthy. Age is called out only when
+    # the installed BIOS is older than the catalog latest.
     is_17g_amd = (
         any(m in model_str for m in ("r7715", "r6715", "r7725", "r6725"))
         or (_is_amd_cpu(cpu_info) and any(k in f"{model_str} {cpu_str}" for k in ("turin", "9005", "17g")))
     )
     if is_17g_amd and bios_version and str(bios_version).strip() and str(bios_version).strip().lower() not in ("unknown", "n/a", "none"):
         bv_str = str(bios_version).strip()
-        bv_tuple = parse_version_tuple(bv_str)
-        catalog_target = "1.6.4"
-        catalog_tuple = parse_version_tuple(catalog_target)
-        if bv_tuple > catalog_tuple:
-            rules.append({
-                "attribute": "BiosVersionCatalogAlignment",
-                "setting_name": "vSAN Ready Node Catalog Alignment (17G AMD)",
-                "current_value": f"v{bv_str}",
-                "expected_value": f"v{catalog_target} (Dell vSAN Catalog Target)",
-                "severity": "warning" if is_esa_candidate else "info",
-                "status": "drifted",
-                "rationale": (
-                    f"Installed BIOS v{bv_str} exceeds the Dell vSAN Ready Node Firmware Catalog baseline (v{catalog_target}). "
-                    "Dell publishes standalone cumulative bare-metal fixes (such as v1.7.7) to general support pages before vSAN qualification. "
-                    "Running newer uncertified BIOS on 17G AMD Ready Nodes triggers vSphere Health / vLCM Non-Compliance warnings, "
-                    "PCIe ACS / driver timing variations, and known 17G AMD AGESA warm-reboot memory initialization hangs ('Please wait while the system is initializing...'). "
-                    "For production vSAN ESA clusters, Dell recommends remaining on or reverting to catalog version v1.6.4 until Dell issues an updated vSAN BOM catalog."
-                ),
-                "citation": "PowerEdge: Firmware Catalog for Dell's vSAN Ready Nodes (KB 000189033)",
-                "citation_url": "https://www.dell.com/support/kbdoc/en-us/000189033",
-            })
-        elif bv_tuple == catalog_tuple:
-            rules.append({
-                "attribute": "BiosVersionCatalogAlignment",
-                "setting_name": "vSAN Ready Node Catalog Alignment (17G AMD)",
-                "current_value": f"v{bv_str}",
-                "expected_value": f"v{catalog_target} (Dell vSAN Catalog Target)",
-                "severity": None,
-                "status": "compliant",
-                "rationale": (
-                    f"BIOS v{bv_str} strictly matches the certified Dell vSAN Ready Node Firmware Catalog baseline (v{catalog_target}). "
-                    "Fully validated for ESXi 8.0/9.0 drivers, vLCM remediation, and vSAN ESA storage stack."
-                ),
-                "citation": "PowerEdge: Firmware Catalog for Dell's vSAN Ready Nodes (KB 000189033)",
-                "citation_url": "https://www.dell.com/support/kbdoc/en-us/000189033",
-            })
-        else:
-            rules.append({
-                "attribute": "BiosVersionCatalogAlignment",
-                "setting_name": "vSAN Ready Node Catalog Alignment (17G AMD)",
-                "current_value": f"v{bv_str}",
-                "expected_value": f"v{catalog_target} (Dell vSAN Catalog Target)",
-                "severity": "warning",
-                "status": "drifted",
-                "rationale": (
-                    f"Installed BIOS v{bv_str} is older than the certified Dell vSAN Ready Node Firmware Catalog baseline (v{catalog_target}). "
-                    "Updating to v1.6.4 is recommended to apply critical AMD AGESA microcode and platform stability fixes."
-                ),
-                "citation": "PowerEdge: Firmware Catalog for Dell's vSAN Ready Nodes (KB 000189033)",
-                "citation_url": "https://www.dell.com/support/kbdoc/en-us/000189033",
-            })
+        _bios_key, bios_row = match_baseline(BIOS_BASELINES, model_str)
+        if bios_row:
+            currency = classify_currency(bv_str, bios_row)
+            catalog_latest = currency["latest_version"]
+            citation = bios_row.get("source") or "Dell KB 000227230"
+            citation_url = bios_row.get("source_url") or "https://www.dell.com/support/kbdoc/en-us/000227230"
+            if currency["currency"] in ("ahead", "current"):
+                ahead = currency["currency"] == "ahead"
+                rules.append({
+                    "attribute": "BiosVersionCatalogAlignment",
+                    "setting_name": "BIOS Catalog Alignment (17G AMD)",
+                    "current_value": f"v{bv_str}",
+                    "expected_value": f"v{catalog_latest} (local catalog latest)",
+                    "severity": None,
+                    "status": "compliant",
+                    "rationale": (
+                        f"BIOS v{bv_str} is {'ahead of' if ahead else 'at'} the local catalog snapshot "
+                        f"(v{catalog_latest}). A newer OEM BIOS is not a failure."
+                    ),
+                    "citation": citation,
+                    "citation_url": citation_url,
+                })
+            else:
+                age = currency.get("age_note") or f"behind catalog latest {catalog_latest}"
+                rules.append({
+                    "attribute": "BiosVersionCatalogAlignment",
+                    "setting_name": "BIOS Catalog Alignment (17G AMD)",
+                    "current_value": f"v{bv_str}",
+                    "expected_value": f"v{catalog_latest} (local catalog latest)",
+                    "severity": "warning",
+                    "status": "drifted",
+                    "rationale": (
+                        f"Installed BIOS v{bv_str} is {age}. "
+                        "The local catalog records a newer build for this platform."
+                    ),
+                    "citation": citation,
+                    "citation_url": citation_url,
+                })
 
     # ── Aggregate Compliance & Scoring ──────────────────────────────────────
     applicable_rules = [r for r in rules if r.get("status") != "not_applicable"]

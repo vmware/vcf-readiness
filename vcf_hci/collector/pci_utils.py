@@ -74,6 +74,89 @@ def _get_val(d: dict, keys: tuple) -> str:
     return ""
 
 
+def _infer_vendor_id(did: str, svid: str = "", ssid: str = "") -> str:
+    """Infer PCI vendor ID when BMC reports 0x0000 or omits VendorId.
+
+    Handles AMI MegaRAC firmware bug where VendorId is reported as 0x0000.
+    """
+    did = (did or "").lower().strip()
+    svid = (svid or "").lower().strip()
+    ssid = (ssid or "").lower().strip()
+
+    _SILICON_SVIDS = {
+        "15b3": "15b3",  # Mellanox / NVIDIA
+        "8086": "8086",  # Intel
+        "14e4": "14e4",  # Broadcom
+        "1077": "1077",  # Marvell / QLogic
+        "10df": "10df",  # Emulex
+        "1924": "1924",  # Solarflare
+        "1000": "1000",  # LSI / Broadcom MegaRAID
+        "1028": "1028",  # Dell
+        "103c": "103c",  # HPE
+        "1590": "1590",  # HPE
+        "1022": "1022",  # AMD
+        "10de": "10de",  # NVIDIA
+        "144d": "144d",  # Samsung
+        "1344": "1344",  # Micron
+    }
+    if svid in _SILICON_SVIDS:
+        return _SILICON_SVIDS[svid]
+
+    _KNOWN_DID_MAP = {
+        "1563": "8086",  # Intel X550 10GBASE-T
+        "1521": "8086",  # Intel I350 Gigabit
+        "1572": "8086",  # Intel X710 10GbE
+        "158b": "8086",  # Intel XXV710 25GbE
+        "1592": "8086",  # Intel E810-C
+        "1593": "8086",  # Intel E810-XXV
+        "1013": "15b3",  # Mellanox ConnectX-4
+        "1015": "15b3",  # Mellanox ConnectX-4 Lx
+        "1017": "15b3",  # Mellanox ConnectX-5
+        "1019": "15b3",  # Mellanox ConnectX-5 Ex
+        "101b": "15b3",  # Mellanox ConnectX-6
+        "101d": "15b3",  # Mellanox ConnectX-6 Dx
+        "101f": "15b3",  # Mellanox ConnectX-6 Lx
+        "1021": "15b3",  # Mellanox ConnectX-7
+        "1023": "15b3",  # Mellanox ConnectX-8
+        "1657": "14e4",  # Broadcom NetXtreme BCM5719
+        "16d7": "14e4",  # Broadcom NetXtreme-E BCM57414
+        "1750": "14e4",  # Broadcom NetXtreme-E BCM57504
+        "1751": "14e4",  # Broadcom NetXtreme-E BCM57508
+        "1752": "14e4",  # Broadcom NetXtreme-E BCM57502
+        "51c3": "1344",  # Micron 7450 NVMe
+        "a80a": "144d",  # Samsung PM9A3 NVMe
+        "a808": "144d",  # Samsung PM983 NVMe
+    }
+    if did in _KNOWN_DID_MAP:
+        return _KNOWN_DID_MAP[did]
+
+    # Check io_nics.json for quad suffix or pair match
+    try:
+        from vcf_hci.hcl.loader import load_io_nics_catalog
+        cat = load_io_nics_catalog()
+        if isinstance(cat, dict):
+            quads = cat.get("quads") or {}
+            if did and svid and ssid:
+                suffix = f":{did}:{svid}:{ssid}"
+                for q, info in quads.items():
+                    if q.endswith(suffix):
+                        v = info.get("vendor_id")
+                        if v:
+                            return str(v).lower()
+            pairs = cat.get("pairs") or {}
+            if did:
+                for pair_key, pair_items in pairs.items():
+                    if pair_key.endswith(f":{did}"):
+                        for item in pair_items:
+                            v = item.get("vendor_id")
+                            if v:
+                                return str(v).lower()
+    except Exception:
+        pass
+
+    return ""
+
+
 def extract_pci_ids_from_dict(dev: dict, get_fn: Optional[Callable] = None) -> dict:
     """Extract VendorId, DeviceId, SubsystemVendorId, SubsystemId from a Redfish resource dict.
 
@@ -173,6 +256,16 @@ def extract_pci_ids_from_dict(dev: dict, get_fn: Optional[Callable] = None) -> d
         )
         if isinstance(pcie_refs, dict):
             pcie_refs = [pcie_refs]
+        if not pcie_refs:
+            for ctrl in (dev.get("Controllers") or []):
+                if isinstance(ctrl, dict):
+                    c_pdev = (ctrl.get("Links") or {}).get("PCIeDevices") or (ctrl.get("Links") or {}).get("PCIeDevice")
+                    if isinstance(c_pdev, dict):
+                        pcie_refs = [c_pdev]
+                        break
+                    elif isinstance(c_pdev, list) and c_pdev:
+                        pcie_refs = c_pdev
+                        break
         if isinstance(pcie_refs, list) and pcie_refs:
             for p_ref in pcie_refs:
                 if isinstance(p_ref, dict):
@@ -273,6 +366,13 @@ def extract_pci_ids_from_dict(dev: dict, get_fn: Optional[Callable] = None) -> d
     # Walk NetworkDeviceFunctions if VID/DID missing
     if not (vid and did):
         ndf_refs = dev.get("NetworkDeviceFunctions") or (dev.get("Links") or {}).get("NetworkDeviceFunctions") or []
+        if not ndf_refs:
+            for ctrl in (dev.get("Controllers") or []):
+                if isinstance(ctrl, dict):
+                    c_ndf = (ctrl.get("Links") or {}).get("NetworkDeviceFunctions")
+                    if c_ndf:
+                        ndf_refs = c_ndf
+                        break
         if isinstance(ndf_refs, dict):
             if isinstance(ndf_refs.get("Members"), list):
                 ndf_refs = ndf_refs.get("Members", [])
@@ -369,6 +469,9 @@ def extract_pci_ids_from_dict(dev: dict, get_fn: Optional[Callable] = None) -> d
                                 did = cand_did
                             if vid and did:
                                 break
+
+    if not vid and did:
+        vid = _infer_vendor_id(did, svid, ssid)
 
     pci_quad = f"{vid}:{did}:{svid}:{ssid}" if (vid and did and svid and ssid) else ""
     pci_pair = f"{vid}:{did}" if (vid and did) else ""
@@ -604,15 +707,34 @@ def match_pcie_cache(dev_dict: dict, pcie_cache: Union[list, dict], get_fn: Opti
     direct_pcie_links = (dev_dict.get("Links") or {}).get("PCIeDevice") or (dev_dict.get("Links") or {}).get("PCIeDevices") or []
     if isinstance(direct_pcie_links, dict):
         direct_pcie_links = [direct_pcie_links]
-    if isinstance(direct_pcie_links, list):
-        for plink in direct_pcie_links:
-            if isinstance(plink, dict):
-                puri = str(plink.get("@odata.id") or "").strip().lower()
-                pid = puri.rstrip("/").split("/")[-1] if puri else ""
-                match = index.get("by_uri", {}).get(puri) or index.get("by_id", {}).get(pid)
-                if match:
-                    best_match = match
-                    break
+    elif not isinstance(direct_pcie_links, list):
+        direct_pcie_links = []
+    else:
+        direct_pcie_links = list(direct_pcie_links)
+
+    for ctrl in (dev_dict.get("Controllers") or []):
+        if isinstance(ctrl, dict):
+            c_links = (ctrl.get("Links") or {}).get("PCIeDevices") or (ctrl.get("Links") or {}).get("PCIeDevice") or []
+            if isinstance(c_links, dict):
+                c_links = [c_links]
+            if isinstance(c_links, list):
+                direct_pcie_links.extend(c_links)
+
+    for plink in direct_pcie_links:
+        if isinstance(plink, dict):
+            puri = str(plink.get("@odata.id") or "").strip().lower()
+            pid = puri.rstrip("/").split("/")[-1] if puri else ""
+            match = index.get("by_uri", {}).get(puri) or index.get("by_id", {}).get(pid)
+            if match:
+                best_match = match
+                break
+            elif puri and callable(get_fn):
+                p_obj = get_fn(puri)
+                if isinstance(p_obj, dict):
+                    obj_pci = extract_pci_ids_from_dict(p_obj, get_fn)
+                    if obj_pci.get("pci_quad") or (obj_pci.get("vendor_id") and obj_pci.get("device_id")):
+                        best_match = obj_pci
+                        break
 
     # 0. Drive / Device URI & OEM link matching (for NVMe drives and PCIe controllers ONLY)
     dev_uri = str(dev_dict.get("@odata.id") or "").strip().lower()
@@ -826,6 +948,8 @@ def match_pcie_cache(dev_dict: dict, pcie_cache: Union[list, dict], get_fn: Opti
         m_did = pci_info["device_id"] or best_match.get("device_id", "")
         m_svid = pci_info["subsystem_vendor_id"] or best_match.get("subsystem_vendor_id", "")
         m_ssid = pci_info["subsystem_id"] or best_match.get("subsystem_id", "")
+        if not m_vid and m_did:
+            m_vid = _infer_vendor_id(m_did, m_svid, m_ssid)
         m_quad = f"{m_vid}:{m_did}:{m_svid}:{m_ssid}" if (m_vid and m_did and m_svid and m_ssid) else ""
         m_pair = f"{m_vid}:{m_did}" if (m_vid and m_did) else ""
         return {
@@ -1174,6 +1298,8 @@ def extract_pcie_functions(dev: dict, get_fn: Optional[Callable] = None) -> list
             did = normalize_pci_id(_get_val(c_data, _DID_KEYS))
             svid = normalize_pci_id(_get_val(c_data, _SVID_KEYS))
             ssid = normalize_pci_id(_get_val(c_data, _SSID_KEYS))
+            if not vid and did:
+                vid = _infer_vendor_id(did, svid, ssid)
             pci_quad = f"{vid}:{did}:{svid}:{ssid}" if (vid and did and svid and ssid) else f"{vid}:{did}" if (vid and did) else ""
 
             dedup = (fn_id, bdf, vid, did)

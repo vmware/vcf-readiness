@@ -486,6 +486,28 @@ def evaluate_c53_secure_boot(standard: Dict[str, Any]) -> Dict[str, Any]:
         ))
 
     if sb_enable is True:
+        # SCG / hardening guidance: SecureBootEnable AND SecureBootCurrentBoot == Enabled
+        # when CurrentBoot is exposed.
+        if sb_current is not None:
+            current_norm = str(sb_current).strip().lower()
+            if current_norm in ("disabled", "off", "false", "0"):
+                return control_finding(
+                    control_id="C53",
+                    status="fail",
+                    expected="Enabled (SecureBootEnable and SecureBootCurrentBoot)",
+                    observed=f"SecureBootEnable=True but SecureBootCurrentBoot={sb_current}",
+                    reason_code=ReasonCode.STANDARD_REDFISH_FAIL,
+                    evidence=ev,
+                )
+            if current_norm not in ("enabled", "on", "true", "1"):
+                return control_finding(
+                    control_id="C53",
+                    status="unknown_ambiguous",
+                    expected="Enabled (SecureBootEnable and SecureBootCurrentBoot)",
+                    observed=f"SecureBootEnable=True, SecureBootCurrentBoot={sb_current}",
+                    reason_code=ReasonCode.AMBIGUOUS_EVIDENCE,
+                    evidence=ev,
+                )
         observed_str = "Enabled"
         if sb_current:
             observed_str += f" (CurrentBoot: {sb_current})"
@@ -533,16 +555,33 @@ def evaluate_standard_security_controls(evidence: Dict[str, Any]) -> List[Dict[s
 
 
 def evaluate_security_controls(evidence: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Top-level evaluator dispatching standard and OEM controls.
+    """Dispatch Dell, HPE, Cisco, and Lenovo evaluators.
 
-    Bead 3 evaluates standard controls. Subsequent beads extend this
-    with OEM evaluation hooks (Dell C01–C59 in Bead 5, HPE C01–C59 in Bead 7).
+    Stamps evidence["_matrix_id"] for the audit dict. The report reads
+    bmc_security_audit.matrix_id, which enrichment copies from this stamp.
+    Marker: evidence["_matrix_id"]
     """
     vendor = str(evidence.get("vendor") or "").lower()
-    if vendor == "dell":
+
+    def _stamp(matrix_id: str) -> None:
+        if isinstance(evidence, dict):
+            evidence["_matrix_id"] = matrix_id
+
+    if vendor == "dell" or vendor.startswith("dell"):
+        _stamp("dell-c01-c59")
         from vcf_hci.security.dell import evaluate_dell_security_controls
         return evaluate_dell_security_controls(evidence)
-    if vendor in ("hpe", "hewlett", "hewlett packard enterprise"):
+    if vendor in ("hpe", "hewlett", "hewlett packard enterprise") or "hewlett" in vendor:
+        _stamp("hpe-c01-c59")
         from vcf_hci.security.hpe import evaluate_hpe_security_controls
         return evaluate_hpe_security_controls(evidence)
+    if vendor == "lenovo" or "lenovo" in vendor:
+        _stamp("lenovo-xcc")
+        from vcf_hci.security.lenovo import evaluate_lenovo_security_controls
+        return evaluate_lenovo_security_controls(evidence)
+    if vendor == "cisco" or "cisco" in vendor:
+        _stamp("cisco-sudi")
+        from vcf_hci.security.cisco import evaluate_cisco_security_controls
+        return evaluate_cisco_security_controls(evidence)
+    _stamp("dmtf-8")
     return evaluate_standard_security_controls(evidence)

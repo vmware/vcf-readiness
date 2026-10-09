@@ -36,6 +36,7 @@ internal/
 .internal/
 
 # Session / AI planning / internal design specs — never commit
+docs/plans/Lab-plans-outbox/
 HANDOFF.md
 Handoff*.md
 handoffs/

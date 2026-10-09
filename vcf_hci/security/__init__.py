@@ -1,5 +1,7 @@
 """VCF HCI BMC Security Audit package."""
 
+from vcf_hci.security.audit_api import assert_scg, audit_bmc, evaluate_evidence, resolve_oem_support
+from vcf_hci.security.cisco import evaluate_cisco_security_controls
 from vcf_hci.security.contract import (
     ALL_VALID_CONTROL_IDS,
     CONTROL_STATUSES,
@@ -31,6 +33,7 @@ from vcf_hci.security.evaluation import (
     evaluate_standard_security_controls,
 )
 from vcf_hci.security.hpe import evaluate_hpe_security_controls
+from vcf_hci.security.lenovo import evaluate_lenovo_security_controls
 from vcf_hci.security.metadata import (
     CONTROL_CATALOG,
     GROUP_ASSURANCE,
@@ -55,6 +58,14 @@ from vcf_hci.security.redaction import (
     redact_security_findings,
     sanitize_security_secrets,
     sanitize_uri_credentials,
+)
+from vcf_hci.security.scg_map import (
+    SCG8_IDS,
+    SCG_TO_CONTROLS,
+    filter_findings_by_profile,
+    findings_to_scg,
+    normalize_audit_profile,
+    profile_control_ids,
 )
 from vcf_hci.security.scoring import (
     OUT_OF_SCOPE_FLEET_MANAGERS,
@@ -85,11 +96,15 @@ __all__ = [
     "POSTURE_NOT_ASSESSED",
     "POSTURE_PARTIALLY_ASSESSED",
     "ReasonCode",
+    "SCG8_IDS",
+    "SCG_TO_CONTROLS",
     "VALID_ASSURANCE_IDS",
     "VALID_CONFIGURATION_IDS",
     "VALID_OPERATIONAL_IDS",
     "VALID_TRANSPORTS",
     "aggregate_fleet_security",
+    "assert_scg",
+    "audit_bmc",
     "collection_issue",
     "contains_pem_private_key",
     "control_finding",
@@ -102,11 +117,16 @@ __all__ = [
     "evaluate_c37_session_timeout",
     "evaluate_c43_directory_and_lockout",
     "evaluate_c53_secure_boot",
+    "evaluate_cisco_security_controls",
     "evaluate_dell_security_controls",
+    "evaluate_evidence",
     "evaluate_hpe_security_controls",
+    "evaluate_lenovo_security_controls",
     "evaluate_security_controls",
     "evaluate_standard_security_controls",
     "evidence_item",
+    "filter_findings_by_profile",
+    "findings_to_scg",
     "get_control_confidence",
     "get_control_group",
     "get_control_metadata",
@@ -115,10 +135,13 @@ __all__ = [
     "is_fleet_manager_asset",
     "is_secret_key",
     "is_valid_control_id",
+    "normalize_audit_profile",
     "obfuscate_security_data",
+    "profile_control_ids",
     "redact_security_data",
     "redact_security_evidence",
     "redact_security_findings",
+    "resolve_oem_support",
     "sanitize_security_secrets",
     "sanitize_uri_credentials",
     "score_host_security",

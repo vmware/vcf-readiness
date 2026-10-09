@@ -184,10 +184,11 @@ def evaluate_cisco_bios_baseline(
     rules: List[Dict[str, Any]] = []
 
     # ── Rule 1: Hardware Virtualization (Intel VT / AMD SVM) ────────────────
-    vt_val = attrs.get("IntelVT") or attrs.get("ProcVirtualization") or attrs.get("SVM Mode") or attrs.get("SvmMode")
+    vt_val = attrs.get("CbsCmnCpuSvmMode") or attrs.get("IntelVT") or attrs.get("ProcVirtualization") or attrs.get("SVM Mode") or attrs.get("SvmMode")
     if vt_val is not None and str(vt_val).strip():
         val = str(vt_val).strip()
-        if val.lower() in ("enabled", "true", "1", "enable"):
+        val_lower = val.lower()
+        if any(ok in val_lower for ok in ("enabled", "true", "1", "enable", "auto", "platform-default")):
             rules.append({
                 "attribute": "ProcVirtualization",
                 "setting_name": "Hardware Virtualization (Intel VT / AMD-V)",
@@ -225,10 +226,19 @@ def evaluate_cisco_bios_baseline(
         })
 
     # ── Rule 2: Directed I/O (Intel VT-d / AMD IOMMU) ───────────────────────
-    vtd_val = attrs.get("IntelVTD") or attrs.get("VtdSupport") or attrs.get("IOMMU") or attrs.get("Iommu")
+    vtd_val = (
+        attrs.get("CbsCmnGnbNbIOMMU")
+        or attrs.get("CbsCmnGnbNbIommu")
+        or attrs.get("AmdIoMmu")
+        or attrs.get("IntelVTD")
+        or attrs.get("VtdSupport")
+        or attrs.get("IOMMU")
+        or attrs.get("Iommu")
+    )
     if vtd_val is not None and str(vtd_val).strip():
         val = str(vtd_val).strip()
-        if val.lower() in ("enabled", "true", "1", "enable"):
+        val_lower = val.lower()
+        if any(ok in val_lower for ok in ("enabled", "true", "1", "enable", "auto", "platform-default")):
             rules.append({
                 "attribute": "VtdSupport",
                 "setting_name": "Directed I/O (Intel VT-d / AMD IOMMU)",
@@ -236,7 +246,7 @@ def evaluate_cisco_bios_baseline(
                 "expected_value": "Enabled",
                 "severity": None,
                 "status": "compliant",
-                "rationale": "Intel VT for Directed I/O (VT-d / AMD IOMMU) is Enabled. Required for DMA isolation, memory protection, and PCIe passthrough.",
+                "rationale": "Intel VT for Directed I/O (VT-d / AMD IOMMU) is Enabled (or Auto). Required for DMA isolation, memory protection, and PCIe passthrough.",
                 "citation": f"{guide_title}, Processor Configuration",
                 "citation_url": guide_url,
             })
@@ -266,10 +276,17 @@ def evaluate_cisco_bios_baseline(
         })
 
     # ── Rule 3: Hyper-Threading / Logical Processor ─────────────────────────
-    ht_val = attrs.get("IntelHyperThread") or attrs.get("LogicalProc") or attrs.get("SMT Mode") or attrs.get("SmtMode")
+    ht_val = (
+        attrs.get("CbsCmnCpuSmtCtrl")
+        or attrs.get("IntelHyperThread")
+        or attrs.get("LogicalProc")
+        or attrs.get("SMT Mode")
+        or attrs.get("SmtMode")
+    )
     if ht_val is not None and str(ht_val).strip():
         val = str(ht_val).strip()
-        if val.lower() in ("enabled", "true", "1", "enable"):
+        val_lower = val.lower()
+        if any(ok in val_lower for ok in ("enabled", "true", "1", "enable", "auto", "platform-default")):
             rules.append({
                 "attribute": "LogicalProc",
                 "setting_name": "Hyper-Threading / SMT",
@@ -307,10 +324,17 @@ def evaluate_cisco_bios_baseline(
         })
 
     # ── Rule 4: Turbo Boost / Core Performance Boost ────────────────────────
-    turbo_val = attrs.get("IntelTurboBoostTech") or attrs.get("ProcTurboMode") or attrs.get("Core Performance Boost")
+    turbo_val = (
+        attrs.get("CbsCmnCpuCpb")
+        or attrs.get("IntelTurboBoostTech")
+        or attrs.get("ProcTurboMode")
+        or attrs.get("Core Performance Boost")
+        or attrs.get("CorePerformanceBoost")
+    )
     if turbo_val is not None and str(turbo_val).strip():
         val = str(turbo_val).strip()
-        if val.lower() in ("enabled", "true", "1", "enable"):
+        val_lower = val.lower()
+        if any(ok in val_lower for ok in ("enabled", "true", "1", "enable", "auto", "platform-default")):
             rules.append({
                 "attribute": "ProcTurboMode",
                 "setting_name": "Processor Turbo Boost",

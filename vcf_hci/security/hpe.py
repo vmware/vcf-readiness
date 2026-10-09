@@ -47,6 +47,123 @@ def _find_hpe_param(params: List[Dict[str, Any]], target: str) -> Optional[Dict[
     return None
 
 
+def get_ilo_license_info(oem: Dict[str, Any], evidence: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Extract HPE iLO license dictionary from Oem.Hpe.License in evidence."""
+    lic = oem.get("license")
+    if not lic:
+        lic = (oem.get("hpe_manager") or {}).get("License")
+    if not lic:
+        lic = oem.get("ilo_license")
+    if not lic and isinstance(evidence, dict):
+        lic = evidence.get("license") or evidence.get("bmc_license") or evidence.get("oem_license")
+    if not lic and isinstance(evidence, dict):
+        lic = (evidence.get("standard") or {}).get("bmc_license")
+
+    if isinstance(lic, dict):
+        return lic
+    if isinstance(lic, str) and lic.strip():
+        return {"LicenseType": lic.strip()}
+    return {}
+
+
+def get_ilo_license_tier(oem: Dict[str, Any], evidence: Optional[Dict[str, Any]] = None) -> str:
+    """Resolve license tier string from Oem.Hpe.License."""
+    lic_info = get_ilo_license_info(oem, evidence)
+    raw_tier = (
+        lic_info.get("LicenseType")
+        or lic_info.get("LicenseTier")
+        or lic_info.get("License")
+        or lic_info.get("Tier")
+        or lic_info.get("license_name")
+        or lic_info.get("name")
+    )
+    if raw_tier:
+        return str(raw_tier).strip()
+    if lic_info or oem.get("license") is not None:
+        return "Standard"
+    return ""
+
+
+def is_ilo_unlicensed_or_standard(oem: Dict[str, Any], evidence: Optional[Dict[str, Any]] = None) -> bool:
+    """Return True if iLO is at Standard, unlicensed, or expired tier."""
+    tier = get_ilo_license_tier(oem, evidence)
+    if not tier:
+        return False
+    tier_lower = tier.lower()
+    return not (("advanced" in tier_lower or "essentials" in tier_lower) and "expired" not in tier_lower)
+
+
+def has_hpe_security_service(oem: Dict[str, Any]) -> bool:
+    """Return True if HPE SecurityService or its sub-endpoints were discovered."""
+    sec = oem.get("security_service")
+    dash = oem.get("security_dashboard")
+    params = oem.get("security_parameters")
+    cert = oem.get("certificate_authentication")
+    sso = oem.get("sso")
+    ace = oem.get("automatic_certificate_enrollment")
+    return bool(sec or dash or params or cert or sso or ace)
+
+
+def is_hpe_security_service_absent(oem: Dict[str, Any], evidence: Optional[Dict[str, Any]] = None) -> bool:
+    """Return True if SecurityService was not discovered and iLO license tier is Standard/unlicensed."""
+    return not has_hpe_security_service(oem) and is_ilo_unlicensed_or_standard(oem, evidence)
+
+
+def ilo_unlicensed_message(tier: str = "Standard") -> str:
+    """Build explicit message for absent SecurityService on unlicensed/Standard iLO."""
+    t = tier or "Standard"
+    if "standard" in t.lower():
+        return "iLO Standard: SecurityService requires iLO Advanced license"
+    elif "expired" in t.lower():
+        return "iLO License Expired: SecurityService requires active license"
+    elif "unlicensed" in t.lower() or "none" in t.lower():
+        return "iLO Unlicensed: SecurityService requires iLO Advanced license"
+    return f"iLO {t}: SecurityService requires iLO Advanced license"
+
+
+def ilo_unlicensed_evidence(oem: Dict[str, Any]) -> Dict[str, Any]:
+    """Construct an evidence item for the unlicensed iLO tier."""
+    tier = get_ilo_license_tier(oem) or "Standard"
+    return evidence_item(
+        transport="oem_redfish",
+        uri=HPE_MGR_URI,
+        property="Oem.Hpe.License",
+        raw_value=tier,
+        normalized_value="unlicensed",
+    )
+
+
+def _handle_unlicensed_fallback(
+    control_id: str,
+    expected: str,
+    oem: Dict[str, Any],
+    evidence: Optional[List[Dict[str, Any]]] = None,
+    default_reason: str = ReasonCode.PROPERTY_NOT_EXPOSED,
+    default_status: str = "unknown_not_exposed",
+    default_observed: Any = None,
+) -> Dict[str, Any]:
+    """Emit unknown_unlicensed if SecurityService is absent on an unlicensed/Standard iLO."""
+    if not has_hpe_security_service(oem) and is_ilo_unlicensed_or_standard(oem):
+        tier = get_ilo_license_tier(oem)
+        ev = list(evidence) if evidence else [ilo_unlicensed_evidence(oem)]
+        return control_finding(
+            control_id=control_id,
+            status="unknown_unlicensed",
+            expected=expected,
+            observed=ilo_unlicensed_message(tier),
+            reason_code=ReasonCode.FEATURE_UNLICENSED,
+            evidence=ev,
+        )
+    return control_finding(
+        control_id=control_id,
+        status=default_status,
+        expected=expected,
+        observed=default_observed,
+        reason_code=default_reason,
+        evidence=evidence or [],
+    )
+
+
 def evaluate_c01_https_hpe(oem: Dict[str, Any], standard: Dict[str, Any]) -> Dict[str, Any]:
     """C01: HTTPS enforcement and web server security."""
     net_proto = standard.get("network_protocol") or {}
@@ -186,12 +303,10 @@ def evaluate_c02_tls_version_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL if weak_ciphers is False else ReasonCode.OEM_REDFISH_PASS,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C02",
-        status="unknown_not_exposed",
-        expected="TLS 1.2 or higher",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        expected="TLS 1.2 or higher (weak ciphers disabled)",
+        oem=oem,
         evidence=ev,
     )
 
@@ -230,13 +345,12 @@ def evaluate_c03_tls_key_exchange_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_PASS,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C03",
-        status="unknown_not_exposed",
         expected="256-bit or GCM modern cipher",
-        observed=str(cur_cipher) if cur_cipher else None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
+        default_observed=str(cur_cipher) if cur_cipher else None,
     )
 
 
@@ -274,12 +388,10 @@ def evaluate_c04_weak_ciphers_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C04",
-        status="unknown_not_exposed",
         expected="True (Weak ciphers disabled)",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -319,12 +431,10 @@ def evaluate_c05_certificate_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
                 evidence=ev,
             )
 
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C05",
-        status="unknown_not_exposed",
         expected="CA-signed SSL certificate",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -351,12 +461,10 @@ def evaluate_c06_scep_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_PASS,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C06",
-        status="unknown_not_exposed",
         expected="Configured certificate enrollment",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -433,12 +541,10 @@ def evaluate_c08_security_state_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C08",
-        status="unknown_not_exposed",
         expected="Production or HighSecurity",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -489,12 +595,10 @@ def evaluate_c11_ssh_crypto_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C11",
-        status="unknown_not_exposed",
         expected="Hardened SSH ciphers",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -631,12 +735,10 @@ def evaluate_c15_host_auth_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             evidence=ev,
         )
 
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C15",
-        status="unknown_not_exposed",
         expected="RequireHostAuthentication=True",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -845,12 +947,10 @@ def evaluate_c22_system_lockdown_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C22",
-        status="unknown_not_exposed",
         expected="ServerConfigurationLockStatus=Enabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1032,12 +1132,10 @@ def evaluate_c33_kvm_encryption_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_PASS,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C33",
-        status="unknown_not_exposed",
         expected="Encrypted virtual console sessions",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1192,12 +1290,10 @@ def evaluate_c39_rbsu_login_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C39",
-        status="unknown_not_exposed",
         expected="Login required for iLO RBSU",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1235,12 +1331,10 @@ def evaluate_c40_security_logging_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C40",
-        status="unknown_not_exposed",
         expected="Auth failure logging enabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1275,12 +1369,10 @@ def evaluate_c41_default_credentials_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C41",
-        status="unknown_not_exposed",
         expected="Default password changed",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1328,12 +1420,10 @@ def evaluate_c42_2fa_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C42",
-        status="unknown_not_exposed",
         expected="Two-Factor Auth or Certificate Login enabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1374,12 +1464,10 @@ def evaluate_c44_login_banner_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C44",
-        status="unknown_not_exposed",
         expected="Login Security Banner enabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1415,12 +1503,10 @@ def evaluate_c45_cert_validation_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C45",
-        status="unknown_not_exposed",
         expected="Strict certificate validation enabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1500,12 +1586,10 @@ def evaluate_c47_smartcard_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C47",
-        status="unknown_not_exposed",
         expected="Strict CAC mode enabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1566,12 +1650,10 @@ def evaluate_c50_sso_trust_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
                 reason_code=ReasonCode.OEM_REDFISH_FAIL,
                 evidence=ev,
             )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C50",
-        status="unknown_not_exposed",
         expected="TrustNone or Disabled",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1648,12 +1730,10 @@ def evaluate_c52_chif_hpe(oem: Dict[str, Any]) -> Dict[str, Any]:
             reason_code=ReasonCode.OEM_REDFISH_FAIL,
             evidence=ev,
         )
-    return control_finding(
+    return _handle_unlicensed_fallback(
         control_id="C52",
-        status="unknown_not_exposed",
         expected="CHIF interface requires authentication",
-        observed=None,
-        reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+        oem=oem,
         evidence=ev,
     )
 
@@ -1769,6 +1849,14 @@ def evaluate_hpe_security_controls(evidence: Dict[str, Any]) -> List[Dict[str, A
     """
     standard = evidence.get("standard") or {}
     oem = evidence.get("oem") or {}
+
+    # If top-level evidence has license/bmc_license info not yet copied into oem, copy it safely
+    if "license" not in oem and ("license" in evidence or "bmc_license" in evidence):
+        lic_val = evidence.get("license") or evidence.get("bmc_license")
+        if isinstance(lic_val, dict):
+            oem["license"] = lic_val
+        elif isinstance(lic_val, str):
+            oem["license"] = {"LicenseType": lic_val}
 
     return [
         evaluate_c01_https_hpe(oem, standard),

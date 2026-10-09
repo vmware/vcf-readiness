@@ -15,7 +15,7 @@ from vcf_hci.compat_engine import (
     evaluate_driver_firmware_recommendation,
     evaluate_pci_compatibility,
 )
-from vcf_hci.constants import NVME_FW_BASELINES
+from vcf_hci.constants import NVME_FW_BASELINES, is_generic_name
 from vcf_hci.hcl import lookup_unique_hcl_device
 from vcf_hci.report.fleet.escape import _xe
 
@@ -265,9 +265,21 @@ def _nic_fw_cell(n: dict, json_hcl: Optional[dict] = None) -> str:
 
 def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
     """Return NIC adapter model string with deep-link to Broadcom Compatibility Guide."""
+    if json_hcl is None:
+        try:
+            from vcf_hci.hcl.loader import load_vsan_hcl_json
+            json_hcl = load_vsan_hcl_json()
+        except Exception:
+            json_hcl = None
+
     name = str(n.get("name") or n.get("model") or n.get("id") or "").strip()
     if not name:
         return f"<span class='inv-muted'>{_DASH}</span>"
+
+    if is_generic_name(name):
+        cand_model = str(n.get("model") or "").strip()
+        if cand_model and not is_generic_name(cand_model):
+            name = cand_model
 
     vid = str(n.get("vendor_id") or "").strip()
     did = str(n.get("device_id") or "").strip()
@@ -281,6 +293,13 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
 
     if vid and did:
         pci_eval = evaluate_pci_compatibility(vid, did, svid, ssid, name, fw, hcl_data=json_hcl)
+        matched_entry = pci_eval.get("matched_entry")
+        if isinstance(matched_entry, list) and matched_entry:
+            matched_entry = matched_entry[0]
+        matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
+        if is_generic_name(name) and matched_m:
+            name = str(matched_m).strip()
+
         if pci_eval.get("vcglink"):
             bcg_vsan_nic = pci_eval["vcglink"]
         elif pci_eval.get("product_id"):
@@ -295,6 +314,8 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
     elif json_hcl:
         _unique = lookup_unique_hcl_device(json_hcl=json_hcl, model_name=name)
         if _unique:
+            if is_generic_name(name) and _unique.get("model"):
+                name = str(_unique["model"]).strip()
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
             elif _unique.get("product_id"):
@@ -306,6 +327,16 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
             elif _unique.get("io_product_id"):
                 _io_pid = str(_unique["io_product_id"]).strip()
                 bcg_nic = BCGLinkGenerator.device_detail(_io_pid, "io")
+
+    if not bcg_nic and n.get("io_vcglink"):
+        bcg_nic = n["io_vcglink"]
+    elif not bcg_nic and n.get("io_product_id"):
+        bcg_nic = BCGLinkGenerator.device_detail(str(n["io_product_id"]).strip(), "io")
+
+    if not bcg_vsan_nic and n.get("vcglink"):
+        bcg_vsan_nic = n["vcglink"]
+    elif not bcg_vsan_nic and n.get("product_id"):
+        bcg_vsan_nic = BCGLinkGenerator.device_detail(str(n["product_id"]).strip(), "rdmanic")
 
     bcg_url = bcg_nic or bcg_vsan_nic or BCGLinkGenerator.io_device(name)
     if bcg_url:

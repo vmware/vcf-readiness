@@ -405,7 +405,7 @@ Examples:
                 if len(results) > COMBINED_HTML_MAX_HOSTS:
                     logger.info("Host count (%d) exceeds soft limit (%d) for combined report", len(results), COMBINED_HTML_MAX_HOSTS)
                 try:
-                    combined_path = _generate_combined_html(results, report_paths, outdir)
+                    combined_path = _generate_combined_html(results, report_paths, outdir, json_hcl=json_hcl)
                     if combined_path:
                         print(f"  [✓] Fleet Combined Tabbed Report: {combined_path}")
                 except Exception as exc:
@@ -414,7 +414,7 @@ Examples:
                 if args.obfuscate:
                     try:
                         obf_results = [obfuscate_host_data(r, f"Host-{i+1}", _obf_salt) for i, r in enumerate(results)]
-                        obf_combined_path = _generate_combined_html(obf_results, obf_report_paths, outdir, obfuscated=True)
+                        obf_combined_path = _generate_combined_html(obf_results, obf_report_paths, outdir, obfuscated=True, json_hcl=json_hcl)
                         if obf_combined_path:
                             print(f"  [🔒] Obfuscated Combined Tabbed Report: {obf_combined_path}")
                     except Exception as exc:

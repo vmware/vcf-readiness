@@ -14,7 +14,7 @@ from vcf_hci.compat_engine import (
     VCF9CompatibilityEngine,
     evaluate_driver_firmware_recommendation,
 )
-from vcf_hci.constants import NVME_FW_BASELINES
+from vcf_hci.constants import NVME_FW_BASELINES, is_generic_name
 from vcf_hci.report.schema_registry import color_for_verdict, strip_html
 from vcf_hci.report.sel_links import (
     normalize_vendor,
@@ -1020,12 +1020,14 @@ def build_compact_fleet_inventory(
                     ctrl_type = "unsupported"
 
                 ep = d.get("endurance_remaining_pct", "")
+                if ep in (255, "255", "255%"):
+                    ep = "N/A"
                 tbw_val = d.get("tbw_written") if d.get("tbw_written") is not None else d.get("tbw")
                 drives.append({
                     "host_idx": idx,
                     "hostname": h_name,
                     "ip": h_ip,
-                    "ctrl_name": ctrl_name,
+                    "ctrl_name": str(d.get("controller_name") or ctrl_name),
                     "model": str(d.get("model") or ""),
                     "media_type": str(d.get("media_type") or ""),
                     "protocol": proto,
@@ -1051,6 +1053,8 @@ def build_compact_fleet_inventory(
         # 2. NICs
         for ad in data.get("network_adapters") or []:
             ad_name = str(ad.get("name") or ad.get("model") or "Network Adapter")
+            if is_generic_name(ad_name) and ad.get("model") and not is_generic_name(ad.get("model")):
+                ad_name = str(ad.get("model"))
             fw = str(ad.get("firmware_version") or ad.get("firmware") or "")
             for p in ad.get("ports") or []:
                 spd = p.get("current_speed_gbps") or p.get("speed_gbps") or 0
@@ -1101,10 +1105,15 @@ def build_compact_fleet_inventory(
         for _ctrl, d in _all_drives(data):
             dh = str(d.get("drive_health") or d.get("status") or "").upper()
             ep = d.get("endurance_remaining_pct")
+            if ep in (255, "255", "255%"):
+                ep = None
             ep_val = None
             if ep is not None and ep != "" and ep != "N/A":
                 try:
                     ep_val = float(ep)
+                    if ep_val == 255.0 or ep_val < 0 or ep_val > 100:
+                        ep_val = None
+                        ep = None
                 except (ValueError, TypeError):
                     ep_val = None
 
@@ -1304,6 +1313,8 @@ def build_inventory_sheets(
 
         for ctrl, d in _all_drives(data):
             ep = d.get("endurance_remaining_pct", "")
+            if ep in (255, "255", "255%"):
+                ep = "N/A"
             hcl = strip_html(d.get("hcl_str") or d.get("status_badge", ""))
             ctrl_fw = ctrl.get("ctrl_firmware") or ctrl.get("firmware_version") or ""
             d_fw = str(d.get("firmware") or d.get("firmware_version") or "").strip()
@@ -1415,8 +1426,11 @@ def build_inventory_sheets(
                 except (ValueError, TypeError):
                     pass
                 meets_25g_cell = ("Yes", "green") if spd_val >= 25 else ("No", "yellow")
+                n_name = str(n.get("name") or "")
+                if is_generic_name(n_name) and n.get("model") and not is_generic_name(n.get("model")):
+                    n_name = str(n.get("model"))
                 net_rows.append([
-                    ip, hostname, n.get("name", ""), n.get("id", ""),
+                    ip, hostname, n_name, n.get("id", ""),
                     n.get("manufacturer", ""), n.get("part_number", ""), pci,
                     n.get("firmware_version", ""),
                     pid, mac, pmac,
@@ -1576,10 +1590,14 @@ def build_inventory_sheets(
                 host_has_alarms = True
 
             ep = d.get("endurance_remaining_pct")
+            if ep in (255, "255", "255%"):
+                ep = None
             if ep is not None and ep != "" and ep != "N/A":
                 try:
                     ep_val = float(ep)
-                    if ep_val < 5:
+                    if ep_val == 255.0 or ep_val < 0 or ep_val > 100:
+                        ep_val = None
+                    elif ep_val < 5:
                         health_rows.append([
                             ip, hostname, ("Critical", "red"),
                             "Drive Wear", target_str, f"Critical endurance limit reached: {ep}% remaining life", "—",

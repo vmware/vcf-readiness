@@ -5,6 +5,7 @@ import re
 
 from ..constants import _CVE_TIERS, BIOS_BASELINES
 from ..logging_utils import parse_version_tuple
+from .firmware_currency import _cmp, classify_currency, currency_badge, match_baseline, parse_version
 
 
 def evaluate_boot_mode(boot_mode: str) -> dict:
@@ -75,48 +76,64 @@ def _cve_tier_from_date(bios_date: str) -> tuple:
 def evaluate_bios_version(model_name: str, installed_version: str, release_date: str = "N/A") -> dict:
     model_key = str(model_name or "").upper().strip()
     installed_str = str(installed_version or "N/A")
-    baseline = next((v for k, v in BIOS_BASELINES.items() if k in model_key), None)
+    baseline_key, baseline = match_baseline(BIOS_BASELINES, model_key)
     cve_tier_int, cve_tier_label, _cve_badge, cve_tier_desc = _cve_tier_from_date(release_date)
+    cve_fields = {
+        "cve_tier": cve_tier_int,
+        "cve_tier_label": cve_tier_label,
+        "cve_tier_badge": _cve_badge,
+        "cve_tier_desc": cve_tier_desc,
+        "baseline_key": baseline_key,
+    }
     if not baseline:
         return {
             "badge": f"<span class='badge info'>ℹ️ v{installed_str} ({release_date})</span>",
             "spectre_status": "unverified",
             "spectre_badge": "<span class='badge info'>ℹ️ No Baseline</span>",
-            "cve_tier": cve_tier_int,
-            "cve_tier_label": cve_tier_label,
-            "cve_tier_badge": _cve_badge,
-            "cve_tier_desc": cve_tier_desc,
+            "currency": "unverified",
+            "age_note": "",
+            "latest_version": "N/A",
+            **cve_fields,
         }
-    inst = parse_version_tuple(installed_str)
-    latest = parse_version_tuple(baseline["latest"])
-    min_rec = parse_version_tuple(baseline["min_recommended"])
-    min_sp = parse_version_tuple(baseline.get("min_spectre", "0"))
-    if inst >= latest:
-        badge = f"<span class='badge success'>\U0001f7e2 Up-to-Date (v{installed_str})</span>"
-    elif inst >= min_rec:
-        badge = f"<span class='badge warning'>\U0001f7e1 Update Available (v{installed_str} | Latest: v{baseline['latest']})</span>"
-    else:
-        badge = f"<span class='badge danger'>\U0001f534 Outdated BIOS (v{installed_str} | Latest: v{baseline['latest']})</span>"
-    # Spectre/microcode assessment
-    if inst >= min_sp:
-        spectre_status = "ok"
-        spectre_badge = (
-            f"<span class='badge success'>\U0001f6e1️ Spectre Microcode: OK "
-            f"(≥ v{baseline['min_spectre']})</span>"
-        )
-    else:
-        spectre_status = "exposed"
-        spectre_badge = (
-            f"<span class='badge danger'>⚠️ Pre-Spectre BIOS: v{installed_str} "
-            f"— min required v{baseline['min_spectre']}</span>"
-        )
+    verdict = classify_currency(installed_str, baseline, installed_date=release_date)
+    badge = currency_badge(installed_str, verdict, bios=True)
+    spectre_status, spectre_badge = _spectre_badge(installed_str, baseline)
     return {
         "badge": badge,
-        "latest_version": baseline["latest"],
+        "latest_version": verdict["latest_version"],
+        "currency": verdict["currency"],
+        "age_note": verdict["age_note"],
+        "update_recommended": verdict["update_recommended"],
+        "is_outdated": verdict["is_outdated"],
         "spectre_status": spectre_status,
         "spectre_badge": spectre_badge,
-        "cve_tier": cve_tier_int,
-        "cve_tier_label": cve_tier_label,
-        "cve_tier_badge": _cve_badge,
-        "cve_tier_desc": cve_tier_desc,
+        **cve_fields,
     }
+
+
+def _spectre_badge(installed_str: str, baseline: dict) -> tuple:
+    """Security floor. Family changes do not invent a pre-Spectre failure."""
+    _inst_fam, inst_nums, _inst_kind = parse_version(installed_str)
+    _sp_fam, sp_nums, _sp_kind = parse_version(str(baseline.get("min_spectre") or "0"))
+    if not inst_nums or not sp_nums:
+        inst = parse_version_tuple(installed_str)
+        sp = parse_version_tuple(str(baseline.get("min_spectre") or "0"))
+        covered = inst >= sp and inst != (0, 0, 0, 0)
+    else:
+        covered = _cmp(inst_nums, sp_nums) >= 0
+    floor = baseline.get("min_spectre", "0")
+    if covered:
+        return (
+            "ok",
+            (
+                f"<span class='badge success'>\U0001f6e1️ Spectre Microcode: OK "
+                f"(≥ v{floor})</span>"
+            ),
+        )
+    return (
+        "exposed",
+        (
+            f"<span class='badge danger'>⚠️ Pre-Spectre BIOS: v{installed_str} "
+            f"— min required v{floor}</span>"
+        ),
+    )

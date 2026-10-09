@@ -69,6 +69,14 @@ logger = logging.getLogger("vcf_assess")
 class _BmcSecurityMixin(_CollectorBase):
     """Mixin providing BMC security configuration hardening and evidence collection."""
 
+    def _safe_get_endpoint(self, endpoint: str, critical: bool = False) -> Optional[dict]:
+        if not hasattr(self, "_get"):
+            return None
+        try:
+            return self._get(endpoint, critical=critical)
+        except TypeError:
+            return self._get(endpoint)
+
     def _collect_syslog_info(self, net_proto: dict) -> tuple:
         """Helper to collect (syslog_enabled: bool, syslog_servers: list[str])."""
         syslog_enabled = False
@@ -325,7 +333,8 @@ class _BmcSecurityMixin(_CollectorBase):
                 })
 
         # --- /AccountService ---
-        acct_svc          = self._get("/AccountService") or {} if isinstance(self._get("/AccountService"), dict) else {}
+        raw_acct_svc = self._safe_get_endpoint("/AccountService", critical=False)
+        acct_svc = raw_acct_svc if isinstance(raw_acct_svc, dict) else {}
         lockout_threshold = (
             acct_svc.get("AccountLockoutThreshold")
             if acct_svc.get("AccountLockoutThreshold") is not None
@@ -392,7 +401,8 @@ class _BmcSecurityMixin(_CollectorBase):
             })
 
         # --- /SessionService ---
-        sess_svc     = self._get("/SessionService") or {} if isinstance(self._get("/SessionService"), dict) else {}
+        raw_sess_svc = self._safe_get_endpoint("/SessionService", critical=False)
+        sess_svc = raw_sess_svc if isinstance(raw_sess_svc, dict) else {}
         sess_timeout = sess_svc.get("SessionTimeout") if isinstance(sess_svc, dict) else None
         _st_added = False
         if sess_timeout is not None:
@@ -735,10 +745,10 @@ class _BmcSecurityMixin(_CollectorBase):
 
         # 2. AccountService
         acct_uri = "/redfish/v1/AccountService"
-        raw_acct = self._get(acct_uri) if hasattr(self, "_get") else None
+        raw_acct = self._safe_get_endpoint(acct_uri, critical=False)
         if not raw_acct:
             acct_uri = "/AccountService"
-            raw_acct = self._get(acct_uri) if hasattr(self, "_get") else None
+            raw_acct = self._safe_get_endpoint(acct_uri, critical=False)
 
         if isinstance(raw_acct, dict) and not raw_acct.get("error"):
             standard["account_service"] = self._filter_account_service_evidence(raw_acct, acct_uri)
@@ -750,10 +760,10 @@ class _BmcSecurityMixin(_CollectorBase):
 
         # 3. SessionService
         sess_uri = "/redfish/v1/SessionService"
-        raw_sess = self._get(sess_uri) if hasattr(self, "_get") else None
+        raw_sess = self._safe_get_endpoint(sess_uri, critical=False)
         if not raw_sess:
             sess_uri = "/SessionService"
-            raw_sess = self._get(sess_uri) if hasattr(self, "_get") else None
+            raw_sess = self._safe_get_endpoint(sess_uri, critical=False)
 
         if isinstance(raw_sess, dict) and not raw_sess.get("error"):
             standard["session_service"] = self._filter_session_service_evidence(raw_sess, sess_uri)
@@ -766,7 +776,7 @@ class _BmcSecurityMixin(_CollectorBase):
         # 4. SecureBoot
         sb_uri = None
         if self.sys_uri:
-            sys_data = self._get(self.sys_uri) if hasattr(self, "_get") else {}
+            sys_data = self._safe_get_endpoint(self.sys_uri) if hasattr(self, "_get") else {}
             if isinstance(sys_data, dict) and "SecureBoot" in sys_data:
                 sb_link = sys_data["SecureBoot"]
                 if isinstance(sb_link, dict):
@@ -775,7 +785,7 @@ class _BmcSecurityMixin(_CollectorBase):
                 sb_uri = f"{self.sys_uri}/SecureBoot"
 
         if sb_uri:
-            raw_sb = self._get(sb_uri) if hasattr(self, "_get") else None
+            raw_sb = self._safe_get_endpoint(sb_uri) if hasattr(self, "_get") else None
             if isinstance(raw_sb, dict) and not raw_sb.get("error"):
                 standard["secure_boot"] = self._filter_secure_boot_evidence(raw_sb, sb_uri)
             else:
@@ -791,7 +801,7 @@ class _BmcSecurityMixin(_CollectorBase):
 
         # 5. CertificateService (optional discovery)
         cert_uri = "/redfish/v1/CertificateService"
-        raw_cert = self._get(cert_uri) if hasattr(self, "_get") else None
+        raw_cert = self._safe_get_endpoint(cert_uri, critical=False)
         if isinstance(raw_cert, dict) and not raw_cert.get("error"):
             standard["certificate_service"] = self._filter_certificate_service_evidence(raw_cert, cert_uri)
 

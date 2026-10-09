@@ -34,10 +34,18 @@ def _generate_combined_html(
     obfuscated: bool = False,
     output_filename: Optional[str] = None,
     embed_mode: Optional[str] = None,
+    json_hcl: Optional[dict] = None,
 ) -> str:
     """Generate a single combined tabbed HTML report containing all host reports."""
     if not all_results:
         return ""
+
+    if json_hcl is None:
+        try:
+            from vcf_hci.hcl.loader import load_vsan_hcl_json
+            json_hcl = load_vsan_hcl_json(max_age_days=30)
+        except Exception:
+            json_hcl = None
 
     _page_salt = os.urandom(16).hex()
 
@@ -390,6 +398,7 @@ def _generate_combined_html(
         inv_rows,
         all_results,
         obfuscated=obfuscated,
+        json_hcl=json_hcl,
         page_salt=_page_salt,
         embed_mode=mode,
         sibling_xlsx=sibling_xlsx,

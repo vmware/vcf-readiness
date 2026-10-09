@@ -370,7 +370,7 @@ These are derived from the code comments and known BMC behaviour:
 
 ## 9.1 Redfish $expand & OEM Bulk Telemetry Profiles
 
-For full architectural details, see [ADR-002: Multi-OEM Redfish $expand Architecture and Bulk Telemetry Retrieval Strategies](decisions/ADR-002-oem-redfish-expand-and-fastpath-telemetry.md).
+For full architectural details, see [ADR-002: Multi-OEM Redfish $expand Architecture and Bulk Telemetry Retrieval Strategies](decisions/ADR-002-oem-redfish-expand-and-fastpath-telemetry.md). The Help page summary is the [Redfish Monitoring Guide](REDFISH_MONITORING_GUIDE.md).
 
 | OEM Platform | $expand Support | Max Levels | Syntax | Target Collections, Pacing & Concurrency Strategy |
 |---|:---:|:---:|:---:|---|

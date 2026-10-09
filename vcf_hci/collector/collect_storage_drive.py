@@ -2,7 +2,7 @@
 VCF Readiness Tool — storage drive Redfish resource parsing.
 """
 import re
-from typing import Any, Optional
+from typing import Any, List, Optional, Union
 
 from vcf_hci.collector.pci_utils import (
     extract_pci_ids_from_dict,
@@ -10,8 +10,25 @@ from vcf_hci.collector.pci_utils import (
     normalize_pcie_errors,
 )
 from vcf_hci.constants import KB_TRIMODE
-from vcf_hci.hcl import detect_qlc_nvme
+from vcf_hci.hcl import detect_consumer_drive, detect_qlc_nvme
 from vcf_hci.logging_utils import get_nested
+
+
+def sanitize_endurance_pct(val: Any) -> Optional[Union[int, float]]:
+    """Sanitize SSD endurance / media life percentage.
+
+    Returns None if value is null, 255 (standard 1-byte IPMI/Redfish unavailable sentinel),
+    less than 0, or greater than 100.
+    """
+    if val is None:
+        return None
+    try:
+        f_val = float(val)
+    except (ValueError, TypeError):
+        return None
+    if f_val == 255.0 or f_val < 0.0 or f_val > 100.0:
+        return None
+    return int(f_val) if f_val.is_integer() else round(f_val, 2)
 
 # Known Tri-Mode controller name substrings (fallback when protocol lists are absent)
 _TRIMODE_NAMES = [
@@ -52,6 +69,46 @@ def _parse_lanes(val: Any) -> Optional[int]:
     return None
 
 
+def is_invalid_drive_firmware(fw: Any) -> bool:
+    """Return True if fw string is empty, placeholder, or a protocol/specification string."""
+    if not fw:
+        return True
+    if isinstance(fw, dict):
+        s = str(
+            get_nested(fw, "Current", "VersionString")
+            or fw.get("VersionString")
+            or fw.get("Version")
+            or ""
+        ).strip()
+    else:
+        s = str(fw).strip()
+    if not s or s.lower() in ("n/a", "none", "unknown", "null", "not available", "not_available"):
+        return True
+    if re.search(r"^(?:NVMe\s+Spec|Supports\s+ATA|ATA\d*[-_]ACS|SCSI|SPC[-_]\d+|SBC[-_]\d+|AHCI)", s, re.I):
+        return True
+    return bool(re.search(r"\b(?:spec|specification)\b", s, re.I))
+
+
+def _extract_fw_candidate(val: Any) -> str:
+    """Extract clean string firmware version from string or nested dict."""
+    if isinstance(val, dict):
+        res = (
+            get_nested(val, "Current", "VersionString")
+            or val.get("VersionString")
+            or val.get("Version")
+            or ""
+        )
+        return str(res).strip()
+    if val is not None:
+        s = str(val).strip()
+        if s.startswith("{"):
+            m = re.search(r"['\"]VersionString['\"]\s*:\s*['\"]([^'\"]+)['\"]", s)
+            if m:
+                return m.group(1).strip()
+        return s
+    return ""
+
+
 def parse_drive_details(
     coll: Any,
     ctrl_id: str,
@@ -60,6 +117,7 @@ def parse_drive_details(
     has_logical_vols: bool = False,
     ctrl_pcie: Optional[dict] = None,
     pcie_cache: Optional[list] = None,
+    controller_json: Optional[dict] = None,
 ) -> Optional[dict]:
     """Parse a single drive Redfish resource into a normalized drive dict.
 
@@ -298,9 +356,9 @@ def parse_drive_details(
     proto = str(raw_proto).upper()
     endurance = None
     if not is_magnetic:
-        endurance = drive_json.get("PredictedMediaLifeLeftPercent")
+        endurance = sanitize_endurance_pct(drive_json.get("PredictedMediaLifeLeftPercent"))
         if endurance is None and coll and hasattr(coll, "oem_drive_endurance"):
-            endurance = coll.oem_drive_endurance(drive_json)
+            endurance = sanitize_endurance_pct(coll.oem_drive_endurance(drive_json))
         hpe_endurance = (
             drive_json.get("SSDEnduranceUtilizationPercentage")
             if drive_json.get("SSDEnduranceUtilizationPercentage") is not None
@@ -308,12 +366,12 @@ def parse_drive_details(
         )
         if endurance is None and hpe_endurance is not None:
             try:
-                endurance = 100 - int(hpe_endurance)
+                endurance = sanitize_endurance_pct(100 - int(hpe_endurance))
             except (ValueError, TypeError):
                 pass
         if endurance is None:
             # Lenovo XCC: RemainingDriveLife is already a percentage remaining
-            endurance = lnv_oem.get("RemainingDriveLife") or oem_metrics.get("endurance_remaining_pct")
+            endurance = sanitize_endurance_pct(lnv_oem.get("RemainingDriveLife") or oem_metrics.get("endurance_remaining_pct"))
     product_id = (drive_json.get("PartNumber")
                   or oem_metrics.get("part_number")
                   or hpe_oem.get("SparePartNumber")
@@ -375,7 +433,8 @@ def parse_drive_details(
     _PASS_THROUGH_CTRL_PATTERNS = [
         "HBA", "NONRAID", "NON-RAID", "PASS", "CPU", "EXTENDER", "EXPANDER",
         "RETIMER", "SWITCH", "BRIDGE", "DIRECT", "AHCI", "CHIPSET", "UNMANAGED",
-        "HBA3", "HBA 3", "JBOD",
+        "HBA3", "HBA 3", "JBOD", "NVME_CONTROLLER", "NVME CONTROLLER",
+        "BIFURCATION", "GLOTRENDS", "PU41",
     ]
     is_hba = any(k in ctrl_name_up or k in ctrl_id_up for k in _PASS_THROUGH_CTRL_PATTERNS)
     _EXPLICIT_RAID_NAMES = ["RAID", "SMART ARRAY", "MEGA", "MR", "PERC H7", "PERC H8", "PERC H9", "PERC S", "PERC FD"]
@@ -416,6 +475,7 @@ def parse_drive_details(
     # Exclude motherboard chipset/AHCI/VMD/direct PCIe/extender/HBA/software RAID controllers from tri-mode false positives
     _NON_TRIMODE_CTRL_PATTERNS = [
         "AHCI", "SATA", "INTEL", "VMD", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS",
+        "GLOTRENDS", "PU41", "BIFURCATION",
         "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355",
     ] + list(sw_raid_names)
     _is_known_non_trimode_ctrl = (
@@ -481,11 +541,21 @@ def parse_drive_details(
 
     # ── vSAN compatibility badge ───────────────────────────────────────────
     is_qlc = False  # overridden below for direct-attached NVMe only
+    consumer_reason = detect_consumer_drive(model, manufacturer=drive_json.get("Manufacturer") or "")
+    is_consumer = consumer_reason is not None
+
     if is_boot:
-        badge, category, vsan_ok = (
-            "<span class='badge info'>⚙️ Boot Device Only (Non-vSAN)</span>",
-            "Boot Device", False,
-        )
+        if is_consumer:
+            badge, category, vsan_ok = (
+                "<span class='badge' style='background:#0284c7;color:#fff'>🚀 Boot Device Only</span>"
+                "<br><small style='color:var(--text-muted,#94a3b8);font-size:.75rem'>Consumer SSD (Boot Only — Not vSAN Eligible)</small>",
+                "Boot Device", False,
+            )
+        else:
+            badge, category, vsan_ok = (
+                "<span class='badge info'>⚙️ Boot Device Only (Non-vSAN)</span>",
+                "Boot Device", False,
+            )
     elif behind_trimode:
         badge, category, vsan_ok = (
             f"<span class='badge danger'>🔴 NOT Supported — NVMe Behind Tri-Mode RAID</span>"
@@ -509,6 +579,12 @@ def parse_drive_details(
             "<span class='badge danger'>🔴 Not vSAN Compatible</span>"
             "<br><span class='badge info' style='margin-top:4px;'>🔵 Memory Tiering Candidate</span>",
             "Optane Memory Tiering", False,
+        )
+    elif is_consumer:
+        badge, category, vsan_ok = (
+            "<span class='badge danger'>🔴 Unsupported (Consumer SSD)</span>"
+            "<br><small style='color:var(--danger,#ef4444);font-size:.75rem'>Consumer drive — lacks Power Loss Protection (PLP) &amp; not vSAN certified</small>",
+            "Unsupported Consumer SSD", False,
         )
     elif is_magnetic or "HDD" in media:
         badge, category, vsan_ok = (
@@ -824,23 +900,41 @@ def parse_drive_details(
             "pci_pair": "",
         }
 
-    # Drive Firmware version extraction
-    fw_raw = drive_json.get("Revision") or drive_json.get("FirmwareVersion")
-    if isinstance(fw_raw, dict):
-        # HPE SmartStorage: {"Current": {"VersionString": "HPG2"}}
-        drive_fw = str(
-            get_nested(fw_raw, "Current", "VersionString")
-            or fw_raw.get("VersionString")
-            or fw_raw.get("Version")
-            or "N/A"
-        ).strip()
-    elif fw_raw:
-        drive_fw = str(fw_raw).strip()
-    else:
-        drive_fw = "N/A"
+    # Drive Firmware version extraction with controller fallback
+    candidates: List[Any] = [
+        drive_json.get("Revision"),
+        drive_json.get("FirmwareVersion"),
+    ]
+    if controller_json and isinstance(controller_json, dict):
+        ctrl_sn = str(controller_json.get("SerialNumber") or "").strip()
+        ctrl_model = str(controller_json.get("Model") or "").strip()
+        sn_match = bool(
+            ctrl_sn
+            and serial_number
+            and ctrl_sn.lower() not in ("not available", "none", "unknown", "n/a")
+            and ctrl_sn.lower() == serial_number.lower()
+        )
+        model_match = bool(
+            ctrl_model
+            and model
+            and ctrl_model.lower() not in ("not available", "none", "unknown", "n/a")
+            and (ctrl_model.lower() in model.lower() or model.lower() in ctrl_model.lower())
+        )
+        if is_nvme or sn_match or model_match:
+            candidates.append(controller_json.get("FirmwareVersion"))
+            candidates.append(controller_json.get("FirmwarePackageVersion"))
+
+    drive_fw = "N/A"
+    for cand in candidates:
+        extracted = _extract_fw_candidate(cand)
+        if not is_invalid_drive_firmware(extracted):
+            drive_fw = extracted
+            break
 
     return {
         "populated":           True,
+        "controller_name":     ctrl_name,
+        "controller_id":       ctrl_id,
         "bay_slot":            _bay_slot,
         "bay_position":        bay_position,
         "is_edsff":            is_edsff,
@@ -874,6 +968,8 @@ def parse_drive_details(
         "pcie_max_lanes":    pcie_max,
         "pcie_gen":          pcie_gen,
         "is_qlc":            is_qlc,
+        "is_consumer":       bool(is_consumer),
+        "consumer_reason":   consumer_reason or "",
         "vendor_id":           pci_info["vendor_id"],
         "device_id":           pci_info["device_id"],
         "subsystem_vendor_id": pci_info["subsystem_vendor_id"],
@@ -921,4 +1017,4 @@ def parse_drive_details(
 
 _parse_drive_details = parse_drive_details
 
-__all__ = ["parse_drive_details", "_parse_drive_details"]
+__all__ = ["parse_drive_details", "_parse_drive_details", "is_invalid_drive_firmware"]
