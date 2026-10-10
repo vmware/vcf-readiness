@@ -1,6 +1,6 @@
 # VCF Readiness Assessment Tool
 
-> Zero-dependency Python tool for VMware Sales Engineers and Solution Architects to assess legacy server hardware for VMware Cloud Foundation 9.1 repurposing.
+> Zero-dependency Python tool for VMware Sales Engineers, Solution Architects, and IT teams to assess server hardware for VMware Cloud Foundation 9.1 and vSAN Express Storage Architecture (ESA) repurposing.
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
@@ -9,7 +9,7 @@
 ---
 
 <p align="center">
-  <a href="#interactive-visual-tour--feature-deep-dive">
+  <a href="#-visual-report-showcase">
     <img src="docs/assets/vcf_readiness_showcase.webp" alt="VCF Readiness Assessment Tool Rotating Feature Showcase" width="100%">
   </a>
   <br>
@@ -18,497 +18,263 @@
 
 ---
 
+## 🎬 Video Walkthroughs & Demos
+
+Watch short step-by-step video guides to get up and running, launch on macOS, and interpret generated assessment reports.
+
+> 📺 **[Watch Full YouTube Playlist (3 Videos) →](https://www.youtube.com/playlist?list=PLIyQp4kTfTYU)**
+
+| [Scanner Quick Start (1:19)](https://www.youtube.com/watch?v=nfKTH5aG76s) | [Report Overview (8:20)](https://www.youtube.com/watch?v=tQkxyRHZu4M) | [Launch for Mac from Python (0:55)](https://www.youtube.com/watch?v=L5_IyTcHiMo) |
+|:---:|:---:|:---:|
+| [![Scanner Quick Start](docs/assets/screenshots/video-scanner-quickstart.jpg)](https://www.youtube.com/watch?v=nfKTH5aG76s) | [![Report Overview](docs/assets/screenshots/video-report-overview.jpg)](https://www.youtube.com/watch?v=tQkxyRHZu4M) | [![Launch for Mac from Python](docs/assets/screenshots/video-mac-launch.jpg)](https://www.youtube.com/watch?v=L5_IyTcHiMo) |
+| Target entry, credentials, TLS certificates, and initiating a fleet assessment | Detailed walkthrough of fleet summary badges, tabs, BIOS drift, and host sub-reports | Terminal launch with Python standard library on macOS workstations |
+
+---
+
 ## Table of Contents
 
-- [Interactive Visual Tour & Feature Deep Dive](#interactive-visual-tour--feature-deep-dive)
-- [Video Walkthroughs & Demos](#video-walkthroughs--demos)
-- [Download](#download)
-- [5-Minute Quick Start](#5-minute-quick-start)
-- [Run from Source (no binary needed)](#run-from-source-no-binary-needed)
-- [What It Does](#what-it-does)
-- [Key Features](#key-features)
-- [Interface Options](#interface-options)
-  - [Option A — Browser UI (recommended)](#option-a--browser-ui-recommended)
-  - [Option B — Command-Line Interface](#option-b--command-line-interface)
-  - [Scan Modes (Quick, Lean, Full)](#scan-modes-quick-lean-full)
-- [Command-Line Options](#command-line-options)
-- [Output Files](#output-files)
-- [Report Sections](#report-sections)
-- [Security Architecture](#security-architecture)
-- [Data Obfuscation & PII Anonymization](#data-obfuscation--pii-anonymization)
-- [Architecture](#architecture)
-- [OEM \& Hardware Vendor Collaboration](#oem--hardware-vendor-collaboration)
-- [Broadcom References](#broadcom-references)
-- [Credits & Acknowledgements](#credits--acknowledgements)
-- [License](#license)
+- [Video Walkthroughs & Demos](#-video-walkthroughs--demos)
+- [Quick Start: Run from Source (Recommended)](#-quick-start-run-from-source-recommended)
+- [Alternative: Pre-Compiled Executables (Unsigned)](#-alternative-pre-compiled-executables-unsigned)
+- [What It Does & Platform Support](#-what-it-does)
+- [Visual Report Showcase](#-visual-report-showcase)
+- [Command-Line Interface (CLI)](#-command-line-interface-cli)
+- [OEM & Hardware Vendor Collaboration](#-oem--hardware-vendor-collaboration)
+- [Advanced Documentation](#-advanced-documentation--architectural-deep-dives)
+- [References & Credits](#-references--credits)
 
 ---
 
-## Download
+## 🚀 Quick Start: Run from Source (Recommended)
 
-**No Python required** — grab the pre-built binary for your platform from the [**Latest Release page →**](https://github.com/vmware/vcf-readiness/releases/latest)
+The assessment tool is built with **zero external dependencies** — it runs on standard Python 3.9+ using only the Python standard library. No `pip install` is needed, making it ideal for restricted SE laptops and air-gapped environments.
 
-| Platform | File | Notes |
-|----------|------|-------|
-| Windows | `VCF-Readiness-Web-v<version>-win.exe` / `.zip` | Double-click; opens browser automatically |
-| macOS | `VCF-Readiness-Web-v<version>-mac.zip` | Unzip → double-click `Launch-VCF-Readiness-Web.command` (Right-click Open on first launch) |
-| Linux | `VCF-Readiness-Web-v<version>-linux.zip` | Extract → run executable |
-
-> Already have Python 3.9+? Skip the binary and [run from source](#run-from-source-no-binary-needed) — it's one command.
-
----
-
-## 5-Minute Quick Start
-
-> **What you need:** network access to your BMC management IPs (iDRAC / iLO / BMC). That's it.
->
 > 🎥 **Prefer video?** Watch the 1-minute [**Scanner Quick Start Video (1:19) →**](https://www.youtube.com/watch?v=nfKTH5aG76s) for a walkthrough of targets, credentials, and running a scan.
 
-### Step 1 — Download and launch
-
-**Windows:**
-1. Download `VCF-Readiness-Web-v<version>-win.exe` from the [release page](https://github.com/vmware/vcf-readiness/releases/latest)
-2. Double-click it. If Windows SmartScreen appears, click **More info → Run anyway**
-3. Your browser opens automatically at `http://127.0.0.1:7182`
-
-**macOS:**
-1. Download `VCF-Readiness-Web-v<version>-mac.zip` from the [release page](https://github.com/vmware/vcf-readiness/releases/latest)
-2. Double-click the zip to unzip it
-3. Double-click **`Launch-VCF-Readiness-Web.command`** (If Gatekeeper warns: right-click → **Open** → **Open**)
-4. Your browser opens automatically at `http://127.0.0.1:7182`
-
-**Linux / headless server:** See [Run from source](#run-from-source-no-binary-needed) below.
-
-### Step 2 — Fill in the form
-
-1. **Targets** — enter one or more BMC IPs, a range (`10.0.0.1-20`), or a CIDR block (`192.168.1.0/24`)
-2. **Credentials** — username and password for your iDRAC / iLO / BMC
-3. Click **Run Assessment**
-
-### Step 3 — Get your reports
-
-The tool scans each host and generates a standalone HTML report per server. No internet connection required for scanning. Reports open directly in the browser, or you can find them in your chosen output folder.
-
----
-
-## Run from Source (no binary needed)
-
-The tool has **zero external dependencies** — if you have Python 3.9+ installed, one command is all it takes.
+### macOS & Linux
 
 ```bash
-# Clone or download the repository, then:
-python vcfr_web.py
-# Browser opens automatically at http://127.0.0.1:7182
+# 1. Clone the repository
+git clone https://github.com/vmware/vcf-readiness.git
+cd vcf-readiness
+
+# 2. Make executable and launch the Web UI
+chmod +x vcfr_web.py
+./vcfr_web.py
+# Or launch directly via Python: python3 vcfr_web.py
 ```
+> *Your web browser will open automatically at **`http://127.0.0.1:7182`**.*
 
-### Don't have Python yet?
+### Windows
 
-<details>
-<summary><strong>Windows — install Python from python.org</strong></summary>
-
-1. Go to [https://www.python.org/downloads/windows/](https://www.python.org/downloads/windows/) and download the **Windows installer (64-bit)** for the latest Python 3.x release.
-2. Run the installer. **Critical:** on the first screen, check **"Add python.exe to PATH"** before clicking Install Now.
-3. Open **Command Prompt** (Start → type `cmd` → Enter).
-4. Verify: `python --version` — should print `Python 3.x.x`
-5. Navigate to the project and launch:
-   ```cmd
-   cd C:\Users\YourName\Documents\vcfr
-   python vcfr_web.py
-   ```
-
-</details>
+```cmd
+git clone https://github.com/vmware/vcf-readiness.git
+cd vcf-readiness
+python vcfr_web.py
+```
+> *Your web browser will open automatically at **`http://127.0.0.1:7182`**.*
 
 <details>
-<summary><strong>macOS — install Python via Homebrew</strong></summary>
+<summary><strong>Need to install Python 3.9+? (Windows, macOS, Linux setup guide)</strong></summary>
 
+### Windows
+1. Download the **Windows installer (64-bit)** from [python.org](https://www.python.org/downloads/windows/).
+2. **Critical:** On the first installer screen, check **"Add python.exe to PATH"** before clicking Install Now.
+3. Open Command Prompt (`cmd`) and verify: `python --version`
+
+### macOS
 > 🎥 **Video Guide:** Watch [**Launch for Mac from Python (0:55) →**](https://www.youtube.com/watch?v=L5_IyTcHiMo) for a quick demonstration of launching the web interface from Terminal.
 
-1. Open **Terminal** (Spotlight → type `Terminal` → Enter).
-2. Install Homebrew (if you don't have it):
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-3. Install Python:
+1. Open Terminal and install Python via Homebrew:
    ```bash
    brew install python
    ```
-4. Verify: `python3 --version` — should print `Python 3.x.x`
-5. Navigate to the project and launch:
-   ```bash
-   cd ~/Documents/vcfr
-   python3 vcfr_web.py
-   ```
+2. Verify: `python3 --version`
 
-> **No external dependencies needed.** The web UI runs in your browser using only Python standard library.
-
-</details>
-
-<details>
-<summary><strong>Linux — install Python via package manager</strong></summary>
-
-Most Linux distributions include Python 3 by default. If not:
-
+### Linux (Ubuntu, Debian, RHEL, Fedora)
 ```bash
 # Ubuntu / Debian
-sudo apt update && sudo apt install python3
+sudo apt update && sudo apt install -y python3
 
 # RHEL / CentOS / Fedora
-sudo dnf install python3
+sudo dnf install -y python3
 
 # Verify
 python3 --version
 ```
 
-Then launch the tool:
+### Remote / Headless Linux Server
+Forward the web interface over SSH to your local machine:
 ```bash
-cd ~/Documents/vcfr
+# Run on your local machine:
+ssh -L 7182:127.0.0.1:7182 user@remote-server
+
+# On the remote server, start the web server:
 python3 vcfr_web.py
-```
-
-**Headless / SSH server?** Forward port 7182 to your local machine and open the browser there:
-```bash
-# Run this on your local machine (replace user@server with your server)
-ssh -L 7182:127.0.0.1:7182 user@server
-
-# Then on the server, start the tool:
-python3 vcfr_web.py
-
-# Open http://127.0.0.1:7182 in your local browser
+# Then open http://127.0.0.1:7182 in your local browser
 ```
 
 </details>
 
 ---
 
-## What It Does
+## 📦 Alternative: Pre-Compiled Executables (Unsigned)
 
-Connects to enterprise server BMCs over Redfish APIs and produces a standalone HTML report per host answering one question: **can this server be repurposed for VCF 9.1?**
+If Python is not available on your system, standalone binaries are packaged on the [**Latest Release page →**](https://github.com/vmware/vcf-readiness/releases/latest)
 
-**BMC coverage**
+| Platform | Download Package | Launch Instructions |
+|:---------|:-----------------|:--------------------|
+| **Windows** | `VCF-Readiness-Web-v9.9.1-win.exe` | Double-click binary; browser opens automatically |
+| **macOS** | `VCF-Readiness-Web-v9.9.1-mac.zip` | Unzip → double-click `Launch-VCF-Readiness-Web.command` |
+| **Linux** | `VCF-Readiness-Web-v9.9.1-linux.zip` | Extract archive → run executable |
 
-| BMC | Adapter | Assessment depth | Automated fixture |
-|-----|---------|------------------|-------------------|
-| Dell iDRAC | `DellCollector` | Full OEM hooks (SKU, BIOS date, endurance, SMART, license) | Yes (R640 / R6525 / R750 / R740+GPU) |
-| HPE iLO | `HPECollector` | Full OEM hooks (SmartStorage, retry, SystemUsage, license) | Yes (DL360 Gen10) |
-| Supermicro BMC | `SupermicroCollector` | SimpleStorage + DCMS license gate | Yes (SYS-E200-8D) |
-| Cisco IMC | `CiscoCollector` | Manager path `/Managers/CIMC`, drive metrics, license note | Yes (C220 M5 fixture + `samples/cisco-c220-m5` replay; optional skip if dump absent) |
-| Lenovo XCC | `LenovoCollector` | Drive metrics + LicenseService tier | Yes (SR630 fixture + `samples/lenovo-sr630v2` replay; optional skip if dump absent) |
-| Intel BMC | `IntelBMCCollector` | DMTF / Generic behavior (no OEM field mapping yet) | No successful dump yet (`GenericCollector` hooks only) |
-| Quanta BMC | `QuantaCollector` | Self roots, RackScale drive Oem, SimpleStorage | Yes (`samples/quanta-d42a-2u`, shallow) |
-| GIGABYTE BMC | `GigabyteCollector` | Self roots, `Oem.GBT` slot, SimpleStorage | Yes (`samples/gigabyte-server`) |
-| Other Redfish BMCs | `GenericCollector` | Standard DMTF resources only | Fallback |
-
-Unknown vendors still scan; OEM-only fields (wear, SmartStorage, CIMC manager path) may be missing.
+> ⚠️ **Important Notice Regarding Unsigned Executables:**
+> 
+> Release binaries are **unsigned developer builds**. Because they are not signed with enterprise certificates, your operating system will flag them on first execution:
+> - **macOS Gatekeeper:** macOS will block execution by default. To allow it, **right-click** `Launch-VCF-Readiness-Web.command` (or binary) → select **Open** → click **Open** in the confirmation dialog.
+> - **Windows SmartScreen:** Windows may show a blue warning banner. Click **"More info"** → then click **"Run anyway"**.
+> 
+> **To avoid OS security prompts completely, we strongly recommend [running from source](#-quick-start-run-from-source-recommended).**
 
 ---
 
-## 📸 Interactive Visual Tour & Feature Deep Dive
+## 🔍 What It Does
 
-Click any category below to expand full-resolution telemetry screenshots, architectural diagrams, and diagnostic deep-dives captured across enterprise Dell PowerEdge, HPE ProLiant, Lenovo ThinkAgile, and Cisco UCS servers:
+The tool queries enterprise server BMC controllers over out-of-band Redfish REST APIs and evaluates hardware against VCF 9.1 and vSAN Express Storage Architecture (ESA) standards. It answers the critical architectural question: **can this server fleet be repurposed for VCF 9.1?**
 
-<details open>
-<summary><strong>1. Fleet Health, Capacity Sizing & Multi-Cluster Headroom</strong></summary>
-<br>
+### Multi-Vendor BMC Platform Support
 
-<p align="center">
-  <a href="docs/assets/screenshots/fleet-health-dashboard.png">
-    <img src="docs/assets/screenshots/fleet-health-dashboard.png" alt="Fleet Health Dashboard and Management Headroom" width="100%">
-  </a>
-</p>
-
-- **Fleet Resource Headroom:** Aggregates compute (vCPU), memory (RAM), and NVMe raw storage across hundreds of hosts against VCF HA-Large management domain baselines.
-- **CPU Fleet Fingerprinting:** Groups hosts by processor microarchitecture (Cascade Lake-SP, Ice Lake-SP, Sapphire Rapids, AMD EPYC) and socket counts.
-- **BIOS & Microcode Currency:** Instant rollups of outdated BIOS firmware, Spectre/Meltdown mitigation status, and pending vendor upgrades.
-- **Additional Fleet Views:**
-  - [📊 Fleet Metric Health Tiles (`docs/assets/screenshots/fleet-metric-tiles.png`)](docs/assets/screenshots/fleet-metric-tiles.png) — GPU inventory, TPM 2.0 compliance (110/374), NIC speed distribution (100 GbE / 25 GbE), power draw & peak wattage, ToR leaf pairs, and BMC security compliance (5,556 passes / 7,624 fails).
-  - [📋 Multi-Host Fleet Summary Table (`docs/assets/screenshots/fleet-multi-host-capture.png`)](docs/assets/screenshots/fleet-multi-host-capture.png) — High-density per-host status grid with CPU tiers, TPM 2.0 active state, security action badges, and vSAN ESA qualification.
-
-</details>
-
-<details>
-<summary><strong>2. Motherboard DIMM Slots & Memory Interleaving Efficiency</strong></summary>
-<br>
-
-<p align="center">
-  <a href="docs/assets/screenshots/memory-channel-topology.png">
-    <img src="docs/assets/screenshots/memory-channel-topology.png" alt="Memory Bus Interleaving and Motherboard Layout Visualizer" width="100%">
-  </a>
-</p>
-
-- **Memory Interleaving Scorecard:** Automatically calculates channel interleaving efficiency (e.g. 75% degraded on unbalanced 6-of-8 channel populations).
-- **Physical Motherboard Visualizer:** Interactive graphical map of Socket 1 and Socket 2 DIMM slots (Channels A through H), displaying populated slots (green), degraded channels, and empty sockets.
-- **SE Remediation Guide:** Prescriptive advice on slot re-seating and DIMM replacement to eliminate memory bus bandwidth bottlenecks for vSAN ESA cache and storage tiers.
-- **Bus Speed Analysis:** Flags memory operating below CPU rated maximums (e.g. 4400 MHz operating vs 4800 MHz rated).
-
-</details>
-
-<details>
-<summary><strong>3. Network Interfaces, ToR Switch Fabric & Optical Transceivers</strong></summary>
-<br>
-
-<p align="center">
-  <a href="docs/assets/screenshots/nic-optics-lldp-detection.png">
-    <img src="docs/assets/screenshots/nic-optics-lldp-detection.png" alt="Network Interfaces, ToR Switch Detection and Transceiver Optics" width="100%">
-  </a>
-</p>
-
-- **ToR Switch Fabric Mapping:** Cross-vendor LLDP and Cisco CDP neighbor discovery mapping server adapters directly to top-of-rack switches and switch ports.
-- **Optical Transceiver Diagnostics:** Real-time Digital Diagnostic Monitoring (DDM) reporting optical TX/RX power in dBm, temperature, and transceiver form factors (SFP28, QSFP28, DAC).
-- **ESXi 9.1 Driver & Firmware Validation:** Live comparison of installed driver/firmware combinations against VMware inbox certified releases with upgrade indicators.
-- **vSAN ESA & RDMA Qualification:** Validates 25 GbE / 100 GbE link speeds and vSAN over RDMA (RoCEv2) hardware support.
-- **Additional Networking Views:**
-  - [🔌 LLDP / CDP Switch Neighbor Table (`docs/assets/screenshots/lldp-cdp-switch-neighbors.png`)](docs/assets/screenshots/lldp-cdp-switch-neighbors.png) — Dedicated BMC management interface and host NIC neighbor switch chassis IDs, port numbers, and management IPs.
-
-</details>
-
-<details>
-<summary><strong>4. Storage Controllers, NVMe SMART & vSAN ESA HCL</strong></summary>
-<br>
-
-<p align="center">
-  <a href="docs/assets/screenshots/vsan-esa-drive-compliance.png">
-    <img src="docs/assets/screenshots/vsan-esa-drive-compliance.png" alt="Storage Controller and vSAN ESA Drive Compliance" width="100%">
-  </a>
-</p>
-
-- **vSAN ESA Compatibility Check:** Automated JSON HCL lookup classifying drives into vSAN ESA Storage Tier, vSAN All-Flash Caching, or Capacity Tier.
-- **Direct BCG Links:** Instant deep-links to Broadcom Compatibility Guide records for every discovered drive model and controller.
-- **Firmware Baseline Validation:** Verifies drive firmware against VMware certified baselines and alerts on newer releases.
-- **Additional Storage & PCIe Views:**
-  - [🩺 Drive SMART Telemetry (`docs/assets/screenshots/nvme-smart-health-telemetry.png`)](docs/assets/screenshots/nvme-smart-health-telemetry.png) — 20-metric OCP SMART telemetry: Power-On Hours (POH), TB Written/Read, wear alerts, temperature, unsafe shutdowns, and spare block margins.
-  - [⚡ PCIe Slot Inventory (`docs/assets/screenshots/pcie-lane-inventory.png`)](docs/assets/screenshots/pcie-lane-inventory.png) — Slot-by-slot PCIe generation (Gen4/Gen5), lane width (x4/x8/x16), hot-plug capability, and PCI Quad IDs.
-
-</details>
-
-<details>
-<summary><strong>5. Platform Security, BMC Hardening Audit & SCV Attestation</strong></summary>
-<br>
-
-<p align="center">
-  <a href="docs/assets/screenshots/bmc-hardware-security-audit.png">
-    <img src="docs/assets/screenshots/bmc-hardware-security-audit.png" alt="BMC Hardware Security Audit and Supply Chain Attestation" width="100%">
-  </a>
-</p>
-
-- **Dell Secured Component Verification (SCV 1.0):** Cryptographically verifies factory hardware manifests signed at Dell manufacturing against BMC component inventory.
-- **84-Point BMC Hardening Audit:** Evaluates HTTP-to-HTTPS redirection, TLS 1.2+ minimum versions, 256-bit cipher enforcement, default credentials, and transport security.
-- **Confidential Computing & Hardware Shield:** Checks System Management Mode (SMM) memory lock status and BIOS Security Freeze Lock active state.
-- **Additional Security Views:**
-  - [🛡️ Hardware Security Baseline (`docs/assets/screenshots/hardware-security-baseline.png`)](docs/assets/screenshots/hardware-security-baseline.png) — TPM 2.0 active state, Secure Boot posture, BIOS microcode CVE tiers (Spectre, Meltdown, RFDS), and Intel TXT.
-
-</details>
-
-<details>
-<summary><strong>6. BIOS Golden Baseline Scorecard & Performance Drift</strong></summary>
-<br>
-
-<p align="center">
-  <a href="docs/assets/screenshots/bios-golden-baseline-drift.png">
-    <img src="docs/assets/screenshots/bios-golden-baseline-drift.png" alt="VCF 9.1 BIOS Golden Baseline Scorecard" width="100%">
-  </a>
-</p>
-
-- **Automated Drift Detection:** Evaluates 12+ critical server BIOS settings against Broadcom VCF 9.1 & VMware vSphere 9.0 Performance Best Practices.
-- **Prescriptive Remediation:** Explains the engineering rationale for drifted settings (e.g., PCIe ASPM low-power states triggering ESXi `vsandevicemonitord` abort timeouts).
-- **Subsystem & Fault Diagnostics:**
-  - [⚙️ BIOS Performance Settings (`docs/assets/screenshots/bios-performance-settings.png`)](docs/assets/screenshots/bios-performance-settings.png) — C-States, Turbo, UPI Link Power Management, Hyper-Threading, Sub-NUMA Clustering (SNC), and UPI prefetchers.
-  - [⚠️ System Event Log (SEL / IML) Monitoring (`docs/assets/screenshots/system-event-log-monitoring.png`)](docs/assets/screenshots/system-event-log-monitoring.png) — Hardware fault roster tracking faulted DIMMs, failing PSUs, dead fans, and drive media errors.
-  - [🖥️ Single-Host Assessment Tiles (`docs/assets/screenshots/single-host-server-tiles.png`)](docs/assets/screenshots/single-host-server-tiles.png) — Per-host readiness verdict, estimated vSAN ReadyNode profile (e.g. vSAN-HCI-MED), and power cap limits.
-  - [🔍 System Assessment Overview (`docs/assets/screenshots/sub-category-system-overview.png`)](docs/assets/screenshots/sub-category-system-overview.png) — Sub-category health summary across thermal, storage, networking, security, and power domains.
-
-</details>
+| BMC Platform | Architecture & Adapters | Assessment Depth | Automated Test Fixture |
+|:-------------|:------------------------|:-----------------|:-----------------------|
+| **Dell iDRAC** | `DellCollector` (iDRAC7/8/9/10) | Full OEM telemetry (SKU, BIOS date, NVMe SMART wear, EEMS alerts, license) | Yes (R640, R6525, R750, R740+GPU) |
+| **HPE iLO** | `HPECollector` (iLO 4/5/6) | Full OEM hooks (SmartStorage, system usage, IML event logs, license) | Yes (DL360 Gen10, DL380 Gen10) |
+| **Supermicro BMC** | `SupermicroCollector` | SimpleStorage, drive inventory, DCMS license detection | Yes (SYS-E200-8D, SuperServer) |
+| **Cisco IMC** | `CiscoCollector` (CIMC) | `/Managers/CIMC`, physical drive metrics, Cisco CDP neighbor discovery | Yes (C220 M5) |
+| **Lenovo XCC** | `LenovoCollector` (XCC/XCC2) | Drive metrics, LicenseService tiers, ThinkSystem inventory | Yes (SR630, SR650) |
+| **Quanta / QCT** | `QuantaCollector` | Dynamic root discovery, RackScale drive OEM inventory | Yes (QuantaGrid D42A) |
+| **GIGABYTE BMC** | `GigabyteCollector` | Self-roots, `Oem.GBT` slot detection, SimpleStorage | Yes (GIGABYTE Server) |
+| **Generic Redfish** | `GenericCollector` | Universal DMTF Redfish fallback for standard platforms | Universal fallback |
 
 ---
 
-## Key Features
+## 📊 Visual Report Showcase
 
-| Feature | Details |
-|---------|---------|
-| **Browser UI (new)** | Full HTML5 interface — no Tkinter, works on any OS with a browser. `python vcfr_web.py` |
-| **Dark Mode** | Reports respect your OS dark/light preference; toggle persists across sessions |
-| **Real-Time Progress** | Server-Sent Events stream scan progress live to the browser |
-| **Zero External Dependencies** | Runs on any Python 3.9+ installation. No `pip install` needed. Works on locked-down SE laptops. |
-| **Multi-vendor OEM Support** | Dynamic Redfish root discovery (`/Systems`, `/Chassis`, `/Managers`) — no hardcoded paths. |
-| **VCF 9.1 Rules Engine** | Evaluates CPU support (KB 428874), vSAN ESA/OSA readiness, TPM 2.0 state, Intel VMD BIOS settings. |
-| **NVMe SMART Telemetry** | Polling of 20 SMART metrics (OCP v2.6 Spec compliant) with vendor OEM extensions (Dell, HPE, Supermicro, Lenovo, Cisco) under the Health tab. |
-| **LLDP & Cisco CDP Discovery** | Multi-vendor ToR switch neighbor mapping across DMTF Redfish, Cisco IMC (CDP/LLDP), Dell iDRAC, HPE iLO, and Lenovo XCC. |
-| **Multi-Pass Auto-Retry** | 3-pass automated recovery engine with adaptive thread clamping and targeted differential rescan for degraded or slow BMCs. |
-| **GPU Discovery** | Detects NVIDIA / AMD accelerators for Private AI Foundation workload assessment. |
-| **FC HBA Detection** | Finds Fibre Channel HBAs and extracts WWPNs for SAN zoning readiness. |
-| **PSU Redundancy Check** | Validates power supply count and redundancy state. |
-| **Dynamic BCG Deep-Links** | Single-click Broadcom Compatibility Guide URLs for Servers, CPUs, SSDs, NICs/HBAs, GPUs. |
-| **Multi-host Fleet Summary** | Scan a subnet and get one `fleet_summary.html` plus per-host detail reports. |
-| **Fleet Hub & Multi-Scan Library** | Browser UI and CLI generate a single `fleet_combined.html` Fleet Hub. Small scans (&le;64 hosts) embed reports inline; larger scans (&gt;64 hosts up to 3,000+ hosts) produce a sidecar pack with lazy on-demand frames, searchable host picker, and paginated inventory without the 256-host cliff. Pointing at a multi-scan library directory assembles consolidated fleet deliverables. |
-| **Live HCL Cross-Reference** | Auto-fetches `all.json` from Broadcom vSAN HCL (30-day cache in `~/.vcf-readiness/hcl/`). Fallback to local dark-site bundle or CSV. |
-| **Saved Profiles** | Named host+credential presets. Passwords go to macOS Keychain / Windows DPAPI / libsecret — never plaintext on disk. |
-| **Encrypted Credential Vault (optional)** | Off by default. Per-host / per-subnet / default BMC passwords in a passphrase-encrypted local file, CSV import, CLI + Web UI. See [Credential Vault Guide](docs/CREDENTIAL_VAULT.md). |
-| **VCF Operations Integration** | *(In Incubation)* Containerized VMware Integration SDK Management Pack for VCF Operations 9.x and Aria Operations is in developer incubation and will be released in an upcoming update. |
-| **Enterprise Security & TLS** | Configurable BMC TLS verification with custom CA bundles, FCrDNS validation, RFC1918 private-target restrictions, and HttpOnly session cookie auth. |
-| **Debug Mode** | `--debug` flag writes detailed HTTP traces to `vcf_assess_debug.log`. |
-| **PyInstaller Compatible** | Bundle into a double-click `.exe` or macOS binary for field use. |
+Every assessment run generates rich, standalone HTML deliverables (an aggregated **Fleet Summary** and individual **Host Reports**) with zero runtime external asset dependencies.
+
+> 🎥 **Video Tour:** Watch the [**Report Overview Video (8:20) →**](https://www.youtube.com/watch?v=tQkxyRHZu4M) for a guided walkthrough of the fleet summary, status badges, BIOS drift scorecard, and per-host sub-reports.
+
+### 1. Fleet Dashboard & Resource Headroom
+Aggregates compute vCPU, RAM, and direct-attached NVMe storage across your entire server inventory, modeling resource headroom against VCF 9.1 management domain sizing profiles.
+
+![Fleet Health and Management Headroom Tiles](docs/images/01-fleet-health-tiles.png)
+
+Fleet-wide power redundancy tracking, chassis power cap warnings, vSAN readiness distribution, and aggregate kilowatt telemetry:
+
+![Fleet Power, vSAN Distribution, and Alarms](docs/images/02-fleet-power-sel-tor.png)
+
+- **Detailed Telemetry:** [Fleet Metric Health Tiles (`docs/assets/screenshots/fleet-metric-tiles.png`)](docs/assets/screenshots/fleet-metric-tiles.png)
 
 ---
 
-## Interface Options
+### 2. Interactive Per-Host Assessment Matrix
+Sort, search, and filter servers by OEM vendor, CPU support tier, TPM 2.0 status, and vSAN ESA readiness with direct links into individual host sub-reports.
 
-### Option A — Browser UI (recommended)
+![Per-Host Assessment Table](docs/images/03-per-host-table.png)
 
-The web interface (`vcfr_web.py`) runs a lightweight local server and opens your default browser automatically. No Tkinter, no desktop GUI framework — works anywhere Python runs.
-
-**From source:**
-```bash
-python vcfr_web.py
-# Opens http://127.0.0.1:7182 automatically
-```
-
-
-**Features exclusive to the browser UI:**
-- Real-time scan progress via Server-Sent Events
-- Fleet Hub report (`00_fleet_combined.html` / `fleet_combined.html`) with adaptive inline or sidecar embedding, searchable host picker, and paginated inventory tables
-- "Open Fleet Library" modal to discover and assemble multiple independent scan drops from remote workers or edge collectors into consolidated fleet deliverables
-- Auto-export CSV and multi-tab Excel workbooks upon scan completion
-- One-click downloads for HTML, Summary JSON, multi-tab Excel (`.xlsx`), and CSV spreadsheets
-- Profile and session persistence
-- Dark mode toggle that persists to `localStorage`
+- **Detailed Telemetry:** [Multi-Host Fleet Status Grid (`docs/assets/screenshots/fleet-multi-host-capture.png`)](docs/assets/screenshots/fleet-multi-host-capture.png)
 
 ---
 
-### Option B — Command-Line Interface
+### 3. Executive Hardware Scorecards & Subsystem Audits
+Color-coded executive summary scorecards highlighting CPU compatibility, BIOS currency, TPM 2.0 status, and vSAN driver/firmware alignment against the Broadcom Compatibility Guide (BCG).
 
-#### Prerequisites
+![Executive Host Summary Scorecards](docs/images/08-host-scorecards.png)
 
-- Python 3.9+ (macOS, Linux, or Windows)
-- Network access to BMC management IPs
+- **Detailed Telemetry:** [Single-Host Assessment Tiles (`docs/assets/screenshots/single-host-server-tiles.png`)](docs/assets/screenshots/single-host-server-tiles.png) • [Sub-Category Health Breakdown (`docs/assets/screenshots/sub-category-system-overview.png`)](docs/assets/screenshots/sub-category-system-overview.png)
 
-#### Scan a Single Host
+---
+
+### 4. Physical Motherboard DIMM Slot & Channel Layout
+Visualizer mapping installed DIMM modules to physical CPU sockets and memory channels, detecting unbalanced memory interleaving, unpopulated channels, and memory operating below peak rated speeds.
+
+![Motherboard DIMM Slot and Channel Visualizer](docs/images/04-dimm-slot-visualizer.png)
+
+- **Detailed Telemetry:** [Motherboard Channel Topology (`docs/assets/screenshots/memory-channel-topology.png`)](docs/assets/screenshots/memory-channel-topology.png)
+
+---
+
+### 5. Storage Subsystem & vSAN ESA Qualification
+Evaluates storage controllers, RAID pass-through modes, and NVMe SSDs. Performs exact PCI Quad matching (`VID:DID:SVID:SSID`) against the Broadcom vSAN HCL dataset, calculates SMART drive wear/endurance remaining %, and generates one-click BCG search links.
+
+![Storage Subsystem and vSAN ESA Qualification](docs/images/05-storage-vsan-esa.png)
+
+- **Detailed Telemetry:** [vSAN ESA Drive Compliance (`docs/assets/screenshots/vsan-esa-drive-compliance.png`)](docs/assets/screenshots/vsan-esa-drive-compliance.png) • [Drive SMART Telemetry (`docs/assets/screenshots/nvme-smart-health-telemetry.png`)](docs/assets/screenshots/nvme-smart-health-telemetry.png) • [PCIe Lane Inventory (`docs/assets/screenshots/pcie-lane-inventory.png`)](docs/assets/screenshots/pcie-lane-inventory.png)
+
+---
+
+### 6. Network Interfaces & Top-of-Rack (ToR) Switch Fabric
+Identifies network adapters and port speeds (verifying ≥25 GbE ESA requirements), queries LLDP and Cisco CDP neighbor data to discover connected Top-of-Rack switches, and correlates leaf switch pairs to highlight single-homed hosts and cabling miswires.
+
+![NIC Inventory and Dedicated BMC Management Port](docs/images/06-nic-tor-mapping.png)
+
+![Top-of-Rack Switch Fabric and Topology Matrix](docs/images/10-tor-switch-fabric.png)
+
+- **Detailed Telemetry:** [NIC Optics & LLDP Detection (`docs/assets/screenshots/nic-optics-lldp-detection.png`)](docs/assets/screenshots/nic-optics-lldp-detection.png) • [LLDP / CDP Switch Neighbors (`docs/assets/screenshots/lldp-cdp-switch-neighbors.png`)](docs/assets/screenshots/lldp-cdp-switch-neighbors.png)
+
+---
+
+### 7. System Event Log (SEL / IML) & Diagnostic Decoders
+Extracts the latest Warning and Critical hardware alarms from the server's event log, integrating direct links to Dell EEMS diagnostic guides and HPE IML documentation.
+
+![System Assessment Summary and Event Log](docs/images/09-system-assessment-sel.png)
+
+- **Detailed Telemetry:** [System Event Log Monitoring (`docs/assets/screenshots/system-event-log-monitoring.png`)](docs/assets/screenshots/system-event-log-monitoring.png)
+
+---
+
+### 8. 84-Control BMC Hardware Security Audit & Golden BIOS Baseline
+Out-of-band security compliance audit evaluating 84 canonical controls aligned with the **CISA & NSA Joint BMC Hardening Guide**, **VMware Cloud Foundation Security Configuration Guide (SCG 9.1)**, and **NIST SP 800-193**. Evaluates BIOS performance drift against Broadcom VCF 9.1 Golden Baselines.
+
+![BMC Hardware Security Audit Findings](docs/images/07-bmc-security-audit.png)
+
+- **Detailed Telemetry:** [BMC Hardware Security Audit (`docs/assets/screenshots/bmc-hardware-security-audit.png`)](docs/assets/screenshots/bmc-hardware-security-audit.png) • [Hardware Security Baseline (`docs/assets/screenshots/hardware-security-baseline.png`)](docs/assets/screenshots/hardware-security-baseline.png) • [BIOS Golden Baseline Drift (`docs/assets/screenshots/bios-golden-baseline-drift.png`)](docs/assets/screenshots/bios-golden-baseline-drift.png) • [BIOS Performance Settings (`docs/assets/screenshots/bios-performance-settings.png`)](docs/assets/screenshots/bios-performance-settings.png)
+
+> 📖 **Comprehensive Reference Guide:** For an exhaustive tab-by-tab and field-by-field reference explaining every metric, evaluation rule, official VMware KB, and the 84-control BMC security audit, see the [**User Guide & Reference Manual (docs/USER_GUIDE_REFERENCE.md)**](docs/USER_GUIDE_REFERENCE.md).
+
+---
+
+## 💻 Command-Line Interface (CLI)
+
+Prefer running from the terminal, scheduling automated cron sweeps, or integrating into automation pipelines?
 
 ```bash
-python vcfr_collector.py --targets 10.0.0.1
-```
+# Scan a single host
+python vcfr_collector.py --targets 192.0.2.10
 
-#### Scan a Range or Subnet
+# Scan an IP range or CIDR block with 8 parallel worker threads
+python vcfr_collector.py --targets "192.0.2.1-24" --threads 8
+python vcfr_collector.py --targets "192.0.2.0/24" --threads 16
 
-```bash
-python vcfr_collector.py --targets "10.0.0.1-20"
-python vcfr_collector.py --targets "192.168.1.0/24" --threads 8
-```
-
-#### Force Refresh Broadcom HCL
-
-```bash
-python vcfr_collector.py --targets 10.0.0.1 --refresh-hcl
-```
-
-#### Debug Mode & Summary JSON Export
-
-```bash
-python vcfr_collector.py --targets 10.0.0.1 --debug --save-json
-# Writes vcf_assess_debug.log, vcf_summary_<IP>.json, and fleet_summary.json
-# with full HTTP traces and maximized raw Redfish data capture
-```
-
-#### Offline Summary Import & Fleet Library Assemble Mode (Skip Scan)
-
-```bash
-# Single-Artifact Summary Import
+# Offline summary import: Re-render HTML reports & Excel from prior scan JSON
 python vcfr_collector.py --from-summary fleet_summary.json
-# Instantly renders HTML reports from saved summary JSON without live BMC access
-
-# Multi-Scan Fleet Library Assemble
-python vcfr_collector.py --from-summary ~/Desktop/VCF-Scans
-# Discovers all dropped scan directories and zip archives in library folder,
-# deduplicates hosts by UUID/serial/IP, and assembles consolidated fleet deliverables
-
-# Assemble-Only (Skip re-rendering individual host reports)
-python vcfr_collector.py --from-summary ~/Desktop/VCF-Scans --assemble-only
 ```
 
----
+> **Scan Modes:** By default, assessments execute in **Full Mode** (deep hardware queries, SMART metrics, and security audit). For quick sweeps across large subnets, pass `--lean` (~15–30s per host) or `--quick` (~5s per host).
 
-### Scan Modes (Quick, Lean, Full)
-
-The assessment tool provides three scan modes to balance scan speed vs data depth:
-
-- **Quick mode** (`quick_mode=True` / `--quick`): Ultra-fast overview scan (~5s per host). Queries CPU details, BIOS settings, SEL alarms, license, and BMC firmware only. Storage, network adapter, GPU, PSU, thermal, and telemetry sections are skipped and will appear empty in generated reports by design.
-- **Lean mode** (`lean_mode=True` / `--lean`): Fast hardware inventory scan (~15–30s per host). Collects all hardware inventories including Drive and NIC PCI IDs, storage controllers, network adapters, and vSAN ESA readiness while skipping heavy performance telemetry, firmware inventory member GETs, and extra thermal GETs.
-- **Full mode** (default, recommended for complete VCF/vSAN readiness): Comprehensive hardware assessment (~60–90s per host). Queries all Redfish endpoints including performance telemetry, SMART drive wear/endurance metrics, thermal sensors, and GPU accelerators.
-
-#### Scan Mode Feature Comparison
-
-| Feature | Quick Scan (`--quick`) | Lean Scan (`--lean`) | Full Scan (Default) |
-| :--- | :--- | :--- | :--- |
-| **Average Duration** | **~5 seconds / host** | **~15–30 seconds / host** | **~60–90 seconds / host** |
-| **CPU, RAM & BIOS Check** | Yes | Yes | Yes |
-| **SEL Alarms & BMC FW** | Yes | Yes | Yes |
-| **Drive & Controller PCI IDs** | No | **Yes** | Yes |
-| **NIC & Adapter PCI IDs** | No | **Yes** | Yes |
-| **vSAN ESA Compatibility** | CPU/RAM only | **Yes** | Yes |
-| **Broadcom BCG Deep-Links** | Server/CPU only | **Server, CPU, SSD, IO** | Server, CPU, SSD, IO, GPU |
-| **SMART Wear & Performance Telemetry** | No | No | Yes |
-
-* **Dell iDRAC pre-boot note:** Even in full or lean mode, Dell iDRAC Redfish endpoints may return empty NIC and storage inventories while the host is powered off or in POST/pre-boot. Always run assessments with the host powered on and OS active.
-
----
-
-## Security Architecture
-
-> 🛡️ **For Security Teams:** See the dedicated [**Security Architecture Whitepaper (Infosec One-Pager)**](docs/SECURITY_ARCHITECTURE.md) for full details on least privilege, out-of-band architecture, air-gapped operations, and source audit rights.
-
-### Key Security & Trust Guarantees
-- **Principle of Least Privilege:** Requires only read-only OOB BMC accounts over HTTPS (port 443). Zero write, reboot, or firmware flashing capabilities; zero in-band host/OS credentials.
-- **Zero Third-Party Dependencies:** 100% Python 3.9+ standard library (`urllib.request`, `ssl`, `json`, `hashlib`). No unvetted `pip` packages.
-- **Zero "Phone-Home" / No Egress:** No analytics, telemetry beacons, or external reporting pings.
-- **Auditable & Non-Opaque:** Run purely as standard Python source code (`python3 vcfr_web.py`) without pre-compiled binaries.
-- **Permissive License for Security Reviews:** Explicit rights under `LICENSE.md` to ingest and audit source code using enterprise SAST or LLM security platforms (e.g. Mythos, Fable, CodeQL).
-
-### Security & TLS Enforcement
-
-The VCF Readiness Assessment Tool includes enterprise security controls for BMC connectivity, credential isolation, and web interface protection:
-
-- **BMC TLS Verification (`--verify-ssl`)**: By default, the tool operates in `CERT_NONE` mode to handle unmanaged/self-signed enterprise BMC certificates without crashing. Passing `--verify-ssl` enforces strict TLS certificate validation against the OS trust store.
-- **Custom Enterprise CA Bundles (`--ca-bundle <path>`)**: For enterprise environments using internal PKI (e.g. Microsoft CA, HashiCorp Vault, Active Directory Certificate Services), point `--ca-bundle` to your root/intermediate CA bundle (`.pem` or `.crt`).
-- **Forward-Confirmed Reverse DNS (`--dns-lookup`)**: When verifying certificates by hostname or scanning subnets, `--dns-lookup` performs automated FCrDNS (PTR query followed by forward A/AAAA confirmation) to validate BMC Subject Alternative Names (SANs) and mitigate DNS spoofing.
-- **Private IP Range Enforcement (`--restrict-private-targets`)**: Enforces scanning strictly within RFC 1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`), or link-local (`169.254.0.0/16`), rejecting public WAN/internet IPs.
-- **Web UI & API Hardening**:
-  - Session cookies are `HttpOnly` and `SameSite=Strict`. On an HTTPS listener they are also `Secure`.
-  - The startup URL carries a one-time launch token. The browser exchanges it for that cookie; the token then stops working and is not accepted as an API credential.
-  - Strict exact-origin CORS and Host header validation preventing cross-site request forgery (CSRF) and DNS rebinding.
-  - `--allow-remote`, or a `--bind` other than loopback, requires `--tls-cert` and `--tls-key`. The UI does not listen in cleartext on a reachable interface.
-  - Windows DPAPI credential files hardened with restrictive `icacls` user ACLs (or macOS Keychain / Linux Secret Service).
-  - Strict 32 MB payload caps and Zip Slip path traversal defenses on all file imports.
-- **Optional Encrypted Credential Vault (off by default)**: For fleets with different BMC passwords per rack or generation, `python -m vcf_hci.vault` manages a passphrase-encrypted local file (`~/.vcf-readiness/credentials.vault`) of exact-host / CIDR / default entries. Stdlib-only PBKDF2-HMAC-SHA256 (600k iterations) + HMAC-SHA256 Encrypt-then-MAC — not AES, since the Python standard library has none. Passwords are never printed, never sent to the browser, and the Web UI vault is disabled under `--allow-remote`. Enable per scan with `--vault` or the *Use encrypted credential vault* checkbox. See the [Credential Vault Guide](docs/CREDENTIAL_VAULT.md).
-
-### BMC Hardware Security Audit (84 Controls & CISA/NSA Alignment)
-
-The assessment engine includes an out-of-band **BMC Hardware Security Audit** evaluating 84 canonical controls to verify enterprise server nodes meet hardening standards prior to VCF 9.1 commissioning:
-
-- **84 Canonical Controls:** Evaluates 59 configuration controls (`C01`–`C59`), 16 operational lifecycle recommendations (`O01`–`O16`), and 9 platform assurance capabilities (`I01`–`I09`).
-- **Catalog Provenance & Governance:** Numbering originated from a formal normalization of the *Dell iDRAC9 Security Configuration Guide* (the initial setting-by-setting baseline). The security intent of these controls is governed by authoritative vendor-neutral benchmarks: the [**CISA & NSA Joint Cybersecurity Information Sheet: Harden Baseboard Management Controllers (PDF)**](https://media.defense.gov/2023/Jun/14/2003241405/-1/-1/0/CSI_HARDEN_BMCS.PDF), the **VMware Cloud Foundation Security Configuration Guide (SCG 9.1)**, and **NIST SP 800-193**.
-- **Three-Tier Multi-OEM Portability:**
-  - **Tier 1 (8 Universal DMTF Standards):** Evaluated identically via standard Redfish on all platforms (`C09, C21, C23, C24, C29, C37, C43, C53`), including Intel and Supermicro.
-  - **Tier 2 (40 Portable Concepts):** Vendor-neutral hardening outcomes evaluated via dedicated OEM adapters for Dell iDRAC, HPE iLO, Lenovo XCC, and Cisco CIMC.
-  - **Tier 3 (11 Dell-Specific Controls):** Dell-proprietary features (`C18, C19, C30–C32, C48, C55–C59`) held strictly as `not_applicable` on non-Dell BMCs.
-  - **OEM Gap Stubs (`G-*`):** Non-Dell native security modes (e.g. HPE iLO `SecurityState: HighSecurity/FIPS/CNSA`) are tracked as distinct gap stubs without altering the canonical catalog.
-
-For the exhaustive control catalog, evidence schemas, and remediation procedures, see:
-- [**User Guide & Reference Manual — 84-Control Security Audit Catalog**](docs/USER_GUIDE_REFERENCE.md#bmc-84-control-catalog)
-- [**Security Architecture Whitepaper — Regulatory & Hardening Compliance Baselines**](docs/SECURITY_ARCHITECTURE.md#12-regulatory--hardening-compliance-baselines-cisa-nsa-nist-vcf-scg)
-
----
-
-## Command-Line Options
+<details>
+<summary><strong>Full Command-Line Options Reference (36 Flags — Click to expand)</strong></summary>
 
 | Argument | Default | Description |
-|----------|---------|-------------|
-| `--targets` | Prompted | IP, hostname/FQDN, range (`10.0.0.1-20`), or CIDR (`10.0.0.0/24`) |
+|:---------|:--------|:------------|
+| `--targets` | Prompted | Target IP, hostname/FQDN, range (`192.0.2.1-20`), or CIDR (`192.0.2.0/24`) |
 | `--username`, `-u` | Prompted | BMC username |
 | `--password-env` | `None` | Environment variable name containing the BMC password |
 | `--no-input` | `False` | Disable interactive prompts for non-interactive scripting |
-| `--vault [PATH]` | off | **Opt-in.** Resolve per-host credentials from the encrypted local vault (default `~/.vcf-readiness/credentials.vault`). Manage with `python -m vcf_hci.vault`. |
-| `--vault-passphrase-env` | `None` | Environment variable holding the vault passphrase (required with `--vault --no-input`) |
+| `--vault [PATH]` | off | **Opt-in.** Resolve per-host credentials from encrypted local vault (`~/.vcf-readiness/credentials.vault`) |
+| `--vault-passphrase-env` | `None` | Environment variable holding vault passphrase (required with `--vault --no-input`) |
 | `--from-summary` | `None` | Path to summary JSON/zip, scan directory, or parent library directory to assemble |
 | `--site` | `""` | Assign site/datacenter tag to scan (recorded in MANIFEST.json and provenance) |
-| `--assemble-only` | `False` | Assemble fleet summary, Fleet Hub HTML, Excel, and CSVs without rendering host reports |
+| `--assemble-only` | `False` | Assemble fleet summary, Fleet Hub HTML, Excel, and CSVs without re-rendering host reports |
 | `--csv` | auto-detected | Path to offline Broadcom vSAN SSD CSV |
 | `--refresh-hcl` | `False` | Force re-download of `all.json` from Broadcom |
 | `--bundle-hcl` | `None` | Package live Broadcom vSAN HCL dataset into a dark-site zip bundle |
@@ -524,192 +290,101 @@ For the exhaustive control catalog, evidence schemas, and remediation procedures
 | `--discovery-cache` | `None` | Path to prior discovery cache JSON file to skip dark/unresponsive IPs |
 | `--prune-inactive` | `False` | Automatically filter out dark/unreachable IPs discovered in Pass 1 |
 | `--no-auto-throttle` | `False` | Disable dynamic concurrency stepdown on high CPU load or low memory |
-| `--legacy-tls` | `False` | Allow legacy TLS 1.0/1.1 and ciphers (`DEFAULT:@SECLEVEL=1`) for older BMCs (Dell 13G, Supermicro X10) |
+| `--legacy-tls` | `False` | Allow legacy TLS 1.0/1.1 and ciphers for older BMCs (Dell 13G, Supermicro X10) |
 | `--tls-min-version` | `None` | Set minimum TLS version (`1.0`, `1.1`, `1.2`, `1.3`) |
 | `--host-timeout` | `300` | Maximum scan duration per host in seconds (default: 300s / 5m) |
 | `--allow-partial` | `False` | Harvest valid subsystems even if non-critical endpoints time out |
-| `--output-dir` | `.` | Directory where HTML reports are written (default: `~/Desktop/VCF-Scans`) |
-| `--save-json` | `False` | Save structured host and fleet summary JSONs for offline import/analysis |
+| `--output-dir` | `~/Desktop/VCF-Scans` | Directory where HTML reports, JSON, and spreadsheets are written |
+| `--save-json` | `False` | Save structured host and fleet summary JSONs for offline analysis |
 | `--include-raw` | `False` | Include raw Redfish API response payloads in summary JSONs |
 | `--no-combined` | `False` | Skip generating Fleet Hub HTML report |
 | `--profile` | `readiness-full` | Scan depth profile: `readiness-full`, `readiness-lean`, `inventory-lite` |
-| `--lean` | `False` | Lean scan mode (skip telemetry, firmware inventory, and extra thermal GETs) |
-| `--oem` | `False` | Activate deep OEM discovery preset (crawl, raw retention, full profile, 15m timeout) |
-| `--crawl` | `False` | Run Redfish hypermedia crawler, catalog write actions, and export mockup ZIP |
-| `--excel` | `True` | Export assessment results to multi-tab Excel workbook (`.xlsx`) [default: enabled] |
+| `--lean` | `False` | Fast hardware scan (skips performance telemetry and extra thermal GETs) |
+| `--quick` | `False` | Ultra-fast overview scan (~5s/host: CPU, BIOS, SEL alarms only) |
+| `--oem` | `False` | Deep OEM discovery preset (crawler, raw retention, full profile, 15m timeout) |
+| `--crawl` | `False` | Run Redfish hypermedia crawler and export mockup ZIP |
+| `--excel` | `True` | Export assessment results to multi-tab Excel workbook (`.xlsx`) |
 | `--no-excel` | `False` | Disable automatic Excel workbook export |
 | `--csv-export` | `False` | Export assessment results to standardized CSV files (`00_fleet_summary.csv`, etc.) |
-| `--obfuscate` | `False` | Generate obfuscated report copies (IPs→Host-N, MACs/S/Ns→hashes) |
-| `--force` | `False` | Bypass target expansion caps and allow large CIDR scans (`/8`, `/16`) |
+| `--obfuscate` | `False` | Generate obfuscated report copies (IPs→Host-N, MACs/serials→hashes) |
 | `--debug` | `False` | Enable verbose debug logging and raw Redfish JSON capture |
 
----
-
-## Output Files
-
-| File | Description |
-|------|-------------|
-| `vsphere_vsan_report_<IP>.html` | Per-host assessment with all hardware details and BCG links |
-| `vcf_summary_<IP>.json` | Machine-readable host summary JSON (with `--save-json` or `--debug`) |
-| `fleet_summary.json` / `.json.gz` | Fleet summary JSON/v2 compressed manifest payload for offline import |
-| `MANIFEST.json` | Scan execution metadata manifest (`tool_version`, `scanned_at`, `host_count`, `collector_id`, `site`, `scan_profile`, `obfuscated`) for library discovery and remote drop ingestion |
-| `fleet_summary.html` | One-page fleet overview dashboard |
-| `fleet_combined.html` / `00_fleet_combined.html` | Fleet Hub HTML dashboard embedding all host reports (single inline file for &le; 64 hosts, sidecar pack with lazy on-demand frames for &gt; 64 hosts up to 3,000+ hosts without 256-host cliff) |
-| `vcf_readiness_<timestamp>.xlsx` | Multi-sheet Excel export (Summary, Storage, NICs, GPUs, Security, Failed Hosts) |
-| `00_fleet_summary.csv` | Standardized tabular fleet summary with 40+ Schema v2.0 domain fields |
-| `00_drives_inventory.csv` | Physical storage drive inventory across all assessed hosts |
-| `00_nics_inventory.csv` | Network interface adapter, port, and ToR switch neighbor inventory |
-| `00_gpus_inventory.csv` | Hardware accelerator and GPU inventory across all hosts |
-| `00_failed_hosts.csv` | Preflight and connection failure diagnostics for unreachable hosts |
-| `00_OBFUSCATED_*` | Obfuscated mirrors of HTML, Excel (`.xlsx`), and CSV deliverables (with `--obfuscate`) |
-| `vcf_assess_debug.log` | HTTP-level debug trace (with `--debug` flag) |
-
-State kept in your home directory:
-
-| File / Directory | Description |
-|------------------|-------------|
-| `~/.vcf-readiness/hcl/` | HCL dataset cache (`all.json`) and auto-built dark-site bundles (`vcf_hcl_bundle_*.zip`) |
-| `~/.vcf-readiness-session.json` | Last-used range, username, output folder, mode |
-| `~/.vcf-readiness-profiles.json` | Saved profiles — **no passwords** |
-| `~/.vcf-readiness-secrets.json` | Windows only: DPAPI-encrypted passwords |
-| `~/.vcf-readiness/credentials.vault` | **Only if you opt in.** Passphrase-encrypted per-host/subnet/default BMC credentials (`0600`), see [Credential Vault Guide](docs/CREDENTIAL_VAULT.md) |
+</details>
 
 ---
 
-## Report Sections
+## 🤝 OEM & Hardware Vendor Collaboration
 
-> 📚 **Comprehensive Reference Guide:** For an exhaustive tab-by-tab and field-by-field reference explaining every metric, evaluation rule, official VMware KB, and the 84-control BMC security audit, see the [**User Guide & Reference Manual (docs/USER_GUIDE_REFERENCE.md)**](docs/USER_GUIDE_REFERENCE.md).
->
-> 🎥 **Video Tour:** Watch the [**Report Overview Video (8:20) →**](https://www.youtube.com/watch?v=tQkxyRHZu4M) for a guided walkthrough of the fleet summary, status badges, BIOS drift scorecard, and per-host sub-reports.
+> **Do you have access to hardware? Have a feature you want implemented? Reach out!**
 
-Each per-host HTML report includes:
-
-- **Executive Summary Cards** — CPU support tier, BIOS version status, TPM 2.0 state, memory topology, vSAN ESA/OSA readiness, Intel VMD state, PSU redundancy, CPU/memory utilization
-- **System Event Log** — Last 3 unique Warning/Critical SEL or IML alarms
-- **Performance Telemetry** — Current and historical peak CPU and memory bus utilization
-- **Thermal Matrix** — Expandable sensor table with warning and critical thresholds
-- **Network Interfaces** — Per-port link speed with ESA/OSA qualification badges, LLDP & Cisco CDP Top-of-Rack switch neighbor discovery, and BCG links
-- **Fibre Channel HBAs** — FC adapters, port WWPNs, speeds, BCG links
-- **GPU Accelerators** — Hardware accelerator inventory + BCG links
-- **Storage Subsystem** — Per-controller drive inventory with vSAN classification, endurance %, and BCG search links
+We actively invite server OEMs, hardware vendors, and lab owners to collaborate. Whether you have new hardware platforms to test, want drive bay diagrams mapped, or have feature ideas, please open a [GitHub Issue](https://github.com/vmware/vcf-readiness/issues/new) or submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/OEM_REFERENCE.md](docs/OEM_REFERENCE.md).
 
 ---
 
-## Data Obfuscation & PII Anonymization
+## 📚 Advanced Documentation & Architectural Deep Dives
 
-The VCF Readiness Assessment Tool includes built-in, server-side data obfuscation capabilities to allow VMware Sales Engineers, Solution Architects, and customer IT teams to share hardware readiness reports externally (e.g., with Broadcom engineering or hardware OEMs) without exposing sensitive infrastructure metadata or personally identifiable information (PII).
+<details>
+<summary><strong>Enterprise Security, TLS, & Air-Gapped Privacy</strong></summary>
 
-### Obfuscation Coverage Catalog
+For security architecture teams, the assessment engine provides strict isolation guarantees:
+- **Zero Third-Party Dependencies:** 100% Python standard library (`urllib.request`, `ssl`, `json`, `hashlib`). No external `pip` packages.
+- **Principle of Least Privilege:** Requires read-only BMC accounts over HTTPS (port 443). Zero write, reboot, or firmware update actions.
+- **Zero In-Band Footprint:** Zero agents, daemons, or root credentials on the hypervisor or guest operating system.
+- **Air-Gapped & Zero Egress:** Zero telemetry beacons, analytics, or outbound communication.
+- **Optional Local Credential Vault:** Passphrase-protected local storage (`~/.vcf-readiness/credentials.vault`) using PBKDF2-HMAC-SHA256 (600,000 rounds) + HMAC-SHA256 Encrypt-then-MAC fallback. See the [Credential Vault Guide](docs/CREDENTIAL_VAULT.md).
 
-When obfuscation is enabled, all customer-identifying fields across the entire report dataset are replaced with deterministic hash tokens:
+See the dedicated [**Security Architecture Whitepaper (docs/SECURITY_ARCHITECTURE.md)**](docs/SECURITY_ARCHITECTURE.md).
 
-- **Host & Network Identifiers:** BMC IP addresses, hostnames, FQDNs, DNS names, management network IP addresses, NTP server IPs/hostnames, LLDP / Cisco CDP switch names, switch ports, chassis IDs, and network adapter MAC addresses.
-- **Hardware Serial Numbers:** Server chassis serial numbers, service tags, asset tags, hardware SKUs, physical drive serial numbers, storage enclosure serials, Fibre Channel HBA WWPNs and WWNNs, GPU accelerator serial and part numbers, PCIe expansion slot device serials, and DIMM memory serial numbers.
-- **Logs & Raw API Captures:** System Event Log (SEL/IML) messages and raw Redfish JSON payloads are scrubbed using regular expressions to strip hostnames, domain names (such as internal network domains), IP addresses, MAC addresses, and serial numbers.
+</details>
 
-### Non-Recoverable Anonymization Mechanism
+<details>
+<summary><strong>Client & Server-Side Data Obfuscation (Safe External Sharing)</strong></summary>
 
-- **Irreversible SHA-256 Hashing:** Real PII values are combined with a per-scan random salt and hashed using SHA-256 before being truncated to short hexadecimal tokens (e.g. `SN-A9030E`, `Host-86`, or `switch-B4C12E`). Real values are discarded server-side during report processing and are never written to the output HTML or JSON files.
-- **RFC 5737 TEST-NET IP Mapping:** All IP addresses are mapped to non-routable RFC 5737 TEST-NET addresses (`192.0.2.x`), ensuring fake IPs are immediately recognizable.
-- **Locally Administered MAC Addresses:** All MAC addresses are transformed to IEEE 802 locally-administered MAC addresses starting with `02:xx:xx:xx:xx:xx`.
-- **Deterministic Cross-Host Correlation:** When scanning a fleet, the same salt is applied across all hosts in the scan run. Identical real values (such as shared top-of-rack switches or identical SAN boot targets) produce identical tokens in every report file. Reviewers can analyze topology relationships and component groupings across the fleet without seeing underlying customer infrastructure details.
+Need to share reports externally without exposing sensitive corporate infrastructure?
+- **Irreversible SHA-256 Hashing:** Real hostnames, serial numbers, and MAC addresses are salted and hashed into short tokens (e.g. `Host-13`, `SN-3DF62A`, `SW-53356D`).
+- **RFC 5737 TEST-NET Mapping:** All IP addresses are mapped to non-routable documentation subnets (`192.0.2.x`).
+- **Hardware Spec Integrity:** CPU models, memory channel configurations, drive endurance %, and clickable BCG links remain 100% functional.
+- **Usage:** Check **"Generate obfuscated copies"** in the Web UI, supply `--obfuscate` in CLI, or click the **"Obfuscate report"** dynamic toggle in any standard HTML report header.
 
-### Hardware Spec & Verdict Integrity
+</details>
 
-Obfuscation **only** sanitizes sensitive identifiers. All technical hardware specifications and compatibility evaluation logic remain 100% intact:
-- CPU model, socket count, core count, instruction set architecture, and VCF 9.1 support tiers
-- Total RAM capacity, speed, DIMM health, and channel interleaving efficiency %
-- Drive model, capacity, bus type (NVMe/SAS/SATA), endurance remaining %, OCP SMART metrics, and vSAN ESA/OSA eligibility
-- NIC port speed, link status, and ESA qualification badges
-- TPM 2.0 status, BIOS baseline compliance, Intel VMD state, and Secure Boot settings
-- All clickable Broadcom Compatibility Guide (BCG) deep-links
+<details>
+<summary><strong>Report Deliverables & Output Files</strong></summary>
 
-### How to Use Obfuscation
+Reports are saved to `~/Desktop/VCF-Scans/` (or your chosen `--output-dir`):
 
-1. **Web UI:** Check the **"Generate obfuscated copies"** checkbox on the assessment form before running a scan. The tool generates standard reports alongside dedicated `OBFUSCATED_*.html` reports in the `VCF-Scans` directory.
-2. **Command-Line Interface:** Pass the `--obfuscate` flag during scan execution:
-   ```bash
-   python vcfr_collector.py --targets 10.0.0.1-10 --obfuscate
-   ```
-3. **Interactive Client-Side Toggle:** On standard (un-obfuscated) HTML reports, viewers can check the **"Obfuscate report"** checkbox in the top header to mask sensitive fields dynamically in the browser and download a standalone obfuscated HTML file. Pre-obfuscated reports display a static **🔒 Obfuscated Report** badge.
+| File | Format | Description |
+|:-----|:-------|:------------|
+| `00_fleet_summary.html` | HTML | Consolidated fleet dashboard with health tiles, ToR matrix, and host table |
+| `00_fleet_combined.html` | HTML | Fleet Hub combining fleet summary and all single-host sub-reports |
+| `vsphere_vsan_report_<IP>.html` | HTML | Standalone individual server report with deep hardware telemetry |
+| `00_fleet_summary.xlsx` | Excel | Multi-tab spreadsheet with formatted executive tables and raw data |
+| `00_fleet_summary.csv` | CSV | Standardized flat CSV export for ingestion into data warehouses |
+| `vcf_summary_<IP>.json` | JSON | Machine-readable structured hardware payload |
+| `vcf_readiness_deliverables.zip` | ZIP | Self-contained, portable archive containing all reports and spreadsheets |
 
----
+</details>
 
-## Architecture
 
-```
-┌────────────────────────────────────────────────────────┐
-│          Layer A: OEM-Agnostic Redfish Adapter         │
-│   UniversalRedfishCollector (dynamic root discovery)   │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Raw Hardware Payload
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│        Post-Collection Enrichment Pipeline             │
-│   vcf_hci/enrichment.py — enrich_host_result()         │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Enriched Hardware Payload
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│          Layer B: VCF 9.1 Compatibility Engine         │
-│   vcf_hci/compat/ + VCF9CompatibilityEngine facade     │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Status Verdicts & Badges
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│          Layer C: BCG Deep-Link Generator              │
-│   BCGLinkGenerator (Servers, CPUs, SSDs, IO, GPUs)     │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Component URLs
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│    Layer D: Aggregator + Reports + UI                  │
-│   HTML Reports · Browser UI (vcf_hci/web/)             │
-└────────────────────────────────────────────────────────┘
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full engineering specification.
 
 ---
 
-## OEM & Hardware Vendor Collaboration
+## 🔗 References & Credits
 
-Are you a server OEM, hardware vendor, or solution partner? We actively invite direct collaboration!
-
-To make hardware visualization, chassis drive bay diagrams, and compatibility assessment as accurate and robust as possible, OEMs are encouraged to reach out or contribute:
-- **Chassis Drive Bay Maps & Order SKUs**: Provide mappings for server part numbers/SKUs to physical drive bay configurations (e.g. 10 SFF, 24 SFF, 16 EDSFF, 4 LFF) for addition to our chassis databases.
-- **Chassis Diagrams & Front Panel Vector Graphics**: Provide SVG layouts or chassis maps to enhance standalone HTML report visualizations.
-- **Redfish Telemetry & Mockup Payloads**: Provide sanitized Redfish JSON dumps (using `tools/crawl_oem_host.py`) to help test storage controller enumeration, NVMe drive slot detection, and health reporting without requiring physical hardware in test labs.
-
-Please open a [GitHub Issue](https://github.com/vmware/vcf-readiness/issues/new?template=oem_support_request.md) or submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/OEM_REFERENCE.md](docs/OEM_REFERENCE.md) for details.
-
----
-
-## Broadcom References
-
+### Broadcom & VMware References
 - **[KB 428874](https://knowledge.broadcom.com/external/article/428874)** — vSphere/VCF 9.x CPU Deprecated Mode Support Policy
 - **[Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/)** — Live hardware search matrix
-- **[vSAN HCL JSON](https://vvs.broadcom.com/service/vsan/all.json)** — Live vSAN drive certification data
+- **[vSAN HCL JSON](https://vvs.broadcom.com/service/vsan/all.json)** — Live vSAN drive certification dataset
 
-## Switch Buffer & Silicon References
+### Switch Buffer & Silicon Research
+- **[Michael Buraglio's Packet Buffer Reference](https://port-buffers.forwardingplane.net/)** ([GitHub: buraglio/port-buffers](https://github.com/buraglio/port-buffers))
+- **[Jim Warner's UCSC Packet Buffer Research](https://people.ucsc.edu/~warner/buffer-wuz.html)** ([ASIC Buffer History](https://people.ucsc.edu/~warner/Bufs/buf-hist.html))
 
-- **[Michael Buraglio's Packet Buffer Reference](https://port-buffers.forwardingplane.net/)** ([GitHub: buraglio/port-buffers](https://github.com/buraglio/port-buffers)) — Static catalog of switch/router packet buffer sizes, queue architectures, and silicon specifications across enterprise and data center networking hardware.
-- **[Jim Warner's UCSC Packet Buffer Research](https://people.ucsc.edu/~warner/buffer-wuz.html)** ([ASIC Buffer History](https://people.ucsc.edu/~warner/Bufs/buf-hist.html)) — Pioneering research by Jim Warner (formerly UCSC) documenting packet buffer depths, memory segmentation, and shared memory architectures across switch ASICs.
-
----
-
-## Credits & Acknowledgements
-
-### Project Thanks & Acknowledgements
-
+### Project Acknowledgements
 - **Phong Le** — For answering 40,000 hardware HCL questions.
-- **Onur Yuzseven & Brock Peterson** — For the great vCommunity plugins ([GitHub: prydin/VCF-Operations-vCommunity](https://github.com/prydin/VCF-Operations-vCommunity), [Brock Peterson's vCommunity Management Pack Guide](https://www.brockpeterson.com/post/vcommunity-management-pack-for-vcf-operations)).
-- **Everyone at Spiceworks** — For making me realize the power of a good inventory, and the [Spiceworks Community](https://community.spiceworks.com/) forums for teaching me the evils of fake RAID.
-
-### Third-Party Software & Research
-
-- Browser UI styled with [Clarity Design System](https://clarity.design/) tokens (VMware/Broadcom, Apache-2.0 license). CSS is pre-bundled in `vcf_hci/web/assets.py` — no internet required at runtime. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-- Switch buffer intelligence, ASIC mapping, and VOQ classification derived from the open research of **Michael Buraglio** and **Jim Warner**.
+- **Onur Yuzseven & Brock Peterson** — For the vCommunity plugins and VMware Aria/VCF Operations guidance.
+- **Spiceworks Community** — For community hardware discussions and insights on server repurposing.
+- Built with [Clarity Design System](https://clarity.design/) design tokens (VMware/Broadcom, Apache-2.0 license).
 
 ---
 
