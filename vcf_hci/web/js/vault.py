@@ -837,6 +837,16 @@ JS_VAULT = """
     if (on) updateVaultCoverage();
   }
   $v('useVaultChk').addEventListener('change', syncUseVaultUi);
+  var useVaultRow = document.getElementById('useVaultRow');
+  if (useVaultRow) {
+    useVaultRow.addEventListener('click', function(e) {
+      var chk = document.getElementById('useVaultChk');
+      if (chk && chk.disabled) {
+        e.preventDefault();
+        openAndHighlightVault();
+      }
+    });
+  }
 
   function currentTargetsForCoverage() {
     var checked = Array.from(document.querySelectorAll('.host-chk:checked')).map(function(c){ return c.dataset.ip; });

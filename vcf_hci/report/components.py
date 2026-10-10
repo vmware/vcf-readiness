@@ -777,7 +777,7 @@ def _trimode_banner_html(ctrl: dict) -> str:
     )
 
 def _software_raid_banner_html(ctrl: dict) -> str:
-    if not ctrl.get("is_software_raid"):
+    if not ctrl.get("is_software_raid") or ctrl.get("is_vmd"):
         return ""
     ctrl_name = str(ctrl.get("name") or ctrl.get("ctrl_model") or "Software RAID Controller").strip()
     ctrl_name_up = ctrl_name.upper()
@@ -819,6 +819,41 @@ def _software_raid_banner_html(ctrl: dict) -> str:
         "</small></div>"
     )
 
+def _vmd_banner_html(ctrl: dict, bios_checks: Optional[dict] = None) -> str:
+    """Banner rendered inside storage controller cards for controllers managed by Intel VMD / VROC."""
+    is_vmd = ctrl.get("is_vmd") or any(bool(d.get("behind_vmd")) for d in (ctrl.get("drives") or []))
+    if not is_vmd:
+        return ""
+
+    ctrl_name = str(ctrl.get("name") or ctrl.get("ctrl_model") or "NVMe Controller").strip()
+    ctrl_id = str(ctrl.get("id") or "").strip()
+    is_vroc = "VROC" in (ctrl_id + " " + ctrl_name).upper()
+
+    if is_vroc:
+        return (
+            "<div class='alert alert-warning' style='margin-bottom:.75rem'>"
+            f"⚠️ <strong>Intel VROC (Virtual RAID on CPU) / VMD Active: {_h(ctrl_name)}</strong> — "
+            "Physical NVMe drives connected to this controller are compatible with VMware vSAN (see individual HCL badges below). "
+            "However, <strong>Intel VROC/VMD intercepts CPU root ports and conceals NVMe controller hardware IDs from ESXi's native <code>nvme_pcie</code> driver</strong>, preventing vSAN disk claiming.<br>"
+            "<div style='margin-top:6px;font-size:.85rem'>"
+            "<strong>Required BIOS Remediation:</strong> Intel VMD / VROC must be <strong>Disabled in System BIOS/UEFI</strong> "
+            "(set NVMe Direct Assign / pass-through to Native Pass-Through) for these NVMe drives to be claimed and usable by VMware vSAN (both vSAN OSA and vSAN ESA)."
+            "</div>"
+            "</div>"
+        )
+
+    return (
+        "<div class='alert alert-warning' style='margin-bottom:.75rem'>"
+        f"⚠️ <strong>Intel Volume Management Device (VMD) Active: {_h(ctrl_name)}</strong> — "
+        "Physical NVMe drives connected to this controller are compatible with VMware vSAN (see individual HCL badges below). "
+        "However, <strong>Intel VMD intercepts PCIe root ports and conceals NVMe controller hardware IDs from ESXi's native <code>nvme_pcie</code> driver</strong>, preventing vSAN disk claiming.<br>"
+        "<div style='margin-top:6px;font-size:.85rem'>"
+        "<strong>Required BIOS Remediation:</strong> Intel VMD must be <strong>Disabled in System BIOS/UEFI</strong> "
+        "(set to <em>Disabled / Native Pass-Through</em>) for these NVMe drives to be claimed and usable by VMware vSAN (both vSAN OSA and vSAN ESA)."
+        "</div>"
+        "</div>"
+    )
+
 def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
     rows = ""
     for drive in ctrl.get("drives", []):
@@ -838,6 +873,12 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
 
         vsan_badge = eval_hcl["status_badge"]
         hcl_str = eval_hcl["hcl_str"]
+        if (drive.get("behind_vmd") or ctrl.get("is_vmd")) and _is_nvme_drive and not drive.get("is_boot"):
+            if "Requires VMD Disabled in BIOS" not in vsan_badge:
+                vsan_badge += (
+                    "<br><small style='color:var(--warning-text, #ca8a04);font-weight:600;'>"
+                    "Requires VMD Disabled in BIOS</small>"
+                )
 
         _unique_item = lookup_unique_hcl_device(
             vid=drive.get("vendor_id", ""),

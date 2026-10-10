@@ -534,11 +534,18 @@ class DiscoveryMixin(_CollectorBase):
         return ceiling
 
     def _discover_roots(self, capture_raw: bool = False):
+        if getattr(self, "auth_failed", False):
+            return
         t0 = time.time()
         try:
             root_json = self._get("/redfish/v1")
         except Exception:
             root_json = None
+        if getattr(self, "auth_failed", False):
+            return
+        if not root_json and getattr(self, "_last_http_status", None) in (401, 403):
+            self.auth_failed = True
+            return
         root_latency_ms = (time.time() - t0) * 1000.0
 
         expand_feature = (

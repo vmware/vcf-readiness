@@ -43,21 +43,36 @@ JS_CORE = """
   // ── Anchor Navigation & Pulse Highlight ───────────────────────────────────
   function highlightAnchor(element) {
     if (!element) return;
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    try {
-      element.focus({ preventScroll: true });
-    } catch (e) {
-      try { element.focus(); } catch (e2) {}
-    }
-    element.classList.remove('pulse-highlight');
-    void element.offsetWidth;
-    element.classList.add('pulse-highlight');
     setTimeout(function() {
-      element.classList.remove('pulse-highlight');
-    }, 4500);
+      var el = element;
+      if (el.offsetParent === null) {
+        var fallback = document.getElementById('vaultToggle');
+        if (fallback && fallback.offsetParent !== null) {
+          el = fallback;
+        }
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      try {
+        el.focus({ preventScroll: true });
+      } catch (e) {
+        try { el.focus(); } catch (e2) {}
+      }
+      el.classList.remove('pulse-highlight');
+      void el.offsetWidth;
+      el.classList.add('pulse-highlight');
+      setTimeout(function() {
+        el.classList.remove('pulse-highlight');
+      }, 4500);
+    }, 50);
   }
 
   function openAndHighlightVault(targetInputId) {
+    var advBody = document.getElementById('advancedBody');
+    if (advBody && !advBody.classList.contains('open')) {
+      advBody.classList.add('open');
+      var advArr = document.getElementById('advancedArrow');
+      if (advArr) advArr.textContent = '▼';
+    }
     var vBody = document.getElementById('vaultBody');
     if (vBody && !vBody.classList.contains('open')) {
       vBody.classList.add('open');

@@ -837,7 +837,7 @@ class StdlibHTTPConnectionPool:
             "Host": self.host if self.port in (80, 443) else f"{self.host}:{self.port}",
             "Accept": "application/json",
             "Connection": "keep-alive",
-            "User-Agent": "VCF-HCI-Readiness-Tool/9.9.0",
+            "User-Agent": "VCF-HCI-Readiness-Tool/9.9.1",
         }
         if headers:
             req_headers.update(headers)

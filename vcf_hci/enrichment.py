@@ -118,6 +118,200 @@ def evaluate_optical_link_health(
     return None
 
 
+def is_vmd_active_in_bios(bios_checks: Optional[Dict[str, Any]]) -> bool:
+    """Return True if Intel VMD is detected as active/enabled in BIOS settings."""
+    if not isinstance(bios_checks, dict):
+        return False
+    if bios_checks.get("vmd_enabled_flag") is True:
+        return True
+    vmd_eval = bios_checks.get("vmd_eval")
+    if isinstance(vmd_eval, dict):
+        if vmd_eval.get("status") in ("enabled", "pending_reboot"):
+            return True
+        vmd_badge = str(vmd_eval.get("badge", "")).lower()
+        if "enabled" in vmd_badge and "disabled" not in vmd_badge:
+            return True
+    # Check attributes or normalized_attributes
+    attrs = bios_checks.get("attributes") or bios_checks.get("normalized_attributes") or {}
+    if isinstance(attrs, dict):
+        for k, v in attrs.items():
+            if "vmd" in k.lower():
+                val_str = str(v).lower()
+                if any(on in val_str for on in ("enabled", "enable", "vmdenabled", "auto", "1", "true")):
+                    return True
+    return False
+
+
+def consolidate_direct_attached_nvme_controllers(
+    storage_subsystem: List[Dict[str, Any]],
+    bios_checks: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Consolidate fragmented direct-attach NVMe controllers into a unified controller view.
+
+    On platforms like HPE ProLiant Gen10/Gen11, Redfish exposes each direct-attached NVMe
+    drive behind an isolated storage controller endpoint (DA000000..DA00000F).
+    This function consolidates these fragmented 1-drive endpoints into a single controller card,
+    updates controller names and topology flags, preserves underlying drive compatibility,
+    and flags Intel VMD requirement when active.
+    """
+    if not isinstance(storage_subsystem, list) or not storage_subsystem:
+        return storage_subsystem
+
+    vmd_active = is_vmd_active_in_bios(bios_checks)
+    if not vmd_active:
+        vmd_active = any(bool(c.get("is_vmd")) for c in storage_subsystem if isinstance(c, dict))
+
+    # Identify fragmented direct-attach NVMe controllers
+    fragmented_ctrls: List[Dict[str, Any]] = []
+    for ctrl in storage_subsystem:
+        if not isinstance(ctrl, dict):
+            continue
+        if ctrl.get("is_boot_ctrl"):
+            continue
+        if ctrl.get("has_logical_volumes") or ctrl.get("volumes"):
+            continue
+
+        ctrl_id = str(ctrl.get("id") or "").strip().upper()
+        ctrl_name = str(ctrl.get("name") or "").strip().upper()
+
+        if any(k in ctrl_name or k in ctrl_id for k in ["BOSS", "NS204", "PERC", "SMART ARRAY", "MR GEN", "MEGA", "SR932", "SR416"]):
+            continue
+
+        is_da_pattern = (
+            ctrl_id.startswith("DA00")
+            or ctrl_name in ("NVME STORAGE SYSTEM", "NVME STORAGE CONTROLLER", "DIRECT-ATTACHED NVME", "NVME CONTROLLER")
+            or ("NVME" in ctrl_name and any(p in ctrl_name for p in ["DIRECT", "PASS", "RISER", "ATTACH"]))
+        )
+        if not is_da_pattern:
+            continue
+
+        drives = ctrl.get("drives") or []
+        if not isinstance(drives, list):
+            continue
+        pop_drives = [d for d in drives if isinstance(d, dict) and d.get("populated", True)]
+        if len(pop_drives) > 1:
+            continue
+        if len(pop_drives) == 1:
+            proto = str(pop_drives[0].get("protocol") or "").upper()
+            if not ("NVME" in proto or "PCIE" in proto or pop_drives[0].get("is_edsff") or pop_drives[0].get("is_nvme")):
+                continue
+
+        fragmented_ctrls.append(ctrl)
+
+    should_consolidate = len(fragmented_ctrls) >= 2 or (
+        len(fragmented_ctrls) == 1 and any(str(c.get("id", "")).upper().startswith("DA00") for c in fragmented_ctrls)
+    )
+
+    if should_consolidate and fragmented_ctrls:
+        first_ctrl = fragmented_ctrls[0]
+        if vmd_active:
+            consolidated_name = "Direct-Attached NVMe (Intel VMD Managed)"
+            consolidated_id = "VMD-NVMe"
+            consolidated_model = "Intel VMD Domain (Direct-Attached NVMe)"
+            consolidated_fw = "N/A (Direct PCIe/VMD)"
+            ctrl_is_vmd = True
+        else:
+            consolidated_name = "Direct-Attached NVMe / PCIe Riser"
+            consolidated_id = "DirectAttach-NVMe"
+            consolidated_model = "Direct-Attached PCIe Root Ports"
+            consolidated_fw = "N/A (Pass-Through)"
+            ctrl_is_vmd = False
+
+        pop_drives: List[Dict[str, Any]] = []
+        empty_drives: List[Dict[str, Any]] = []
+        seen_drive_serials: set = set()
+
+        for c in fragmented_ctrls:
+            for d in (c.get("drives") or []):
+                if not isinstance(d, dict):
+                    continue
+                if d.get("populated", True):
+                    sn = d.get("serial_number") or d.get("id") or d.get("name")
+                    if sn and sn in seen_drive_serials:
+                        continue
+                    if sn:
+                        seen_drive_serials.add(sn)
+                    pop_drives.append(d)
+                else:
+                    empty_drives.append(d)
+
+        consolidated_drives = pop_drives + empty_drives
+        for d in consolidated_drives:
+            d["controller_id"] = consolidated_id
+            d["controller_name"] = consolidated_name
+            d["ctrl_name"] = consolidated_name
+            d["behind_trimode"] = False
+            if vmd_active:
+                d["behind_vmd"] = True
+
+        seen_enc_ids: set = set()
+        merged_enclosures: List[Dict[str, Any]] = []
+        for c in fragmented_ctrls:
+            for enc in (c.get("enclosures") or []):
+                if isinstance(enc, dict):
+                    enc_id = enc.get("id") or enc.get("name")
+                    if enc_id and enc_id not in seen_enc_ids:
+                        seen_enc_ids.add(enc_id)
+                        merged_enclosures.append(enc)
+
+        consolidated_ctrl: Dict[str, Any] = dict(first_ctrl)
+        consolidated_ctrl.update({
+            "id":                  consolidated_id,
+            "name":                consolidated_name,
+            "ctrl_model":          consolidated_model,
+            "ctrl_firmware":       consolidated_fw,
+            "is_vmd":              ctrl_is_vmd,
+            "is_trimode":          False,
+            "is_software_raid":    False,
+            "has_logical_volumes": False,
+            "volumes":             [],
+            "bbu_health":          None,
+            "bbu_badge":           "",
+            "is_boot_ctrl":        False,
+            "device_protocols":    ["NVMe", "PCIe"],
+            "drives":              consolidated_drives,
+            "enclosures":          merged_enclosures,
+        })
+        if vmd_active and not consolidated_ctrl.get("vendor_id"):
+            consolidated_ctrl["vendor_id"] = "8086"
+
+        new_storage: List[Dict[str, Any]] = []
+        consolidated_inserted = False
+        for ctrl in storage_subsystem:
+            if ctrl in fragmented_ctrls:
+                if not consolidated_inserted:
+                    new_storage.append(consolidated_ctrl)
+                    consolidated_inserted = True
+            else:
+                new_storage.append(ctrl)
+        storage_subsystem = new_storage
+
+    # Ensure all remaining controllers/drives reflect VMD and non-TriMode state correctly
+    for ctrl in storage_subsystem:
+        if not isinstance(ctrl, dict):
+            continue
+        c_str = f"{ctrl.get('id', '')} {ctrl.get('name', '')}".upper()
+        if "VROC" in c_str:
+            ctrl["is_vmd"] = True
+            ctrl["is_trimode"] = False
+            ctrl["is_software_raid"] = True
+            for drv in (ctrl.get("drives") or []):
+                if isinstance(drv, dict):
+                    drv["behind_trimode"] = False
+                    drv["behind_vmd"] = True
+                    drv["behind_software_raid"] = True
+        elif ctrl.get("is_vmd") or (vmd_active and "NVME" in c_str and not ctrl.get("is_boot_ctrl") and not ctrl.get("has_logical_volumes")):
+            ctrl["is_vmd"] = True
+            ctrl["is_trimode"] = False
+            for drv in (ctrl.get("drives") or []):
+                if isinstance(drv, dict):
+                    drv["behind_trimode"] = False
+                    if vmd_active:
+                        drv["behind_vmd"] = True
+
+    return storage_subsystem
+
+
 def enrich_host_result(
     data: Union[Dict[str, Any], List[Dict[str, Any]]],
     json_hcl: Optional[Dict[str, Any]] = None,
@@ -1053,6 +1247,12 @@ def _enrich_single_host(
     if not isinstance(storage, list) and isinstance(host_data.get("storage"), dict):
         storage = host_data.get("storage", {}).get("controllers") or []
     if isinstance(storage, list):
+        bios_checks = host_data.get("bios_checks") or {}
+        storage = consolidate_direct_attached_nvme_controllers(storage, bios_checks)
+        host_data["storage_subsystem"] = storage
+        if isinstance(host_data.get("storage"), dict):
+            host_data["storage"]["controllers"] = storage
+
         cur_boot_tgt = str(system.get("boot_target") or "").strip()
         if not cur_boot_tgt or cur_boot_tgt.lower() in ("none", "n/a", "unknown", "null", "unavailable"):
             for ctrl in storage:

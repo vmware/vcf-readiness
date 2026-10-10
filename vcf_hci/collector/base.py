@@ -742,6 +742,7 @@ class BaseRedfishCollector(
                     self.session_uri = self._accepted_session_uri(location)
                     logger.debug(f"Created Redfish session {self.session_uri}")
                     return {"session_token": self.session_token, "session_uri": self.session_uri}
+                self._session_creation_status = status
                 logger.debug(f"Could not create Redfish session: HTTP {status} (falling back to Basic Auth)")
             else:
                 is_mocked = not hasattr(urllib.request.urlopen, "__code__") or "Mock" in type(urllib.request.urlopen).__name__ or hasattr(urllib.request.urlopen, "mock")
@@ -781,8 +782,10 @@ class BaseRedfishCollector(
                         logger.debug(f"Created Redfish session {self.session_uri}")
                         return {"session_token": self.session_token, "session_uri": self.session_uri}
         except HTTPError as e:
+            self._session_creation_status = getattr(e, "code", None)
             logger.debug(f"Could not create Redfish session: HTTP {e.code} (falling back to Basic Auth)")
         except Exception as e:
+            self._session_creation_status = None
             logger.debug(f"Could not create Redfish session: {e} (falling back to Basic Auth)")
         return None
 
@@ -796,10 +799,23 @@ class BaseRedfishCollector(
         Returns:
             Count of active sessions, or None if query failed.
         """
+        if getattr(self, "auth_failed", False):
+            return None
+
         try:
             resp = self._get("/redfish/v1/SessionService/Sessions", critical=False)
         except TypeError:
             resp = self._get("/redfish/v1/SessionService/Sessions")
+
+        last_status = getattr(self, "_last_http_status", None)
+        sess_status = getattr(self, "_session_creation_status", None)
+        if getattr(self, "auth_failed", False) or last_status in (401, 403) or sess_status in (401, 403):
+            # If SessionService or session creation returned 401/403, do not probe legacy /Sessions
+            # (which hangs until socket timeout on Dell iDRAC). Fail fast if both indicate bad credentials.
+            if sess_status in (401, 403) and last_status in (401, 403):
+                self.auth_failed = True
+            return None
+
         if not resp or not isinstance(resp, dict):
             try:
                 resp = self._get("/redfish/v1/Sessions", critical=False)
@@ -1239,8 +1255,14 @@ class BaseRedfishCollector(
         logger.info(f"  [→] {self.host} — connecting...")
         self.create_session()
         self.audit_active_sessions()
+        if getattr(self, "auth_failed", False):
+            logger.warning(f"  [✗] {self.host} — bad credentials (HTTP 401/403)")
+            return None
         self._update_stage("Discovering Redfish Endpoints")
         self._discover_roots(capture_raw=(capture_raw or crawl_endpoints))
+        if getattr(self, "auth_failed", False):
+            logger.warning(f"  [✗] {self.host} — bad credentials (HTTP 401/403)")
+            return None
 
         if len(self.sys_uris) > 1:
             multi_results = []

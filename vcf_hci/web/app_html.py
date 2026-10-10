@@ -124,10 +124,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <div class="mt-half">
         <p class="text-sm" style="margin-bottom:.3rem"><strong>Execution target</strong></p>
         <div class="clr-check-row"><input type="radio" name="execTarget" id="execLocal" value="local" checked><label for="execLocal">Local workstation</label></div>
-        <div class="clr-check-row"><input type="radio" name="execTarget" id="execRemote" value="remote"><label for="execRemote">Remote jump host <span class="badge badge-warning" style="font-size:0.7rem;margin-left:0.35rem;text-transform:uppercase;">Experimental</span></label></div>
+        <div class="clr-check-row"><input type="radio" name="execTarget" id="execRemote" value="remote"><label for="execRemote">remote Linux Jump host</label></div>
         <div id="jumpTargetHint" class="text-xs" style="margin-left:1.5rem;margin-top:0.2rem;margin-bottom:0.35rem;"></div>
         <div id="jumpSelectRow" class="hidden" style="margin-top:.35rem">
-          <label class="clr-control-label" for="jumpHostSelect">Jump host <span class="text-xs text-muted">(Experimental)</span></label>
+          <label class="clr-control-label" for="jumpHostSelect">Jump host</label>
           <select class="clr-select" id="jumpHostSelect"><option value="auto">Auto-route by subnet</option></select>
           <div id="jumpSelectHint" class="text-xs text-muted hidden" style="margin-top:0.25rem"></div>
         </div>
@@ -137,33 +137,14 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
     <!-- ── Scan setup ──────────────────────────────────────────────────────── -->
   <div class="card" id="scanSetupCard">
-    <div class="card-header">Where to save and how deep</div>
+    <div class="card-header">Where to save</div>
     <div class="card-body">
       <div class="form-grid">
-<div class="clr-form-group">
+        <div class="clr-form-group">
           <label class="clr-control-label">Output Folder</label>
           <div style="display:flex;gap:0.4rem;align-items:center;">
             <input class="clr-input" id="outdirInput" type="text" value="~/Desktop/VCF-Scans" style="flex:1;">
             <button class="btn btn-outline btn-sm" id="browseOutdirBtn" type="button" title="Browse for output folder" style="white-space:nowrap;">📁 Browse…</button>
-          </div>
-        </div>
-      </div>
-<div class="clr-form-control" style="margin-top:0.25rem;">
-        <label class="clr-control-label" style="font-weight:600;">Scan Depth Profile</label>
-        <div class="clr-control-container" style="margin-top:0.25rem;">
-          <div style="display:flex;flex-direction:column;gap:0.4rem;">
-            <div class="clr-radio-wrapper">
-              <input type="radio" name="scanProfile" id="profFull" value="readiness-full" checked>
-              <label for="profFull"><strong>Readiness Full</strong> <span class="text-muted text-sm">— Full audit: hardware, HCL, PCIe, and telemetry. About 60–90 seconds per host.</span></label>
-            </div>
-            <div class="clr-radio-wrapper">
-              <input type="radio" name="scanProfile" id="profLean" value="readiness-lean">
-              <label for="profLean"><strong>Readiness Lean</strong> <span class="text-muted text-sm">— VCF 9.1 and vSAN ESA checks. Skips historical telemetry and secondary member scans. About 15–30 seconds per host.</span></label>
-            </div>
-            <div class="clr-radio-wrapper">
-              <input type="radio" name="scanProfile" id="profLite" value="inventory-lite">
-              <label for="profLite"><strong>Inventory Lite</strong> <span class="text-muted text-sm">— Fast pre-screen: system, power, thermal rollup, storage rollup, and NIC summary. Deep port, DIMM, PCIe, and firmware tables are left empty. About 5–10 seconds per host.</span></label>
-            </div>
           </div>
         </div>
       </div>
@@ -289,7 +270,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   <div class="card" id="advancedCard">
     <div class="card-header" style="cursor:pointer" id="advancedToggle">
       Advanced
-      <span class="text-muted text-sm" style="margin-left:.4rem;font-weight:400;text-transform:none;letter-spacing:0">— profiles, vault, threads, TLS, HCL, Dell warranty</span>
+      <span class="text-muted text-sm" style="margin-left:.4rem;font-weight:400;text-transform:none;letter-spacing:0">— scan depth, profiles, vault, threads, TLS, HCL, Dell warranty</span>
       <span style="margin-left:auto;font-size:.85rem" id="advancedArrow">▶</span>
     </div>
     <div id="advancedBody" class="collapsible">
@@ -421,8 +402,8 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           </div>
           <div id="vaultImportResult" class="text-sm hidden" style="margin-top:.5rem;white-space:pre-wrap"></div>
           <hr class="vcf-sep">
-          <p class="text-sm" style="margin-bottom:.3rem"><strong>Jump hosts</strong> <span class="badge badge-warning" style="font-size:0.7rem;margin-left:0.35rem;text-transform:uppercase;">Experimental</span></p>
-          <p class="text-xs text-muted">SSH profiles used to run scans from a Linux jump host (Experimental feature — remote execution via ephemeral SSH worker). Secrets stay in the vault.</p>
+          <p class="text-sm" style="margin-bottom:.3rem"><strong>Jump hosts</strong></p>
+          <p class="text-xs text-muted">SSH profiles used to run scans from a Linux jump host (remote execution via ephemeral SSH worker). Secrets stay in the vault.</p>
           <div style="overflow-x:auto"><table class="results-table"><thead><tr><th>Id</th><th>Login</th><th>Subnets</th><th>Host Key</th><th>Connection</th><th></th></tr></thead><tbody id="jumpHostBody"></tbody></table></div>
           <div id="jumpEditBanner" class="alert alert-info hidden" style="margin-top:0.75rem;margin-bottom:0.75rem;font-size:0.85rem;display:flex;justify-content:space-between;align-items:center;">
             <span>✏ Editing jump host <strong id="jumpEditingId"></strong> (existing secrets preserved unless overwritten)</span>
@@ -466,6 +447,25 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   <div class="card">
     <div class="card-header">⚙ Options</div>
     <div class="card-body">
+      <div class="clr-form-control" style="margin-bottom:0.75rem;">
+        <label class="clr-control-label" style="font-weight:600;">Scan Depth Profile</label>
+        <div class="clr-control-container" style="margin-top:0.25rem;">
+          <div style="display:flex;flex-direction:column;gap:0.4rem;">
+            <div class="clr-radio-wrapper">
+              <input type="radio" name="scanProfile" id="profFull" value="readiness-full" checked>
+              <label for="profFull"><strong>Readiness Full</strong> <span class="text-muted text-sm">— Full audit: hardware, HCL, PCIe, and telemetry. About 60–90 seconds per host.</span></label>
+            </div>
+            <div class="clr-radio-wrapper">
+              <input type="radio" name="scanProfile" id="profLean" value="readiness-lean">
+              <label for="profLean"><strong>Readiness Lean</strong> <span class="text-muted text-sm">— VCF 9.1 and vSAN ESA checks. Skips historical telemetry and secondary member scans. About 15–30 seconds per host.</span></label>
+            </div>
+            <div class="clr-radio-wrapper">
+              <input type="radio" name="scanProfile" id="profLite" value="inventory-lite">
+              <label for="profLite"><strong>Inventory Lite</strong> <span class="text-muted text-sm">— Fast pre-screen: system, power, thermal rollup, storage rollup, and NIC summary. Deep port, DIMM, PCIe, and firmware tables are left empty. About 5–10 seconds per host.</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="form-grid">
         <div class="clr-form-group">
           <label class="clr-control-label">Concurrent Hosts</label>
@@ -481,15 +481,15 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <div id="combinedNote" class="text-muted text-sm" style="display:none; margin-top:0.25rem;">Large fleet (more than 64 hosts): the combined host report is a sidecar pack, and each host opens on demand. fleet_summary.html is also written. For several independent scans, use Open Fleet Library.</div>
       </div>
       <div class="clr-check-row">
-        <input type="checkbox" id="debugChk">
+        <input type="checkbox" id="debugChk" checked>
         <label for="debugChk">Enable debug log  <span class="text-muted text-sm">— writes verbose log to vcf_assess_debug.log</span></label>
       </div>
       <div class="clr-check-row">
-        <input type="checkbox" id="saveJsonChk">
+        <input type="checkbox" id="saveJsonChk" checked>
         <label for="saveJsonChk">Save summary JSON  <span class="text-muted text-sm">— save host & fleet .json files for offline import or analysis</span></label>
       </div>
       <div class="clr-check-row">
-        <input type="checkbox" id="includeRawChk">
+        <input type="checkbox" id="includeRawChk" checked>
         <label for="includeRawChk">Include raw Redfish capture  <span class="text-muted text-sm">— include raw API response payloads in summary JSON</span></label>
       </div>
       <div class="clr-check-row">

@@ -1,7 +1,7 @@
 # Architecture Summary & Engineering Handoff
 
 **Project:** VCF / vSphere 9.1 Readiness Assessment Tool  
-**Version:** 9.9.0  
+**Version:** 9.9.1  
 **Primary Users:** VMware Sales Engineers (SEs), Solution Architects, IT Administrators  
 **Target Platform:** VMware Cloud Foundation 9.1 / vSphere 9.1 / vSAN ESA & OSA
 
@@ -459,7 +459,7 @@ The VCF Readiness tool repository serves as the single source of truth for devel
 
 ```mermaid
 flowchart TD
-    subgraph unifiedWorkspace [Unified Workspace: Distribution-Redfish-Scraper]
+    subgraph unifiedWorkspace [Unified Workspace: VCF-Readiness (vcfr)]
         webEntry["vcfr_web.py (Primary Browser UI Entry)"]
         cliEntry["vcfr_collector.py (Primary CLI Entry)"]
         shimWeb["redfish_web.py (Legacy Browser UI Shim)"]
@@ -629,7 +629,7 @@ flowchart TD
 | `tools/generate_infographic_html.py` | Active Dev Utility | Generates interactive standalone presentation infographic and customer-facing slide deck. | Post-release presentation artifact generator. |
 | `tools/ingest_public_mockups.py` | Active Dev Utility | Downloads and stages public DMTF mockups for replay testing. | Test suite fixture staging. |
 
-#### 9. Build Scripts & Packaging (`Distribution-Redfish-Scraper` & Root)
+#### 9. Build Scripts & Packaging (`vcfr` & Root)
 | File Path | Status | What It Does | Connected Scripts / Callers |
 | :--- | :--- | :--- | :--- |
 

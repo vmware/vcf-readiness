@@ -513,6 +513,8 @@ class _SystemMixin(_CollectorBase):
         return result
 
     def collect_system_summary(self) -> Optional[dict]:
+        if getattr(self, "auth_failed", False):
+            return None
         chassis_mgmt = getattr(self, "chassis_management_info", {}) or {}
         if not self.sys_uri:
             if chassis_mgmt and chassis_mgmt.get("is_modular_chassis"):

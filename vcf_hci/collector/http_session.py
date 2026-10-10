@@ -46,10 +46,10 @@ _AUTH_EXEMPT_ENDPOINTS = (
 
 
 def _is_root_system_url(url: str) -> bool:
-    """Check if URL targets /redfish/v1/Systems or a top-level system resource /redfish/v1/Systems/{id}."""
+    """Check if URL targets /redfish/v1, /redfish/v1/Systems or a top-level system resource /redfish/v1/Systems/{id}."""
     path = url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
     path_lower = path.lower()
-    if path_lower.endswith("/redfish/v1/systems") or path_lower.endswith("/systems"):
+    if path_lower.endswith("/redfish/v1") or path_lower.endswith("/redfish/v1/systems") or path_lower.endswith("/systems"):
         return True
     for prefix in ("/redfish/v1/systems/", "/systems/"):
         idx = path_lower.find(prefix)

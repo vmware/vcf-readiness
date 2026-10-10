@@ -16,8 +16,8 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ## Quick Start
 
 ```bash
-git clone https://github.com/vmware/vcf-readiness.git
-cd Distribution-Redfish-Scraper
+git clone https://github.com/vmware/vcf-readiness.git vcfr
+cd vcfr
 
 # Python 3.9+ required, no pip install needed (zero external runtime deps)
 python3 vcf_hci/cli.py --help

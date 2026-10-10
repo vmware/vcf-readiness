@@ -8,8 +8,20 @@
 
 ---
 
+<p align="center">
+  <a href="#interactive-visual-tour--feature-deep-dive">
+    <img src="docs/assets/vcf_readiness_showcase.webp" alt="VCF Readiness Assessment Tool Rotating Feature Showcase" width="100%">
+  </a>
+  <br>
+  <em>Automated enterprise fleet telemetry, memory topology visualizer, ToR fabric mapping, vSAN ESA HCL validation &amp; 84-point BMC security audit.</em>
+</p>
+
+---
+
 ## Table of Contents
 
+- [Interactive Visual Tour & Feature Deep Dive](#interactive-visual-tour--feature-deep-dive)
+- [Video Walkthroughs & Demos](#video-walkthroughs--demos)
 - [Download](#download)
 - [5-Minute Quick Start](#5-minute-quick-start)
 - [Run from Source (no binary needed)](#run-from-source-no-binary-needed)
@@ -49,6 +61,8 @@
 ## 5-Minute Quick Start
 
 > **What you need:** network access to your BMC management IPs (iDRAC / iLO / BMC). That's it.
+>
+> 🎥 **Prefer video?** Watch the 1-minute [**Scanner Quick Start Video (1:19) →**](https://www.youtube.com/watch?v=nfKTH5aG76s) for a walkthrough of targets, credentials, and running a scan.
 
 ### Step 1 — Download and launch
 
@@ -98,7 +112,7 @@ python vcfr_web.py
 4. Verify: `python --version` — should print `Python 3.x.x`
 5. Navigate to the project and launch:
    ```cmd
-   cd C:\Users\YourName\Documents\Distribution-Redfish-Scraper
+   cd C:\Users\YourName\Documents\vcfr
    python vcfr_web.py
    ```
 
@@ -106,6 +120,8 @@ python vcfr_web.py
 
 <details>
 <summary><strong>macOS — install Python via Homebrew</strong></summary>
+
+> 🎥 **Video Guide:** Watch [**Launch for Mac from Python (0:55) →**](https://www.youtube.com/watch?v=L5_IyTcHiMo) for a quick demonstration of launching the web interface from Terminal.
 
 1. Open **Terminal** (Spotlight → type `Terminal` → Enter).
 2. Install Homebrew (if you don't have it):
@@ -119,7 +135,7 @@ python vcfr_web.py
 4. Verify: `python3 --version` — should print `Python 3.x.x`
 5. Navigate to the project and launch:
    ```bash
-   cd ~/Documents/Distribution-Redfish-Scraper
+   cd ~/Documents/vcfr
    python3 vcfr_web.py
    ```
 
@@ -145,7 +161,7 @@ python3 --version
 
 Then launch the tool:
 ```bash
-cd ~/Documents/Distribution-Redfish-Scraper
+cd ~/Documents/vcfr
 python3 vcfr_web.py
 ```
 
@@ -183,6 +199,124 @@ Connects to enterprise server BMCs over Redfish APIs and produces a standalone H
 | Other Redfish BMCs | `GenericCollector` | Standard DMTF resources only | Fallback |
 
 Unknown vendors still scan; OEM-only fields (wear, SmartStorage, CIMC manager path) may be missing.
+
+---
+
+## 📸 Interactive Visual Tour & Feature Deep Dive
+
+Click any category below to expand full-resolution telemetry screenshots, architectural diagrams, and diagnostic deep-dives captured across enterprise Dell PowerEdge, HPE ProLiant, Lenovo ThinkAgile, and Cisco UCS servers:
+
+<details open>
+<summary><strong>1. Fleet Health, Capacity Sizing & Multi-Cluster Headroom</strong></summary>
+<br>
+
+<p align="center">
+  <a href="docs/assets/screenshots/fleet-health-dashboard.png">
+    <img src="docs/assets/screenshots/fleet-health-dashboard.png" alt="Fleet Health Dashboard and Management Headroom" width="100%">
+  </a>
+</p>
+
+- **Fleet Resource Headroom:** Aggregates compute (vCPU), memory (RAM), and NVMe raw storage across hundreds of hosts against VCF HA-Large management domain baselines.
+- **CPU Fleet Fingerprinting:** Groups hosts by processor microarchitecture (Cascade Lake-SP, Ice Lake-SP, Sapphire Rapids, AMD EPYC) and socket counts.
+- **BIOS & Microcode Currency:** Instant rollups of outdated BIOS firmware, Spectre/Meltdown mitigation status, and pending vendor upgrades.
+- **Additional Fleet Views:**
+  - [📊 Fleet Metric Health Tiles (`docs/assets/screenshots/fleet-metric-tiles.png`)](docs/assets/screenshots/fleet-metric-tiles.png) — GPU inventory, TPM 2.0 compliance (110/374), NIC speed distribution (100 GbE / 25 GbE), power draw & peak wattage, ToR leaf pairs, and BMC security compliance (5,556 passes / 7,624 fails).
+  - [📋 Multi-Host Fleet Summary Table (`docs/assets/screenshots/fleet-multi-host-capture.png`)](docs/assets/screenshots/fleet-multi-host-capture.png) — High-density per-host status grid with CPU tiers, TPM 2.0 active state, security action badges, and vSAN ESA qualification.
+
+</details>
+
+<details>
+<summary><strong>2. Motherboard DIMM Slots & Memory Interleaving Efficiency</strong></summary>
+<br>
+
+<p align="center">
+  <a href="docs/assets/screenshots/memory-channel-topology.png">
+    <img src="docs/assets/screenshots/memory-channel-topology.png" alt="Memory Bus Interleaving and Motherboard Layout Visualizer" width="100%">
+  </a>
+</p>
+
+- **Memory Interleaving Scorecard:** Automatically calculates channel interleaving efficiency (e.g. 75% degraded on unbalanced 6-of-8 channel populations).
+- **Physical Motherboard Visualizer:** Interactive graphical map of Socket 1 and Socket 2 DIMM slots (Channels A through H), displaying populated slots (green), degraded channels, and empty sockets.
+- **SE Remediation Guide:** Prescriptive advice on slot re-seating and DIMM replacement to eliminate memory bus bandwidth bottlenecks for vSAN ESA cache and storage tiers.
+- **Bus Speed Analysis:** Flags memory operating below CPU rated maximums (e.g. 4400 MHz operating vs 4800 MHz rated).
+
+</details>
+
+<details>
+<summary><strong>3. Network Interfaces, ToR Switch Fabric & Optical Transceivers</strong></summary>
+<br>
+
+<p align="center">
+  <a href="docs/assets/screenshots/nic-optics-lldp-detection.png">
+    <img src="docs/assets/screenshots/nic-optics-lldp-detection.png" alt="Network Interfaces, ToR Switch Detection and Transceiver Optics" width="100%">
+  </a>
+</p>
+
+- **ToR Switch Fabric Mapping:** Cross-vendor LLDP and Cisco CDP neighbor discovery mapping server adapters directly to top-of-rack switches and switch ports.
+- **Optical Transceiver Diagnostics:** Real-time Digital Diagnostic Monitoring (DDM) reporting optical TX/RX power in dBm, temperature, and transceiver form factors (SFP28, QSFP28, DAC).
+- **ESXi 9.1 Driver & Firmware Validation:** Live comparison of installed driver/firmware combinations against VMware inbox certified releases with upgrade indicators.
+- **vSAN ESA & RDMA Qualification:** Validates 25 GbE / 100 GbE link speeds and vSAN over RDMA (RoCEv2) hardware support.
+- **Additional Networking Views:**
+  - [🔌 LLDP / CDP Switch Neighbor Table (`docs/assets/screenshots/lldp-cdp-switch-neighbors.png`)](docs/assets/screenshots/lldp-cdp-switch-neighbors.png) — Dedicated BMC management interface and host NIC neighbor switch chassis IDs, port numbers, and management IPs.
+
+</details>
+
+<details>
+<summary><strong>4. Storage Controllers, NVMe SMART & vSAN ESA HCL</strong></summary>
+<br>
+
+<p align="center">
+  <a href="docs/assets/screenshots/vsan-esa-drive-compliance.png">
+    <img src="docs/assets/screenshots/vsan-esa-drive-compliance.png" alt="Storage Controller and vSAN ESA Drive Compliance" width="100%">
+  </a>
+</p>
+
+- **vSAN ESA Compatibility Check:** Automated JSON HCL lookup classifying drives into vSAN ESA Storage Tier, vSAN All-Flash Caching, or Capacity Tier.
+- **Direct BCG Links:** Instant deep-links to Broadcom Compatibility Guide records for every discovered drive model and controller.
+- **Firmware Baseline Validation:** Verifies drive firmware against VMware certified baselines and alerts on newer releases.
+- **Additional Storage & PCIe Views:**
+  - [🩺 Drive SMART Telemetry (`docs/assets/screenshots/nvme-smart-health-telemetry.png`)](docs/assets/screenshots/nvme-smart-health-telemetry.png) — 20-metric OCP SMART telemetry: Power-On Hours (POH), TB Written/Read, wear alerts, temperature, unsafe shutdowns, and spare block margins.
+  - [⚡ PCIe Slot Inventory (`docs/assets/screenshots/pcie-lane-inventory.png`)](docs/assets/screenshots/pcie-lane-inventory.png) — Slot-by-slot PCIe generation (Gen4/Gen5), lane width (x4/x8/x16), hot-plug capability, and PCI Quad IDs.
+
+</details>
+
+<details>
+<summary><strong>5. Platform Security, BMC Hardening Audit & SCV Attestation</strong></summary>
+<br>
+
+<p align="center">
+  <a href="docs/assets/screenshots/bmc-hardware-security-audit.png">
+    <img src="docs/assets/screenshots/bmc-hardware-security-audit.png" alt="BMC Hardware Security Audit and Supply Chain Attestation" width="100%">
+  </a>
+</p>
+
+- **Dell Secured Component Verification (SCV 1.0):** Cryptographically verifies factory hardware manifests signed at Dell manufacturing against BMC component inventory.
+- **84-Point BMC Hardening Audit:** Evaluates HTTP-to-HTTPS redirection, TLS 1.2+ minimum versions, 256-bit cipher enforcement, default credentials, and transport security.
+- **Confidential Computing & Hardware Shield:** Checks System Management Mode (SMM) memory lock status and BIOS Security Freeze Lock active state.
+- **Additional Security Views:**
+  - [🛡️ Hardware Security Baseline (`docs/assets/screenshots/hardware-security-baseline.png`)](docs/assets/screenshots/hardware-security-baseline.png) — TPM 2.0 active state, Secure Boot posture, BIOS microcode CVE tiers (Spectre, Meltdown, RFDS), and Intel TXT.
+
+</details>
+
+<details>
+<summary><strong>6. BIOS Golden Baseline Scorecard & Performance Drift</strong></summary>
+<br>
+
+<p align="center">
+  <a href="docs/assets/screenshots/bios-golden-baseline-drift.png">
+    <img src="docs/assets/screenshots/bios-golden-baseline-drift.png" alt="VCF 9.1 BIOS Golden Baseline Scorecard" width="100%">
+  </a>
+</p>
+
+- **Automated Drift Detection:** Evaluates 12+ critical server BIOS settings against Broadcom VCF 9.1 & VMware vSphere 9.0 Performance Best Practices.
+- **Prescriptive Remediation:** Explains the engineering rationale for drifted settings (e.g., PCIe ASPM low-power states triggering ESXi `vsandevicemonitord` abort timeouts).
+- **Subsystem & Fault Diagnostics:**
+  - [⚙️ BIOS Performance Settings (`docs/assets/screenshots/bios-performance-settings.png`)](docs/assets/screenshots/bios-performance-settings.png) — C-States, Turbo, UPI Link Power Management, Hyper-Threading, Sub-NUMA Clustering (SNC), and UPI prefetchers.
+  - [⚠️ System Event Log (SEL / IML) Monitoring (`docs/assets/screenshots/system-event-log-monitoring.png`)](docs/assets/screenshots/system-event-log-monitoring.png) — Hardware fault roster tracking faulted DIMMs, failing PSUs, dead fans, and drive media errors.
+  - [🖥️ Single-Host Assessment Tiles (`docs/assets/screenshots/single-host-server-tiles.png`)](docs/assets/screenshots/single-host-server-tiles.png) — Per-host readiness verdict, estimated vSAN ReadyNode profile (e.g. vSAN-HCI-MED), and power cap limits.
+  - [🔍 System Assessment Overview (`docs/assets/screenshots/sub-category-system-overview.png`)](docs/assets/screenshots/sub-category-system-overview.png) — Sub-category health summary across thermal, storage, networking, security, and power domains.
+
+</details>
 
 ---
 
@@ -445,6 +579,8 @@ State kept in your home directory:
 ## Report Sections
 
 > 📚 **Comprehensive Reference Guide:** For an exhaustive tab-by-tab and field-by-field reference explaining every metric, evaluation rule, official VMware KB, and the 84-control BMC security audit, see the [**User Guide & Reference Manual (docs/USER_GUIDE_REFERENCE.md)**](docs/USER_GUIDE_REFERENCE.md).
+>
+> 🎥 **Video Tour:** Watch the [**Report Overview Video (8:20) →**](https://www.youtube.com/watch?v=tQkxyRHZu4M) for a guided walkthrough of the fleet summary, status badges, BIOS drift scorecard, and per-host sub-reports.
 
 Each per-host HTML report includes:
 

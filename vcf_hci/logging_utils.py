@@ -407,6 +407,7 @@ def parse_ip_targets(
         if len(part) > 255:
             raise ValueError(f"Target entry '{part[:30]}...' is excessively long (>255 characters).")
         m = re.match(r"^(\d+)\.(\d+)\.(\d+)\.(\d+)-(\d+)$", part)
+        m_full = re.match(r"^(\d+)\.(\d+)\.(\d+)\.(\d+)-(\d+)\.(\d+)\.(\d+)\.(\d+)$", part)
         if m:
             o1, o2, o3, start, end = (
                 int(m.group(1)),
@@ -422,6 +423,21 @@ def parse_ip_targets(
             if start > end:
                 raise ValueError(f"Invalid range in '{part}': start value ({start}) cannot be greater than end value ({end}).")
             targets.extend([f"{o1}.{o2}.{o3}.{i}" for i in range(start, end + 1)])
+        elif m_full:
+            o1, o2, o3, start = int(m_full.group(1)), int(m_full.group(2)), int(m_full.group(3)), int(m_full.group(4))
+            e1, e2, e3, end = int(m_full.group(5)), int(m_full.group(6)), int(m_full.group(7)), int(m_full.group(8))
+            if (o1, o2, o3) == (e1, e2, e3):
+                if not (0 <= start <= 255 and 0 <= end <= 255):
+                    raise ValueError(f"Invalid range octet in '{part}': range bounds must be between 0 and 255.")
+                if start > end:
+                    raise ValueError(f"Invalid range in '{part}': start value ({start}) cannot be greater than end value ({end}).")
+                targets.extend([f"{o1}.{o2}.{o3}.{i}" for i in range(start, end + 1)])
+            else:
+                start_ip = int(ipaddress.IPv4Address(f"{o1}.{o2}.{o3}.{start}"))
+                end_ip = int(ipaddress.IPv4Address(f"{e1}.{e2}.{e3}.{end}"))
+                if start_ip > end_ip:
+                    raise ValueError(f"Invalid range in '{part}': start address cannot be greater than end address.")
+                targets.extend([str(ipaddress.IPv4Address(i)) for i in range(start_ip, end_ip + 1)])
         elif "/" in part:
             try:
                 net = ipaddress.ip_network(part, strict=False)

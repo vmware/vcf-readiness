@@ -53,7 +53,7 @@ _SOFTWARE_RAID_NAMES = [
     # HPE Dynamic Smart Array / Smart Array B-series / SR-series
     "DYNAMIC SMART ARRAY", "SMART ARRAY B", "SR100I", "SR100", "B110I", "B120I", "B140I", "B320I",
     # Intel RSTe / VROC / Generic Software RAID
-    "RSTE", "RAPID STORAGE", "ESRT2", "MEGASR", "SOFTWARE RAID", "SW RAID",
+    "RSTE", "RAPID STORAGE", "ESRT2", "MEGASR", "SOFTWARE RAID", "SW RAID", "VROC",
     "EMBEDDED SATA RAID", "INTEL EMBEDDED SERVER RAID",
 ]
 
@@ -458,9 +458,12 @@ def parse_drive_details(
     sw_raid_names = getattr(coll, "_SOFTWARE_RAID_NAMES", _SOFTWARE_RAID_NAMES) if coll else _SOFTWARE_RAID_NAMES
     trimode_names = getattr(coll, "_TRIMODE_NAMES", _TRIMODE_NAMES) if coll else _TRIMODE_NAMES
 
-    # Software RAID: Host/chipset CPU-assisted RAID (e.g. Dell PERC S140/S150, HPE Dynamic Smart Array)
+    is_vmd_ctrl = cp.get("is_vmd", False) or any(k in ctrl_name_up or k in ctrl_id_up for k in ["VMD", "VROC"])
+
+    # Software RAID: Host/chipset CPU-assisted RAID (e.g. Dell PERC S140/S150, HPE Dynamic Smart Array, Intel VROC)
     is_software_raid = (
         cp.get("is_software_raid", False)
+        or is_vmd_ctrl
         or any(p in ctrl_name_up or p in ctrl_id_up for p in sw_raid_names)
     )
 
@@ -474,7 +477,7 @@ def parse_drive_details(
 
     # Exclude motherboard chipset/AHCI/VMD/direct PCIe/extender/HBA/software RAID controllers from tri-mode false positives
     _NON_TRIMODE_CTRL_PATTERNS = [
-        "AHCI", "SATA", "INTEL", "VMD", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS",
+        "AHCI", "SATA", "INTEL", "VMD", "VROC", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS",
         "GLOTRENDS", "PU41", "BIFURCATION",
         "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355",
     ] + list(sw_raid_names)
@@ -488,6 +491,7 @@ def parse_drive_details(
         is_nvme and not is_boot and not _is_m2 and not is_software_raid
         and (is_trimode_by_name or (is_trimode_by_proto and not _is_known_non_trimode_ctrl))
     )
+    behind_vmd = is_nvme and not is_boot and not _is_m2 and is_vmd_ctrl
     behind_software_raid = is_nvme and not is_boot and not _is_m2 and is_software_raid
 
     # Do not inherit controller-level PCIe uplink lanes (e.g. x8 slot uplink on RAID controllers) onto individual drives
@@ -963,6 +967,7 @@ def parse_drive_details(
         # PCIe topology fields
         "behind_trimode":       behind_trimode,
         "behind_software_raid": behind_software_raid,
+        "behind_vmd":           behind_vmd,
         "single_lane_alert":    single_lane_alert,
         "pcie_lanes_in_use": pcie_lanes,
         "pcie_max_lanes":    pcie_max,

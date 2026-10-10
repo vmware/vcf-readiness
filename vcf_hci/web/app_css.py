@@ -195,6 +195,8 @@ APP_CSS = """
     }
     .clr-check-row label { font-size: .875rem; cursor: pointer; }
     .clr-check-hint { font-size: .75rem; color: var(--vcf-muted); margin-left: 1.4rem; }
+    #useVaultRow { cursor: pointer; }
+    #useVaultChk:disabled { pointer-events: none; }
 
     /* Number spinbox */
     input[type=number].clr-input { -moz-appearance: textfield; }

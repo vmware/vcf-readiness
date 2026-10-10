@@ -11,6 +11,7 @@ from vcf_hci.constants import (
     HPE_SKU_CHASSIS_DB,
     KB_TRIMODE,
 )
+from vcf_hci.enrichment import consolidate_direct_attached_nvme_controllers
 from vcf_hci.hcl import evaluate_drive_hcl_tier
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.components import (
@@ -22,6 +23,7 @@ from vcf_hci.report.components import (
     _rn_dim_row,
     _software_raid_banner_html,
     _trimode_banner_html,
+    _vmd_banner_html,
 )
 from vcf_hci.report.helpers import _h
 
@@ -261,6 +263,8 @@ def render_storage_subsystem_section(
     """Render Storage Subsystem section (topology alerts, midplane, bay layout, controller cards, badge label/class)."""
     bmc_lic = bmc_lic or {}
     data = data or {}
+    bios_checks = (data.get("bios_checks") or {}) if isinstance(data, dict) else {}
+    storage = consolidate_direct_attached_nvme_controllers(storage or [], bios_checks)
     _hw = [f for f in (data.get("hardware_findings") or []) if isinstance(f, dict) and f.get("section") == "storage"]
     _hw_html = "".join(
         f"<li><code>{_h(str(f.get('tag') or ''))}</code> {_h(str(f.get('detail') or ''))}</li>"
@@ -476,7 +480,8 @@ def render_storage_subsystem_section(
             _fw       = _nc.get("ctrl_firmware") or "N/A"
             _fw_str   = f"<code>{_h(str(_fw))}</code>" if _fw != "N/A" else "N/A"
             _tri_b    = "<span class='badge warning'>Tri-Mode RAID</span> " if _nc.get("is_trimode") else ""
-            _sw_b     = "<span class='badge warning'>Software RAID</span> " if _nc.get("is_software_raid") else ""
+            _vmd_b    = "<span class='badge warning'>Intel VMD Managed</span> " if _nc.get("is_vmd") else ""
+            _sw_b     = "<span class='badge warning'>Software RAID</span> " if (_nc.get("is_software_raid") and not _nc.get("is_vmd")) else ""
 
             _c_proto_parts = []
             if _c_nvme:
@@ -490,7 +495,7 @@ def render_storage_subsystem_section(
             _ctrl_rows += (
                 f"<tr>"
                 f"<td><strong>{_h(_nc.get('name', 'Storage Controller'))}</strong></td>"
-                f"<td>{_tri_b}{_sw_b}{_c_proto_str}</td>"
+                f"<td>{_tri_b}{_vmd_b}{_sw_b}{_c_proto_str}</td>"
                 f"<td>{len(_c_pop)} / {len(_c_drives)} slots</td>"
                 f"<td>{_fw_str}</td>"
                 f"</tr>"
@@ -535,7 +540,8 @@ def render_storage_subsystem_section(
 
     all_drives_flat = [d for ctrl in (storage or []) for d in ctrl.get("drives", []) if d.get("populated", True)]
     trimode_nvme       = [d for d in all_drives_flat if d.get("behind_trimode")]
-    software_raid_nvme = [d for d in all_drives_flat if d.get("behind_software_raid")]
+    vmd_nvme           = [d for d in all_drives_flat if d.get("behind_vmd")]
+    software_raid_nvme = [d for d in all_drives_flat if d.get("behind_software_raid") and not d.get("behind_vmd")]
     single_lane_nv     = [d for d in all_drives_flat if d.get("single_lane_alert")]
 
     storage_topology_alerts = ""
@@ -547,6 +553,14 @@ def render_storage_subsystem_section(
             f"NVMe drives must be directly attached to the CPU PCIe root complex or a native NVMe HBA.<br>"
             f"<a href='{KB_TRIMODE}' target='_blank' style='font-weight:600'>"
             f"Broadcom KB314305: vSAN Support of NVMe Devices Behind Tri-Mode Controllers ↗</a>"
+            f"</div>"
+        )
+    if vmd_nvme:
+        storage_topology_alerts += (
+            f"<div class='alert alert-warning' style='margin-bottom:1rem'>"
+            f"<strong>⚠️ {len(vmd_nvme)} NVMe drive(s) detected behind Intel VMD (Volume Management Device)</strong> — "
+            f"The underlying NVMe SSDs are compatible with VMware vSAN (see individual HCL badges below), but Intel VMD masks PCIe root ports from ESXi's native <code>nvme_pcie</code> driver. "
+            f"Intel VMD must be <strong>Disabled in System BIOS/UEFI</strong> (set to Native Pass-Through) for the drives to be claimed and usable by VMware vSAN (both vSAN OSA and vSAN ESA)."
             f"</div>"
         )
     if software_raid_nvme:
@@ -609,6 +623,7 @@ def render_storage_subsystem_section(
             f"<h3>Storage Controller: {_h(ctrl.get('name', 'Storage Controller'))} (ID: {_h(str(ctrl.get('id', 'N/A')))})</h3>"
             f"{_ctrl_meta_html(ctrl, hcl_data=json_hcl)}"
             f"{_trimode_banner_html(ctrl)}"
+            f"{_vmd_banner_html(ctrl, bios_checks=bios_checks)}"
             f"{_software_raid_banner_html(ctrl)}"
             f"{_drive_table_header}{_render_ctrl_drives(ctrl, json_hcl=json_hcl)}</tbody></table></div>"
         )
@@ -617,7 +632,7 @@ def render_storage_subsystem_section(
             f"<details class='accordion' style='margin-bottom:.5rem'>"
             f"<summary style='font-size:.9rem'>Storage Controller: {c['name']} (ID: {c['id']})"
             f" — <em style='font-weight:400;color:var(--text-muted)'>No drives</em></summary>"
-            f"<div class='accordion-body'>{_ctrl_meta_html(c, hcl_data=json_hcl)}{_drive_table_header}"
+            f"<div class='accordion-body'>{_ctrl_meta_html(c, hcl_data=json_hcl)}{_vmd_banner_html(c, bios_checks=bios_checks)}{_drive_table_header}"
             f"{_render_ctrl_drives(c, json_hcl=json_hcl)}</tbody></table></div></details>"
             for c in empty_ctrls
         )

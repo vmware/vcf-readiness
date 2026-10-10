@@ -399,6 +399,7 @@ def evaluate_drive_hcl_tier(
         drive.get("is_consumer"),
         drive.get("single_lane_alert"),
         drive.get("behind_software_raid"),
+        drive.get("behind_vmd"),
         id(json_hcl) if json_hcl else 0,
         id(csv_db) if csv_db else 0,
     )
@@ -411,8 +412,9 @@ def evaluate_drive_hcl_tier(
     cat_orig = str(drive.get("category", ""))
     badge_orig = str(drive.get("status_badge", ""))
     is_boot = cat_orig == "Boot Device" or "Boot Device" in badge_orig or drive.get("is_boot", False)
-    behind_trimode = drive.get("behind_trimode", False) or "Behind Tri-Mode" in badge_orig
-    is_raid_ctrl = cat_orig in ("Unsupported NVMe RAID", "Unsupported NVMe Tri-Mode") or "Behind RAID" in badge_orig
+    is_behind_vmd = bool(drive.get("behind_vmd"))
+    behind_trimode = (drive.get("behind_trimode", False) or "Behind Tri-Mode" in badge_orig) and not is_behind_vmd
+    is_raid_ctrl = (cat_orig in ("Unsupported NVMe RAID", "Unsupported NVMe Tri-Mode") or "Behind RAID" in badge_orig) and not behind_trimode and not is_behind_vmd
 
     # Intercept consumer SSDs before general HCL matching / protocol fallbacks
     consumer_reason = detect_consumer_drive(model, manufacturer=drive.get("manufacturer") or "")
@@ -557,7 +559,12 @@ def evaluate_drive_hcl_tier(
             "<br><span class='badge danger' style='margin-top:4px;font-size:.78rem'>"
             "⚠️ Single PCIe Lane (x1) — severe performance limitation</span>"
         )
-    if drive.get("behind_software_raid"):
+    if is_behind_vmd:
+        badge += (
+            "<br><small style='color:var(--warning-text, #ca8a04);font-weight:600;'>"
+            "Requires VMD Disabled in BIOS</small>"
+        )
+    elif drive.get("behind_software_raid"):
         badge += (
             "<br><span class='badge warning' style='margin-top:4px;font-size:.78rem'>"
             "⚠️ Software RAID Detected — Bypass in BIOS for native vSAN ESA pass-through</span>"

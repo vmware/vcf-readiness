@@ -99,7 +99,7 @@ class _StorageMixin(_CollectorBase):
         # HPE Dynamic Smart Array / Smart Array B-series / SR-series
         "DYNAMIC SMART ARRAY", "SMART ARRAY B", "SR100I", "SR100", "B110I", "B120I", "B140I", "B320I",
         # Intel RSTe / VROC / Generic Software RAID
-        "RSTE", "RAPID STORAGE", "ESRT2", "MEGASR", "SOFTWARE RAID", "SW RAID",
+        "RSTE", "RAPID STORAGE", "ESRT2", "MEGASR", "SOFTWARE RAID", "SW RAID", "VROC",
         "EMBEDDED SATA RAID", "INTEL EMBEDDED SERVER RAID",
     ]
 
@@ -392,6 +392,7 @@ class _StorageMixin(_CollectorBase):
 
         is_sw_raid = any(p in ctrl_ident_str for p in self._SOFTWARE_RAID_NAMES)
         result["is_software_raid"] = is_sw_raid
+        result["is_vmd"] = "VMD" in ctrl_ident_str or "VROC" in ctrl_ident_str
 
         # Tri-mode: device protocols include NVMe alongside SAS or SATA (never software RAID)
         # An individual controller must support both NVMe AND (SAS or SATA) simultaneously.
@@ -1209,14 +1210,17 @@ class _StorageMixin(_CollectorBase):
             ctrl_model_up_local = str(ctrl.get("Model") or ctrl_model).upper()
             ctrl_full_str = f"{ctrl_name_up_local} {ctrl_id_up_local} {ctrl_model_up_local}"
 
-            _is_sw_raid = ctrl_pcie.get("is_software_raid", False) or any(p in ctrl_full_str for p in self._SOFTWARE_RAID_NAMES)
+            _is_vmd = ctrl_pcie.get("is_vmd", False) or any(k in ctrl_full_str for k in ["VMD", "VROC"])
+            ctrl_pcie["is_vmd"] = _is_vmd
+
+            _is_sw_raid = ctrl_pcie.get("is_software_raid", False) or any(p in ctrl_full_str for p in self._SOFTWARE_RAID_NAMES) or _is_vmd
             if _is_sw_raid:
                 ctrl_pcie["is_software_raid"] = True
                 ctrl_pcie["is_trimode"] = False
 
             _is_known_non_trimode = any(
                 p in ctrl_name_up_local or p in ctrl_id_up_local
-                for p in ["AHCI", "SATA", "INTEL", "VMD", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS", "GLOTRENDS", "PU41", "BIFURCATION", "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355"]
+                for p in ["AHCI", "SATA", "INTEL", "VMD", "VROC", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS", "GLOTRENDS", "PU41", "BIFURCATION", "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355"]
             ) or _is_sw_raid
             if not ctrl_pcie["is_trimode"] and not _is_sw_raid:
                 ctrl_pcie["is_trimode"] = (
@@ -1353,6 +1357,7 @@ class _StorageMixin(_CollectorBase):
                 "volumes":             volumes_list,
                 "is_trimode":          ctrl_pcie["is_trimode"],
                 "is_software_raid":    ctrl_pcie.get("is_software_raid", False),
+                "is_vmd":              ctrl_pcie.get("is_vmd", False),
                 "device_protocols":    ctrl_pcie["device_protocols"],
                 "pcie_lanes_in_use":   ctrl_pcie["pcie_lanes_in_use"],
                 "pcie_max_lanes":      ctrl_pcie["pcie_max_lanes"],

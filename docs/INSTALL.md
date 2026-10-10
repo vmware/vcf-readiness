@@ -115,11 +115,11 @@ Once Python is installed, download or clone the project, then:
 
 ```bash
 # macOS / Linux
-cd ~/Documents/Distribution-Redfish-Scraper
+cd ~/Documents/vcfr
 python3 vcfr_web.py
 
 # Windows (Command Prompt)
-cd C:\Users\YourName\Documents\Distribution-Redfish-Scraper
+cd C:\Users\YourName\Documents\vcfr
 python vcfr_web.py
 ```
 
@@ -164,14 +164,14 @@ This produces a single double-click file that you can hand to colleagues with no
 
 ```bash
 # macOS / Linux
-cd ~/Documents/Distribution-Redfish-Scraper
+cd ~/Documents/vcfr
 chmod +x build-web.sh    # one time only
 ./build-web.sh
 # → dist/VCF-Readiness-Web-v<version>-mac   (macOS, with .zip archive)
 # → dist/VCF-Readiness-Web-v<version>-linux (Linux, with .zip archive)
 
 # Windows (Command Prompt)
-cd C:\Users\YourName\Documents\Distribution-Redfish-Scraper
+cd C:\Users\YourName\Documents\vcfr
 build-web.bat
 # → dist\VCF-Readiness-Web-v<version>-win.exe (with .zip archive)
 # → logs\build-web.log
