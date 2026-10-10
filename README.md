@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="#-visual-report-showcase">
-    <img src="docs/assets/vcf_readiness_showcase.webp" alt="VCF Readiness Assessment Tool Rotating Feature Showcase" width="100%">
+    <img src="docs/assets/vcf_readiness_showcase.gif" alt="VCF Readiness Assessment Tool Rotating Feature Showcase" width="100%">
   </a>
   <br>
   <em>Automated enterprise fleet telemetry, memory topology visualizer, ToR fabric mapping, vSAN ESA HCL validation &amp; 84-point BMC security audit.</em>
