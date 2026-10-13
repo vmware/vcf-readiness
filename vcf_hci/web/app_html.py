@@ -6,6 +6,7 @@ serves on GET /. All CSS (Clarity tokens + custom components) and JavaScript
 (SSE client, form logic, dark mode) are inlined — zero external requests at
 runtime.
 """
+from vcf_hci.branding import FAVICON_DATA_URI, render_nav_brand
 from vcf_hci.web.app_css import APP_CSS
 from vcf_hci.web.app_js import APP_JS
 
@@ -19,6 +20,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>VCF Readiness  v{tool_version}</title>
+  <link rel="icon" type="image/svg+xml" href="{FAVICON_DATA_URI}">
   <link rel="stylesheet" href="/assets/clarity.css">
   <style>
 {APP_CSS}
@@ -28,7 +30,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
 <!-- ── Navigation header ────────────────────────────────────────────────── -->
 <header class="nav-header">
-  <span class="nav-brand">VCF / vSphere 9.1 Readiness Assessment</span>
+  {render_nav_brand("Readiness Assessment")}
   {"<span class='badge info' style='background:#0284c7;color:#fff;font-size:0.75rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;'>🔬 OEM Import Mode</span>" if oem_mode else ""}
   <span class="nav-version">v{tool_version}</span>
   <a href="/docs" target="_blank" class="nav-btn" style="text-decoration:none" title="Open Documentation &amp; User Guide in a new tab">❓ Help</a>

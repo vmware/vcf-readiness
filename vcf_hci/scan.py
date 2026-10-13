@@ -523,6 +523,45 @@ def scan_hosts(
                         if not any(_item_matches_ip(r, f_ip) for r in ctx.results):
                             timeout_failed_ips.append(f_ip)
 
+        # Drop hosts that already failed session create / were marked BMC-unresponsive —
+        # auto-retry recovered 0 sections on SM Scan NX fleet after session timeouts.
+        def _host_should_skip_retry(ip: str) -> bool:
+            for item in list(ctx.results or []):
+                if not isinstance(item, dict):
+                    continue
+                sys_d = item.get("system") if isinstance(item.get("system"), dict) else {}
+                item_ip = item.get("host") or sys_d.get("ip") or sys_d.get("bmc_ip")
+                if item_ip != ip:
+                    continue
+                meta = item.get("collector_metadata") if isinstance(item.get("collector_metadata"), dict) else {}
+                diag = item.get("diagnostics") if isinstance(item.get("diagnostics"), dict) else {}
+                if meta.get("session_create_failed") or meta.get("bmc_unresponsive"):
+                    return True
+                if diag.get("session_create_failed") or diag.get("bmc_unresponsive"):
+                    return True
+                # Partial with many missing sections after BMC death — skip empty rescan burn.
+                partial_secs = item.get("partial_sections") or []
+                if item.get("partial_scan") and len(partial_secs) >= 8:
+                    return True
+            with ctx.failed_hosts_lock:
+                for f in ctx.failed_hosts:
+                    if f.get("ip") != ip:
+                        continue
+                    detail = str(f.get("detail") or "").lower()
+                    if "session" in detail and "timeout" in detail:
+                        return True
+            return False
+
+        before_filter = list(timeout_failed_ips)
+        timeout_failed_ips = [ip for ip in timeout_failed_ips if not _host_should_skip_retry(ip)]
+        skipped_retry = [ip for ip in before_filter if ip not in timeout_failed_ips]
+        if skipped_retry:
+            _log(
+                f"  [⏭] Skipping timeout retry for {len(skipped_retry)} host(s) "
+                f"(session/BMC already failed): {', '.join(skipped_retry[:8])}"
+                + ("…" if len(skipped_retry) > 8 else "")
+            )
+
         if timeout_failed_ips:
             retry_workers = min(4, max(2, len(timeout_failed_ips)))
             retry_timeout = max(600, int((ctx.host_timeout or 300) * 2))

@@ -4,7 +4,7 @@
 **Audience:** VMware Solution Architects, Security Auditors, and Automation Engineers  
 **Specification Standard:** DMTF Redfish Scalable Platforms Management Standard (DSP0266 v1.19+, DSP2059 v1.2+)  
 **Verified OEM Hardware:** Dell PowerEdge 14G/15G/16G (iDRAC9), HPE ProLiant Gen10/Gen10 Plus/Gen11 (iLO 5/6)  
-**Evidence Source:** `samples/reference-captures/`  
+**Evidence Source:** Public DMTF Redfish schemas and the collectors in this repository. This checkout does not include a sample-capture directory.
 
 ---
 

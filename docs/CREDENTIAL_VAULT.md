@@ -143,7 +143,7 @@ Without `--vault` the CLI behaves exactly as before.
 | `vcf_hci/vault/csv_import.py` | CSV parser |
 | `vcf_hci/vault/__main__.py` | `python -m vcf_hci.vault` management commands |
 | `vcf_hci/web/vault_session.py` | Single in-memory unlocked vault for the Web UI, idle auto-lock |
-| `tests/test_vault_*.py`, `tests/test_web_vault_api.py` | Test coverage |
+| `tests/test_vault_crypto.py` | Tracked focused vault test |
 
 ## 8. Jump hosts (Experimental)
 

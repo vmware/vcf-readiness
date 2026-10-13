@@ -67,8 +67,8 @@ if TYPE_CHECKING:
 else:
     _CollectorBase = object
 
-from vcf_hci.collector.pci_utils import extract_pci_ids_from_dict, match_pcie_cache
-from vcf_hci.constants import is_generic_name
+from vcf_hci.collector.pci_utils import clean_oem_adapter_title, extract_pci_ids_from_dict, match_pcie_cache
+from vcf_hci.constants import is_generic_name, is_unfriendly_nic_name
 from vcf_hci.logging_utils import get_nested
 
 logger = logging.getLogger("vcf_assess")
@@ -689,10 +689,19 @@ class DiscoveryMixin(_CollectorBase):
     def _resolve_product_name(self, raw_obj: dict, pcie_cache: Optional[list] = None) -> str:
         if not raw_obj:
             return "PCIe Network Adapter"
+        raw_pn = raw_obj.get("PartNumber") or raw_obj.get("part_number") or ""
+        pn = str(raw_pn or "").strip()
+
+        pn_fallback = ""
         for key in ["Name", "Description", "Model"]:
             val = str(raw_obj.get(key, "") or "").strip()
-            if val and not is_generic_name(val):
-                return val
+            if not val or is_generic_name(val):
+                continue
+            if is_unfriendly_nic_name(val, pn):
+                if not pn_fallback:
+                    pn_fallback = val
+                continue
+            return clean_oem_adapter_title(val, part_number=pn)
         # Dell OEM NIC product name check
         dell_nic = ((raw_obj.get("Oem") or {}).get("Dell") or {}).get("DellNIC") or {}
         dell_name = str(dell_nic.get("ProductName") or dell_nic.get("DeviceDescription") or "").strip()
@@ -715,27 +724,26 @@ class DiscoveryMixin(_CollectorBase):
 
         if dell_name and not is_generic_name(dell_name):
             dell_clean = re.sub(r"\s*-\s*([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$", "", dell_name).strip()
-            if dell_clean and not is_generic_name(dell_clean):
-                return dell_clean
+            if dell_clean and not is_unfriendly_nic_name(dell_clean, pn):
+                return clean_oem_adapter_title(dell_clean, host_mfg="Dell", adapter_mfg="Dell", part_number=pn)
 
         # HPE iLO 5+: AdapterDetails.Name carries the human-readable product name
         # for PCIe NICs (e.g. "HPE Ethernet 1Gb 4-port 331i Adapter") even when
         # the top-level Name is the generic "Ethernet Network Adapter".
         hpe_details = ((raw_obj.get("Oem") or {}).get("Hpe") or {}).get("AdapterDetails") or {}
         hpe_name = str(hpe_details.get("Name") or hpe_details.get("Model") or "").strip()
-        if hpe_name and not is_generic_name(hpe_name):
-            return hpe_name
+        if hpe_name and not is_unfriendly_nic_name(hpe_name, pn):
+            return clean_oem_adapter_title(hpe_name, host_mfg="HPE", adapter_mfg="HPE", part_number=pn)
 
-        raw_pn = raw_obj.get("PartNumber") or raw_obj.get("part_number") or ""
-        pn = str(raw_pn or "").strip().upper()
+        pn_upper = pn.upper()
         if pcie_cache:
-            if pn and pn not in ("N/A", "NONE", "UNKNOWN", "NULL", ""):
+            if pn_upper and pn_upper not in ("N/A", "NONE", "UNKNOWN", "NULL", ""):
                 for dev in pcie_cache:
                     dev_name = str(dev.get("name", "")).strip()
                     dev_pn = str(dev.get("part_number") or "").strip().upper()
-                    if dev_pn and dev_pn not in ("N/A", "NONE", "UNKNOWN", "NULL", "") and (pn in dev_pn or dev_pn in pn):
-                        if dev_name and not is_generic_name(dev_name):
-                            return dev_name
+                    if dev_pn and dev_pn not in ("N/A", "NONE", "UNKNOWN", "NULL", "") and (pn_upper in dev_pn or dev_pn in pn_upper):
+                        if dev_name and not is_unfriendly_nic_name(dev_name, pn):
+                            return clean_oem_adapter_title(dev_name, part_number=pn)
             # Try matching by exact VID:DID from extract_pci_ids_from_dict
             pci_info = extract_pci_ids_from_dict(raw_obj, get_fn=getattr(self, "_get", None))
             c_vid = pci_info.get("vendor_id")
@@ -746,8 +754,8 @@ class DiscoveryMixin(_CollectorBase):
                     p_vid = dev.get("vendor_id", "")
                     p_did = dev.get("device_id", "")
                     if c_vid == p_vid and c_did == p_did:
-                        if dev_name and not is_generic_name(dev_name):
-                            return dev_name
+                        if dev_name and not is_unfriendly_nic_name(dev_name, pn):
+                            return clean_oem_adapter_title(dev_name, part_number=pn)
             # Fallback to match_pcie_cache (links, slot location, model tokens)
             matched_dev = match_pcie_cache(raw_obj, pcie_cache, get_fn=getattr(self, "_get", None))
             if matched_dev:
@@ -756,8 +764,8 @@ class DiscoveryMixin(_CollectorBase):
                 for dev in pcie_cache:
                     if (m_vid and m_did and dev.get("vendor_id") == m_vid and dev.get("device_id") == m_did) or dev.get("id") == matched_dev.get("id"):
                         dev_name = str(dev.get("name", "")).strip()
-                        if dev_name and not is_generic_name(dev_name):
-                            return dev_name
+                        if dev_name and not is_unfriendly_nic_name(dev_name, pn):
+                            return clean_oem_adapter_title(dev_name, part_number=pn)
 
         # Broadcom HCL / io_nics lookup if PCI IDs are known
         try:
@@ -781,9 +789,14 @@ class DiscoveryMixin(_CollectorBase):
                                 ssid=pci_check.get("subsystem_id", ""),
                             )
                     if isinstance(h_dev, dict) and h_dev.get("model"):
-                        return str(h_dev["model"]).strip()
+                        clean_h_name = clean_oem_adapter_title(str(h_dev["model"]).strip(), part_number=pn)
+                        if clean_h_name and not is_unfriendly_nic_name(clean_h_name, pn):
+                            return clean_h_name
         except Exception:
             pass
+
+        if pn_fallback:
+            return pn_fallback
 
         mfr = str(raw_obj.get("Manufacturer", "Ethernet") or "Ethernet").strip()
         return f"{mfr} Network Adapter"

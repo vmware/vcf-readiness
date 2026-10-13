@@ -17,9 +17,15 @@ from vcf_hci.bios.dell_baseline import evaluate_dell_bios_baseline
 from vcf_hci.bios.generic_baseline import evaluate_generic_bios_baseline
 from vcf_hci.bios.hpe_baseline import evaluate_hpe_bios_baseline
 from vcf_hci.bios.lenovo_baseline import evaluate_lenovo_bios_baseline
-from vcf_hci.collector.collect_network import infer_nic_manufacturer
+from vcf_hci.collector.collect_gpu import retain_collected_pcie
+from vcf_hci.collector.collect_network import classify_cna_adapter, infer_nic_manufacturer
 from vcf_hci.collector.collect_storage_drive import sanitize_endurance_pct
-from vcf_hci.collector.pci_utils import extract_pci_ids_from_dict, normalize_pci_id, select_best_pci_pair_entry
+from vcf_hci.collector.pci_utils import (
+    clean_oem_adapter_title,
+    extract_pci_ids_from_dict,
+    normalize_pci_id,
+    select_best_pci_pair_entry,
+)
 from vcf_hci.compat_engine import (
     VCF9CompatibilityEngine,
     check_defective_drive_firmware,
@@ -30,8 +36,13 @@ from vcf_hci.compat_engine import (
     evaluate_drive_fw,
     evaluate_pcie_link_health,
 )
-from vcf_hci.constants import is_generic_name
-from vcf_hci.hcl import is_consumer_drive, lookup_unique_hcl_device
+from vcf_hci.constants import (
+    is_generic_name,
+    is_raw_part_number,
+    is_unfriendly_nic_name,
+    normalize_component_manufacturer,
+)
+from vcf_hci.hcl import evaluate_drive_hcl_tier, is_consumer_drive, lookup_unique_hcl_device
 from vcf_hci.security.contract import empty_security_evidence
 from vcf_hci.security.evaluation import evaluate_security_controls
 from vcf_hci.security.redaction import redact_security_evidence, redact_security_findings
@@ -716,6 +727,8 @@ def _enrich_single_host(
     if not force and host_data.get("_enriched"):
         return
 
+    retain_collected_pcie(host_data)
+
     if json_hcl is None:
         try:
             from vcf_hci.hcl import load_vsan_hcl_json
@@ -746,6 +759,19 @@ def _enrich_single_host(
         elif _model_up.startswith(("MZ31", "MZ32", "MZ71", "MZ72")):
             vendor = "Gigabyte"
             system["vendor"] = "Gigabyte"
+
+    # Blade / modular server detection enrichment
+    model_str = str(model or "").lower()
+    if not system.get("is_blade"):
+        if any(k in model_str for k in ("ucsb", "ucsx", "e910", "blade", "sled")):
+            system["is_blade"] = True
+    if system.get("is_blade") and not system.get("chassis_label"):
+        if "ucsb" in model_str:
+            system["chassis_label"] = f"Cisco UCS B-Series Blade ({model})"
+        elif "ucsx" in model_str:
+            system["chassis_label"] = f"Cisco UCS X-Series Compute Node ({model})"
+        else:
+            system["chassis_label"] = f"Blade Server ({model})"
 
     bios_version = str(system.get("bios_version") or "Unknown")
     bios_date = str(system.get("bios_release_date") or "")
@@ -964,9 +990,44 @@ def _enrich_single_host(
     net_adapters = host_data.get("network_adapters")
     if isinstance(net_adapters, list):
         io_catalog = None
+        deduped_adapters = []
+        seen_adapter_bases = {}
         for nic in net_adapters:
             if not isinstance(nic, dict):
                 continue
+            nid = str(nic.get("id") or "")
+            base_id = nid.split("_")[0] if any(k in nid.upper() for k in ("UCSB-MLOM", "UCSC-MLOM", "UCSB-VIC", "UCSC-VIC", "UCSX-MLOM", "UCSX-VIC", "UCSX-V4", "UCSX-V5")) else nid
+            if base_id in seen_adapter_bases:
+                prev = seen_adapter_bases[base_id]
+                if (not prev.get("part_number") or prev.get("part_number") in ("N/A", "Unknown", "")) and nic.get("part_number") not in ("N/A", "Unknown", "", None):
+                    prev["part_number"] = nic["part_number"]
+                if (not prev.get("manufacturer") or str(prev.get("manufacturer")).lower() in ("unknown", "n/a", "", "none")) and nic.get("manufacturer") not in ("Unknown", "N/A", "", None):
+                    prev["manufacturer"] = nic["manufacturer"]
+                continue
+            seen_adapter_bases[base_id] = nic
+            deduped_adapters.append(nic)
+        net_adapters = deduped_adapters
+        host_data["network_adapters"] = deduped_adapters
+
+        for nic in net_adapters:
+            if not isinstance(nic, dict):
+                continue
+            if not nic.get("is_cna"):
+                cna_info = classify_cna_adapter(
+                    str(nic.get("name") or ""),
+                    str(nic.get("manufacturer") or ""),
+                    str(nic.get("model") or ""),
+                    str(nic.get("part_number") or ""),
+                    adapter_id=str(nic.get("id") or ""),
+                )
+                if cna_info.get("is_cna"):
+                    nic["is_cna"] = True
+                    nic["is_vic"] = cna_info.get("is_vic", False)
+                    nic["cna_family"] = cna_info.get("cna_family", "")
+                    nic["cna_family_label"] = cna_info.get("family_label", "")
+                    nic["cna_eth_driver"] = cna_info.get("eth_driver", "")
+                    nic["cna_fc_driver"] = cna_info.get("fc_driver", "")
+
             if nic.get("is_cna"):
                 nic_name = str(nic.get("name") or nic.get("id") or "")
                 eth_drv = str(nic.get("cna_eth_driver") or "")
@@ -982,6 +1043,8 @@ def _enrich_single_host(
                     nic,
                     str(nic.get("name") or ""),
                 )
+            else:
+                nic["manufacturer"] = normalize_component_manufacturer(nic.get("manufacturer"))
 
             # Normalize and resolve PCI IDs
             vid = normalize_pci_id(nic.get("vendor_id") or "")
@@ -1044,13 +1107,34 @@ def _enrich_single_host(
 
             if isinstance(dev, dict):
                 matched_model = dev.get("model") or ""
-                if is_generic_name(nic.get("name")) and matched_model:
+                cur_pn = str(nic.get("part_number") or "").strip()
+                if not cur_pn and is_raw_part_number(nic.get("model")):
+                    cur_pn = str(nic.get("model")).strip()
+
+                # Prefer canonical IO catalog marketing title when available
+                if pci_quad or dev.get("io_product_id"):
+                    if io_catalog is None:
+                        try:
+                            from vcf_hci.hcl.loader import load_io_nics_catalog
+                            io_catalog = load_io_nics_catalog()
+                        except Exception:
+                            io_catalog = {}
+                    io_dev = io_catalog.get("quads", {}).get(pci_quad) if pci_quad else None
+                    if not io_dev and dev.get("io_product_id"):
+                        io_dev = (io_catalog.get("pids") or {}).get(str(dev["io_product_id"]))
+                    if isinstance(io_dev, dict) and io_dev.get("model"):
+                        matched_model = io_dev["model"]
+
+                cur_pn = str(nic.get("part_number") or "").strip()
+                if is_unfriendly_nic_name(nic.get("name"), cur_pn) and matched_model:
                     nic["name"] = matched_model
-                if not nic.get("model") or is_generic_name(nic.get("model")):
+                if not nic.get("model") or is_unfriendly_nic_name(nic.get("model"), cur_pn):
                     if matched_model:
                         nic["model"] = matched_model
                 if (not nic.get("manufacturer") or str(nic.get("manufacturer")).lower() in ("unknown", "n/a", "none", "", "null")) and dev.get("brand_name"):
-                    nic["manufacturer"] = dev.get("brand_name")
+                    nic["manufacturer"] = normalize_component_manufacturer(dev.get("brand_name"))
+                if nic.get("manufacturer"):
+                    nic["manufacturer"] = normalize_component_manufacturer(nic.get("manufacturer"))
                 if dev.get("product_id") and not nic.get("product_id"):
                     nic["product_id"] = str(dev["product_id"])
                 if dev.get("io_product_id") and not nic.get("io_product_id"):
@@ -1067,8 +1151,54 @@ def _enrich_single_host(
                     except Exception:
                         pass
 
+            # Fallback if name is still generic/unfriendly but model or part number is present
+            cur_pn = str(nic.get("part_number") or "").strip()
+            if is_unfriendly_nic_name(nic.get("name"), cur_pn):
+                cand_m = str(nic.get("model") or "").strip()
+                if cand_m and not is_unfriendly_nic_name(cand_m, cur_pn):
+                    nic["name"] = cand_m
+                elif cur_pn and not is_generic_name(cur_pn):
+                    if not nic.get("name"):
+                        nic["name"] = cur_pn
+
+            # Sanitize reseller OEM marketing suffixes if host OEM differs
+            sys_mfr = (host_data.get("system") or {}).get("manufacturer") or ""
+            if nic.get("name"):
+                nic["name"] = clean_oem_adapter_title(
+                    nic["name"],
+                    host_mfg=sys_mfr,
+                    adapter_mfg=nic.get("manufacturer", ""),
+                    part_number=str(nic.get("part_number") or ""),
+                )
+
             # Check if adapter or all its ports have 0/None speed
             ports = nic.get("ports") or []
+            if not ports and (nic.get("is_cna") or nic.get("is_vic") or nic.get("cna_family") == "cisco_vic" or "MLOM" in str(nic.get("id", "")).upper()):
+                eff_spd = float(nic.get("speed_gbps") or 0.0)
+                if eff_spd <= 0:
+                    cand_text = f"{nic.get('name', '')} {nic.get('model', '')} {nic.get('id', '')}"
+                    m_speeds = re.findall(r"\b(400|200|100|50|40|25|10|1)\s*(?:G(?:bE|b|E)?|Gigabit)\b", cand_text, re.IGNORECASE)
+                    if m_speeds:
+                        eff_spd = max(float(x) for x in m_speeds)
+                if eff_spd > 0:
+                    val = int(eff_spd) if eff_spd == int(eff_spd) else round(eff_spd, 2)
+                    nic["speed_gbps"] = val
+                    synth_port = {
+                        "port_id": 1,
+                        "link_status": "Up",
+                        "link_reported": True,
+                        "speed_source": "VIC Fabric Link",
+                        "current_speed_gbps": val,
+                        "mac_address": "",
+                        "transceiver_identifier": "Chassis Fabric Backplane",
+                        "transceiver_interface": "Internal KR/CR Fabric",
+                        "transceiver_vendor": "Cisco",
+                        "transceiver_part_number": nic.get("part_number") or "",
+                        "transceiver_serial": "",
+                    }
+                    nic["ports"] = [synth_port]
+                    ports = nic["ports"]
+
             max_port_speed = max((float(p.get("current_speed_gbps") or p.get("speed_gbps") or 0) for p in ports if isinstance(p, dict)), default=0.0)
             nic_speed = float(nic.get("speed_gbps") or 0.0)
 
@@ -1169,6 +1299,8 @@ def _enrich_single_host(
         for hba in fc_hbas:
             if not isinstance(hba, dict):
                 continue
+            if hba.get("manufacturer"):
+                hba["manufacturer"] = normalize_component_manufacturer(hba.get("manufacturer"))
             link_health = evaluate_pcie_link_health(hba)
             if link_health.get("degraded"):
                 finding = link_health["finding"]
@@ -1362,6 +1494,17 @@ def _enrich_single_host(
                                     except Exception as exc:
                                         logger.debug("Failed evaluating drive firmware for %s: %s", d_model, exc)
 
+                            if drive.get("populated", True) and not drive.get("is_boot") and drive.get("category") != "Boot Device":
+                                try:
+                                    eval_hcl = evaluate_drive_hcl_tier(drive, json_hcl=json_hcl)
+                                    drive["category"] = eval_hcl["category"]
+                                    drive["status_badge"] = eval_hcl["status_badge"]
+                                    drive["hcl_str"] = eval_hcl["hcl_str"]
+                                    if "vsan_eligible" not in drive:
+                                        drive["vsan_eligible"] = eval_hcl["vsan_eligible"]
+                                except Exception as exc:
+                                    logger.debug("Failed evaluating drive HCL tier for %s: %s", d_model, exc)
+
     # 9. BMC Security Audit Evaluation
     try:
         # Preserve existing bmc_security_config for backward compatibility
@@ -1526,16 +1669,18 @@ def _enrich_single_host(
             from vcf_hci.collector.oem.cisco import normalize_cisco_bios_attributes
             norm_attrs = normalize_cisco_bios_attributes(
                 raw_attrs,
-                fallback_boot_mode=system.get("raw_boot_mode") or system.get("boot_mode"),
+                fallback_boot_mode=system.get("boot_mode") or system.get("raw_boot_mode"),
             )
             bios_checks["normalized_attributes"] = norm_attrs
         bios_checks["attributes"] = raw_attrs
         merged_attrs = dict(raw_attrs)
         merged_attrs.update(norm_attrs)
-        if "BootMode" not in merged_attrs:
-            bm = system.get("raw_boot_mode") or system.get("boot_mode")
-            if bm:
+        if "BootMode" not in merged_attrs or str(merged_attrs.get("BootMode")).strip().lower() in ("unknown", "none", ""):
+            bm = system.get("boot_mode") or system.get("raw_boot_mode")
+            if bm and str(bm).strip().lower() not in ("unknown", "none", ""):
                 merged_attrs["BootMode"] = bm
+                if "normalized_attributes" in bios_checks:
+                    bios_checks["normalized_attributes"]["BootMode"] = bm
 
         if "memory_ras" not in bios_checks and raw_attrs:
             from vcf_hci.bios.ras_modes import _detect_memory_ras_modes

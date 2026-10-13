@@ -10,6 +10,7 @@ from vcf_hci.constants import (
     VCF_PLANNING_WORKBOOK_URL,
     VCF_SIZER_URL,
 )
+from vcf_hci.gpu_label import short_gpu_model
 from vcf_hci.hcl import evaluate_drive_hcl_tier, load_optional_vsan_csv, load_vsan_hcl_json
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
@@ -68,7 +69,9 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             fleet_ram_gb += int(raw_mem.strip())
         for ctrl in data.get("storage_subsystem", []):
             for d in ctrl.get("drives", []):
-                if d.get("category") == "vSAN ESA/OSA NVMe":
+                proto = str(d.get("protocol", "")).upper()
+                is_nvme = "NVME" in proto or "PCI" in proto or d.get("category") in ("vSAN ESA/OSA NVMe", "Unverified NVMe")
+                if is_nvme and d.get("category") not in ("Unsupported Consumer SSD", "Boot Device", "Unsupported NVMe RAID", "Unsupported NVMe Tri-Mode"):
                     d_cap = d.get("capacity_gb")
                     if isinstance(d_cap, (int, float)) and d_cap > 0:
                         fleet_nvme_tb += d_cap / 1024
@@ -192,6 +195,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         drives = [d for ctrl in data.get("storage_subsystem", []) for d in ctrl.get("drives", [])]
         nvme_direct = sum(1 for d in drives if d.get("category") == "vSAN ESA/OSA NVMe")
         sas_sata = sum(1 for d in drives if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA"))
+        osa_nvme_count = sum(1 for d in drives if d.get("category") == "vSAN OSA Only")
         vmd_on = (data.get("bios_checks") or {}).get("vmd_enabled_flag", False)
         trimode_nvme = sum(1 for d in drives if d.get("behind_trimode") or d.get("category") == "Unsupported NVMe Tri-Mode")
         raid_nvme = sum(1 for d in drives if d.get("category") == "Unsupported NVMe RAID" and not d.get("behind_trimode"))
@@ -207,6 +211,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             vmd_enabled=vmd_on,
             trimode_nvme_count=trimode_nvme,
             raid_nvme_count=raid_nvme,
+            osa_nvme_count=osa_nvme_count,
         )
         if "ESA Ready" in verdict:
             vsan_esa += 1
@@ -424,7 +429,13 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             return ""
         top_models = sorted(fp_dict.items(), key=lambda x: -x[1])
         total = sum(fp_dict.values())
-        model_str = ", ".join(f"{c}\u00d7 {m}" for m, c in top_models[:3])
+        # Aggregate by short token so "Intel Data Center GPU Flex 140" collapses to Flex 140
+        short_counts: dict = {}
+        for m, c in top_models:
+            tok = short_gpu_model(m) or m
+            short_counts[tok] = short_counts.get(tok, 0) + c
+        short_top = sorted(short_counts.items(), key=lambda x: -x[1])[:3]
+        model_str = ", ".join(f"{c}\u00d7 {m}" for m, c in short_top)
         return (
             f"<div style='padding:.3rem 0;border-bottom:1px solid var(--border,#e2e8f0);font-size:.84rem'>"
             f"<div style='display:flex;justify-content:space-between'>"
@@ -693,6 +704,12 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         <div class="tile">
           <h3>ToR Switch Fabric</h3>
           {sw_tile_content}
+          <div style="margin-top:.45rem">
+            <a href="#switch-fabric-topology" class="btn-link"
+               data-action="fleet-detail-view" data-fleet-view="topology"
+               style="font-size:.78rem;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:.25rem"
+               title="Jump to Fleet Top-of-Rack Switch Fabric &amp; Topology Matrix">View topology &rarr;</a>
+          </div>
         </div>
         """
     else:
@@ -866,6 +883,29 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         "    initHeadroom();\n"
         "  }\n"
         "})();\n"
+        # Hosts | Network Topology pane switcher (used by ToR tile + fleet detail segment)
+        "window.showFleetDetailView=function(name){\n"
+        "  var hosts=document.getElementById('fleet-detail-hosts');\n"
+        "  var topo=document.getElementById('fleet-detail-topology');\n"
+        "  if(!hosts&&!topo){return;}\n"
+        "  var showTopo=(name==='topology')&&!!topo;\n"
+        "  if(hosts){hosts.classList.toggle('active',!showTopo);}\n"
+        "  if(topo){topo.classList.toggle('active',showTopo);}\n"
+        "  document.querySelectorAll('.fleet-detail-seg button').forEach(function(b){\n"
+        "    b.classList.toggle('active',b.getAttribute('data-fleet-view')===(showTopo?'topology':'hosts'));\n"
+        "  });\n"
+        "  if(showTopo){\n"
+        "    var anchor=document.getElementById('switch-fabric-topology');\n"
+        "    if(anchor){try{anchor.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){anchor.scrollIntoView(true);}}\n"
+        "  }\n"
+        "};\n"
+        "document.addEventListener('click', function(e){\n"
+        "  var a = e.target && e.target.closest ? e.target.closest('[data-action=\"fleet-detail-view\"]') : null;\n"
+        "  if (a) {\n"
+        "    var view = a.getAttribute('data-fleet-view') || 'hosts';\n"
+        "    if (window.showFleetDetailView) { window.showFleetDetailView(view); }\n"
+        "  }\n"
+        "});\n"
     )
 
     return f"""<style>{_tile_css}</style>

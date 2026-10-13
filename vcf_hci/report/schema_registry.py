@@ -133,6 +133,7 @@ def _extract_vsan_verdict(data: Dict[str, Any]) -> str:
     all_drives = [d for ctrl in data.get("storage_subsystem", []) for d in ctrl.get("drives", [])]
     esa_count = sum(1 for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe")
     osa_count = sum(1 for d in all_drives if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA"))
+    osa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA Only")
     vmd_on = (data.get("bios_checks") or {}).get("vmd_enabled_flag", False)
     trimode_nvme = sum(1 for d in all_drives if d.get("behind_trimode") or d.get("category") == "Unsupported NVMe Tri-Mode")
     raid_nvme = sum(1 for d in all_drives if d.get("category") == "Unsupported NVMe RAID" and not d.get("behind_trimode"))
@@ -150,6 +151,7 @@ def _extract_vsan_verdict(data: Dict[str, Any]) -> str:
         trimode_nvme_count=trimode_nvme,
         raid_nvme_count=raid_nvme,
         software_raid_nvme_count=sw_raid_nvme,
+        osa_nvme_count=osa_nvme_count,
     )
     return strip_html(vsan_verdict)
 
@@ -393,6 +395,16 @@ def _extract_connected_ports(data: Dict[str, Any]) -> str:
 
 def _extract_tpm_version(data: Dict[str, Any]) -> str:
     si = data.get("system") or {}
+    interface = str(si.get("tpm_interface") or "").strip()
+    firmware = str(si.get("tpm_firmware") or "").strip()
+    state = str(si.get("tpm_state") or "").strip()
+    if interface or firmware:
+        parts = [interface or "TPM"]
+        if firmware:
+            parts.append(f"FW {firmware}")
+        if state:
+            parts.append(state)
+        return " ".join(parts)
     badge = strip_html(si.get("tpm_status_badge", ""))
     return badge or "Not Present"
 

@@ -6,6 +6,7 @@ Renders packed DOCS_DATA into a Clarity-styled interactive documentation portal.
 import json
 from typing import Dict
 
+from vcf_hci.branding import FAVICON_DATA_URI, render_nav_brand
 from vcf_hci.constants import TOOL_VERSION
 from vcf_hci.web.docs_css import DOCS_CSS
 from vcf_hci.web.docs_js import DOCS_JS
@@ -29,6 +30,7 @@ def build_docs_html(initial_doc_id: str = "readme", tool_version: str = TOOL_VER
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>VCF Readiness — Documentation &amp; Help</title>
+  <link rel="icon" type="image/svg+xml" href="{FAVICON_DATA_URI}">
   <link rel="stylesheet" href="/assets/clarity.css">
   <style>
 {DOCS_CSS}  </style>
@@ -36,7 +38,7 @@ def build_docs_html(initial_doc_id: str = "readme", tool_version: str = TOOL_VER
 <body>
 
 <header class="nav-header">
-  <span class="nav-brand">VCF Readiness Assessment — Documentation &amp; Help</span>
+  {render_nav_brand("Documentation &amp; Help")}
   <span class="nav-version">v{tool_version}</span>
   <a href="/" class="nav-btn">← Back to Scanner</a>
   <button class="nav-btn" id="themeToggle">🌙 Dark</button>

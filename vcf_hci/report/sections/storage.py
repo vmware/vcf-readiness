@@ -91,6 +91,7 @@ def render_vsan_esa_ready_node_cards(
     _rn_nic     = _nic_capable_gbps
     _rn_nvme    = esa_nvme_count
     _rn_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe") / 1000, 1)
+    osa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA Only")
 
     def _eval_rn_profile(profiles, top_note=""):
         _gaps: dict = {}
@@ -105,7 +106,8 @@ def render_vsan_esa_ready_node_cards(
                 _nic_disp = f"{_rn_nic} GbE" if _rn_nic else "unknown"
                 _fails.append(("NIC", _nic_disp, f"≥{_rp['nic_gbps']} GbE"))
             if _rn_nvme < _rp["nvme_count"]:
-                _fails.append(("NVMe drives", str(_rn_nvme), f"≥{_rp['nvme_count']}"))
+                _nvme_fail = f"{_rn_nvme} ({osa_nvme_count} OSA-only NVMe)" if (_rn_nvme == 0 and osa_nvme_count > 0) else str(_rn_nvme)
+                _fails.append(("NVMe drives", _nvme_fail, f"≥{_rp['nvme_count']}"))
             _gaps[_rp["name"]] = _fails
             if not _fails and _matched is None:
                 _matched = _rp
@@ -114,11 +116,12 @@ def render_vsan_esa_ready_node_cards(
         _mem_ok  = _rn_mem  >= _eval_p["memory_gb"]
         _nic_ok  = _rn_nic  >= _eval_p["nic_gbps"]
         _nvme_ok = _rn_nvme >= _eval_p["nvme_count"]
+        _nvme_label = f"{_rn_nvme} (found {osa_nvme_count} OSA-only NVMe)" if (_rn_nvme == 0 and osa_nvme_count > 0) else f"{_rn_nvme}"
         _checklist = (
             _rn_dim_row("🖥️", "CPU cores",    f"{_rn_cores or '?'} total",  f"≥{_eval_p['cpu_cores']}",   _cpu_ok)
             + _rn_dim_row("💾", "Memory",      f"{_rn_mem} GB",              f"≥{_eval_p['memory_gb']} GB", _mem_ok)
             + _rn_dim_row("🌐", "NIC speed",   f"{_rn_nic or '?'} GbE",     f"≥{_eval_p['nic_gbps']} GbE", _nic_ok)
-            + _rn_dim_row("💿", "NVMe drives", f"{_rn_nvme}" + (f" ({_rn_nvme_tb} TB)" if _rn_nvme_tb else ""), f"≥{_eval_p['nvme_count']}", _nvme_ok)
+            + _rn_dim_row("💿", "NVMe drives", _nvme_label + (f" ({_rn_nvme_tb} TB)" if _rn_nvme_tb else ""), f"≥{_eval_p['nvme_count']}", _nvme_ok)
         )
         if _matched:
             _idx = next(i for i, p in enumerate(profiles) if p["name"] == _matched["name"])
@@ -181,6 +184,7 @@ def render_vsan_esa_ready_node_cards(
     sas_sata_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA SAS/SATA")
     trimode_nvme_count = sum(1 for d in all_drives if d.get("behind_trimode") or d.get("category") == "Unsupported NVMe Tri-Mode")
     raid_nvme_count = sum(1 for d in all_drives if d.get("category") == "Unsupported NVMe RAID" and not d.get("behind_trimode"))
+    osa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA Only")
 
     vsan_verdict, vsan_detail = VCF9CompatibilityEngine.evaluate_vsan(
         esa_nvme_count,
@@ -189,6 +193,7 @@ def render_vsan_esa_ready_node_cards(
         vmd_enabled=vmd_enabled,
         trimode_nvme_count=trimode_nvme_count,
         raid_nvme_count=raid_nvme_count,
+        osa_nvme_count=osa_nvme_count,
     )
 
     if "ESA Ready" in vsan_verdict:
@@ -205,6 +210,9 @@ def render_vsan_esa_ready_node_cards(
         esa_subtext = vsan_detail
     elif "VMD Enabled" in vsan_verdict:
         esa_badge = '<span class="badge danger">🔴 NOT Supported (Intel VMD Enabled)</span>'
+        esa_subtext = vsan_detail
+    elif "vSAN OSA Eligible" in vsan_verdict:
+        esa_badge = '<span class="badge warning">🟡 vSAN OSA Eligible (Not ESA Certified)</span>'
         esa_subtext = vsan_detail
     else:
         esa_badge = '<span class="badge danger">🔴 NOT Supported</span>'
@@ -687,12 +695,22 @@ def render_storage_subsystem_section(
     )
     _stor_nvme_count = sum(1 for d in all_drives_flat if d.get("category") == "vSAN ESA/OSA NVMe")
     _stor_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in all_drives_flat if d.get("category") == "vSAN ESA/OSA NVMe") / 1000, 1)
-    _stor_badge_cls = "success" if _stor_nvme_count >= 2 else ("warning" if _stor_total_pop else "info")
-    _stor_badge_lbl = (
-        f"{_stor_total_pop} drive(s) &mdash; {_stor_nvme_count} NVMe ({_stor_nvme_tb} TB raw)"
-        if _stor_nvme_count
-        else ("Diskless Compute Node" if _is_diskless_detected else f"{_stor_total_pop} drive(s)")
-    )
+    _stor_osa_nvme_count = sum(1 for d in all_drives_flat if d.get("category") == "vSAN OSA Only")
+    _stor_osa_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in all_drives_flat if d.get("category") == "vSAN OSA Only") / 1000, 1)
+
+    if _stor_nvme_count >= 2:
+        _stor_badge_cls = "success"
+        _stor_badge_lbl = f"{_stor_total_pop} drive(s) &mdash; {_stor_nvme_count} NVMe ({_stor_nvme_tb} TB raw)"
+    elif _stor_osa_nvme_count >= 2:
+        _stor_badge_cls = "warning"
+        _stor_badge_lbl = f"{_stor_total_pop} drive(s) &mdash; {_stor_osa_nvme_count} NVMe OSA ({_stor_osa_nvme_tb} TB raw)"
+    else:
+        _stor_badge_cls = "warning" if _stor_total_pop else "info"
+        _stor_badge_lbl = (
+            f"{_stor_total_pop} drive(s) &mdash; {_stor_nvme_count} NVMe ({_stor_nvme_tb} TB raw)"
+            if _stor_nvme_count
+            else ("Diskless Compute Node" if _is_diskless_detected else f"{_stor_total_pop} drive(s)")
+        )
 
     fc_storage_callout = ""
     _fc_hbas = (data or {}).get("fc_hbas") or []

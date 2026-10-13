@@ -11,6 +11,7 @@ from typing import Dict, Optional, Tuple, Union
 
 from .collector.pci_utils import normalize_pci_id
 from .constants import BCG_BASE_URL
+from .gpu_label import short_gpu_model
 
 logger = logging.getLogger("vcf_assess")
 
@@ -1034,28 +1035,10 @@ class BCGLinkGenerator:
         """Build a BCG GPU/accelerator search URL with a short, targeted keyword.
 
         Raw model names from BMC firmware are often very long (e.g. "Intel Data Center GPU
-        Flex 140") and produce zero BCG results.  Extract only the meaningful model token.
-        Priority: NVIDIA card code → AMD MI code → Intel Flex/Gaudi code → 2-token fallback.
+        Flex 140") and produce zero BCG results.  Extract only the meaningful model token
+        via ``short_gpu_model`` (NVIDIA / AMD MI / Intel Flex-Gaudi / fallback).
         """
-        name = (gpu_model or "").strip()
-        # NVIDIA datacenter & consumer: H100, H200, A100, A40, A30, L40S, L4, T4, V100,
-        # RTX 4090, RTX 5090, etc.
-        m = re.search(
-            r'\b(H\d{3}[A-Z]?|A\d{2,3}[A-Z]?|L\d{2,3}[A-Z]?|V100|T4|RTX\s*\d{4}\s*[A-Za-z]*)\b',
-            name, re.I)
-        if m:
-            return f"{BCG_BASE_URL}&program=sptg&keyword={BCGLinkGenerator._enc(m.group(1).strip())}"
-        # AMD Instinct: MI300X, MI250X, MI210, MI100, etc.
-        m = re.search(r'\bMI\s*\d{3}[A-Z]?\b', name, re.I)
-        if m:
-            return f"{BCG_BASE_URL}&program=sptg&keyword={BCGLinkGenerator._enc(m.group(0).strip())}"
-        # Intel datacenter: Flex 140, Flex 170, Gaudi 2, Gaudi 3
-        m = re.search(r'\b(Flex\s*\d{3}|Gaudi\s*\d)\b', name, re.I)
-        if m:
-            return f"{BCG_BASE_URL}&program=sptg&keyword={BCGLinkGenerator._enc(m.group(1).strip())}"
-        # Fallback: first two tokens with more than 2 characters
-        tokens = [t for t in re.split(r'\s+', name) if len(t) > 2][:2]
-        kw = ' '.join(tokens) if tokens else name
+        kw = short_gpu_model(gpu_model) or (gpu_model or "").strip()
         return f"{BCG_BASE_URL}&program=sptg&keyword={BCGLinkGenerator._enc(kw)}"
 
     @staticmethod

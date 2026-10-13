@@ -335,6 +335,8 @@ def obfuscate_host_data(
         for part in nic.get("npar_partitions", []) or []:
             if part.get("mac_address"):
                 part["mac_address"] = mac(salt, part["mac_address"])
+            if part.get("permanent_mac_address"):
+                part["permanent_mac_address"] = mac(salt, part["permanent_mac_address"])
             if part.get("wwpn"):
                 part["wwpn"] = wwpn(salt, part["wwpn"])
             if part.get("wwnn"):
@@ -368,6 +370,42 @@ def obfuscate_host_data(
     for slot in d.get("pcie_slots", []):
         if slot.get("device_serial"):
             slot["device_serial"] = label(salt, "SN", slot["device_serial"])
+
+    psu_status = d.get("psu_status") or {}
+    if isinstance(psu_status, dict):
+        for psu in psu_status.get("psus") or []:
+            if not isinstance(psu, dict):
+                continue
+            for sn_key in ("serial_number", "spare_part_number", "asset_tag"):
+                if psu.get(sn_key):
+                    psu[sn_key] = label(salt, "SN" if "serial" in sn_key or "spare" in sn_key else "TAG", psu[sn_key])
+            if psu.get("part_number"):
+                psu["part_number"] = label(salt, "PN", psu["part_number"])
+
+    thermal = d.get("thermal_telemetry") or {}
+    if isinstance(thermal, dict):
+        seen_fans = set()
+        for fan in list(thermal.get("fans") or []) + list(thermal.get("fan_faults") or []):
+            if not isinstance(fan, dict) or id(fan) in seen_fans:
+                continue
+            seen_fans.add(id(fan))
+            if fan.get("serial_number"):
+                fan["serial_number"] = label(salt, "SN", fan["serial_number"])
+            if fan.get("spare_part_number"):
+                fan["spare_part_number"] = label(salt, "SN", fan["spare_part_number"])
+            if fan.get("part_number"):
+                fan["part_number"] = label(salt, "PN", fan["part_number"])
+
+    for assembly in d.get("assembly_inventory") or []:
+        if not isinstance(assembly, dict):
+            continue
+        for sn_key in ("serial_number", "spare_part_number"):
+            if assembly.get(sn_key):
+                assembly[sn_key] = label(salt, "SN", assembly[sn_key])
+        if assembly.get("part_number"):
+            assembly["part_number"] = label(salt, "PN", assembly["part_number"])
+        if assembly.get("sku"):
+            assembly["sku"] = label(salt, "SKU", assembly["sku"])
 
     # Memory subsystem & topology DIMM serial numbers
     mem_sub = d.get("memory_subsystem") or {}
@@ -411,8 +449,12 @@ def obfuscate_host_data(
     )
     real_tag_orig  = (data.get("system") or {}).get("asset_tag", "")
     for sel in d.get("sel_alarms", []) or []:
-        if isinstance(sel, dict) and sel.get("message"):
-            msg = str(sel["message"])
+        if not isinstance(sel, dict):
+            continue
+        for sel_field in ("message", "resolution"):
+            if not sel.get(sel_field):
+                continue
+            msg = str(sel[sel_field])
             if real_sn_orig and len(real_sn_orig) > 3:
                 msg = msg.replace(real_sn_orig, si["serial_number"])
             if real_host_orig and len(real_host_orig) > 3:
@@ -427,7 +469,7 @@ def obfuscate_host_data(
             for mac_val in set(mac_pattern.findall(msg)):
                 msg = msg.replace(mac_val, mac(salt, mac_val))
             msg = re.sub(r'[a-zA-Z0-9.-]+\.broadcom\.net', 'host.example.com', msg)
-            sel["message"] = msg
+            sel[sel_field] = msg
 
     # Hostname replacements in NIC names & descriptions and firmware inventory
     for nic in d.get("network_adapters", []) or []:

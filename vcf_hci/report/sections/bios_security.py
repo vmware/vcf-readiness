@@ -885,7 +885,7 @@ def render_security_card_and_accordion(
         _bmc_latency_note = f" &nbsp;<span class='badge warning' style='font-size:.75rem'>⚠️ API Latency/Timeouts — Recommend {_bmc_model_lbl} Upgrade{_latest_tag}</span>"
 
     _sec_rows = (
-        f"<tr><td><b>TPM 2.0</b></td><td>{_tpm_badge}</td>"
+        f"<tr><td><b>{_h(str(sys_info.get('tpm_interface') or 'TPM'))}</b></td><td>{_tpm_badge}</td>"
         f"<td style='font-size:.85rem;color:var(--text-muted)'>Required for vSphere 9.1 &amp; VCF security baselines</td></tr>"
         f"<tr><td><b>Secure Boot</b></td><td>{_sb_badge}</td>"
         f"<td style='font-size:.85rem;color:var(--text-muted)'>Recommended for VCF 9.1 hardening baseline</td></tr>"

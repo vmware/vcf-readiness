@@ -824,6 +824,7 @@ class StdlibHTTPConnectionPool:
         if self._closed:
             raise RuntimeError("Connection pool is closed")
 
+        method = str(method or "").upper()
         clean_path = url_or_path
         if clean_path.startswith("http://") or clean_path.startswith("https://"):
             parsed = urllib.parse.urlsplit(clean_path)
@@ -833,11 +834,26 @@ class StdlibHTTPConnectionPool:
         if not clean_path.startswith("/"):
             clean_path = f"/{clean_path}"
 
+        def _validate_read_only_request(request_method: str, request_path: str) -> None:
+            normalized_path = request_path.split("?", 1)[0].rstrip("/").lower()
+            is_session_create = normalized_path in {
+                "/redfish/v1/sessionservice/sessions",
+                "/redfish/v1/sessions",
+            }
+            if request_method not in {"GET", "HEAD", "OPTIONS"} and not (
+                request_method == "POST" and is_session_create
+            ):
+                raise ValueError(
+                    f"Connection pool blocked non-read BMC request: {request_method} {request_path}"
+                )
+
+        _validate_read_only_request(method, clean_path)
+
         req_headers: Dict[str, str] = {
             "Host": self.host if self.port in (80, 443) else f"{self.host}:{self.port}",
             "Accept": "application/json",
             "Connection": "keep-alive",
-            "User-Agent": "VCF-HCI-Readiness-Tool/9.9.1",
+            "User-Agent": "VCF-HCI-Readiness-Tool/9.9.2",
         }
         if headers:
             req_headers.update(headers)
@@ -855,6 +871,8 @@ class StdlibHTTPConnectionPool:
         curr_method = method
 
         for _redirect_step in range(max_redirects + 1):
+            _validate_read_only_request(curr_method, curr_path)
+
             max_retries = 2
             status = 0
             resp_headers: Dict[str, str] = {}

@@ -1,16 +1,18 @@
 # Software Bill of Materials (SBOM) — Customer Deliverables
 
-> **Product:** VCF / vSphere 9.1 HCI Readiness Assessment Tool (`vcf-readiness`)  
-> **Release Version:** v9.7.1  
-> **Generated Date:** 2026-09-27  
-> **Standards Compliance:** CycloneDX 1.5 JSON (`docs/sbom/cyclonedx-customer-v9.7.1.json`), SPDX 2.3 JSON (`docs/sbom/spdx-customer-v9.7.1.json`)  
+> **Product:** VCF / vSphere 9.1 HCI Readiness Assessment Tool (`vcf-readiness`)
+> **Runtime version in this checkout:** 9.9.2 (`vcf_hci/constants.py`)
+> **Historical inventory date:** 2026-09-27
+> **Companion JSON:** `docs/sbom/cyclonedx-customer-v9.7.1.json`, `docs/sbom/spdx-customer-v9.7.1.json`
 > **License:** CA, Inc. Software License Agreement (Broadcom)  
+
+This source checkout does not include prebuilt executables, a platform build script, an offline-package script, a `bin/` directory, a VCF Operations management pack, or a tracked SBOM generator. The JSON companions still identify v9.7.1 and are not rebuilt by a command in this tree. Run the application from source, as described in `README.md` and `docs/INSTALL.md`.
 
 ---
 
 ## 1. Executive Summary & Zero-Dependency Architectural Guarantee
 
-This document provides a comprehensive, transparent Software Bill of Materials (SBOM) for the standalone customer offline distribution (`Distribution-VCF-Readiness.zip`) and compiled multi-platform binaries.
+This document describes the source application in this checkout. It is not a manifest of downloadable release assets.
 
 ### Key Compliance Highlights:
 1. **Zero Runtime External Dependencies:**
@@ -20,10 +22,11 @@ This document provides a comprehensive, transparent Software Bill of Materials (
 2. **Zero External CDN / Web Dependencies:**
    - The embedded Web UI and all generated HTML reports operate **100% offline in air-gapped environments**.
    - All stylesheet assets (VMware Clarity Design System) and icons are pre-compiled and embedded directly as in-memory data constants.
-3. **Zero Cryptographic Non-Standard Ciphers:**
-   - The Credential Vault utilizes standard library primitives only (`hashlib`, `hmac`, PBKDF2-HMAC-SHA256 Encrypt-then-MAC) with zero proprietary or third-party binary encryption drivers.
-4. **Strict Isolation & Air-Gapped Safe:**
-   - The tool initiates outbound HTTPS connections **only** to the explicitly targeted BMC IP addresses provided by the operator (port 443). No outbound telemetry, update checks, or external analytics calls are made.
+3. **Credential vault cryptography:**
+   - The default vault mode uses standard-library primitives (`hashlib`, `hmac`, PBKDF2-HMAC-SHA256). An optional `crypto` extra can use `pycryptodomex` when that package is installed. It is not required to run a scan.
+4. **Default-offline operation:**
+   - Ordinary scans contact the BMC targets the operator selects and write reports locally. They do not send telemetry, update checks, or analytics.
+   - Public HCL download, Dell warranty lookup, external credential providers, and experimental jump-host SSH happen only after an explicit operator action. BMC HTTP on port 80 is accepted with a warning; it is not an HTTPS-only product.
 
 ---
 
@@ -33,16 +36,9 @@ The following table enumerates all first-party and bundled open-source component
 
 | Component Name | Version | Type | License | Supplier | Delivery / Inclusion Mechanism | Required / Optional |
 |---|---|---|---|---|---|---|
-| `vcf_hci` | `9.7.1` | application | LicenseRef-CA-Inc | Broadcom / CA, Inc. | Source package & compiled binaries | **Required** |
-| `@cds/core` | `5.7.0` | library | Apache-2.0 | VMware by Broadcom | In-memory CSS served by local Web UI (127.0.0.1:7182) and embedded in offline HTML reports | **Required** |
-| `vsan-hcl-dataset` | `9.1.0` | data | LicenseRef-Proprietary-Broadcom | Broadcom | Embedded JSON file and offline bundle archive in hcl/ | **Required** |
-| `pyinstaller-bootloader` | `6.11.0` | framework | GPL-2.0-only WITH Bootloader-exception | PyInstaller Development Team | Embedded in standalone platform executables (Mac/Win/Linux). Not used when running via Python source. | Optional |
-| `cpython-embedded-runtime` | `3.11.9` | operating-system-component | PSF-2.0 | Python Software Foundation | Self-extracting binary payload | Optional |
-| `openssl-c-library` | `3.0.13` | library | Apache-2.0 | OpenSSL Project | Binary runtime dependency of compiled executables | Optional |
-| `sqlite3-engine` | `3.45.1` | library | blessing | SQLite Consortium | Standard library module in Python and compiled binaries | Optional |
-| `zlib-compression` | `1.3.1` | library | Zlib | Jean-loup Gailly and Mark Adler | Standard library module in Python and compiled binaries | Optional |
-| `libffi` | `3.4.4` | library | MIT | Anthony Green and contributors | Embedded inside compiled binaries in bin/ | Optional |
-| `vcf-readiness-adapter` | `9.7.1` | application | MIT | Broadcom / VMware Community | Packaged .pak archive in integrations/vcf-ops/ | Optional |
+| `vcf_hci` | `9.9.2` | application | LicenseRef-CA-Inc | Broadcom / CA, Inc. | Python source in this checkout | **Required** |
+| `@cds/core` | `5.7.0` | library | Apache-2.0 | VMware by Broadcom | In-memory CSS in `vcf_hci/web/assets.py`, served by the local Web UI and embedded in offline HTML reports | **Required** |
+| `vsan-hcl-dataset` | packaged local data | data | LicenseRef-Proprietary-Broadcom | Broadcom | `vcf_hci/hcl/io_nics.json` plus any local HCL data the operator already has. A public download requires `--refresh-hcl` or `--bundle-hcl`. | **Required for HCL correlation** |
 
 ---
 
@@ -57,63 +53,46 @@ The following table enumerates all first-party and bundled open-source component
 - **Version:** 5.7.0
 - **License:** Apache-2.0
 - **Purpose:** Professional enterprise UI design system for the local browser interface (127.0.0.1:7182) and generated interactive fleet reports.
-- **Embedding Method:** Pre-bundled via `tools/bundle_assets.py` into `vcf_hci/web/assets.py` as a base64-encoded, gzip-compressed string constant. No Node.js or internet access is required.
+- **Embedding Method:** Already present in `vcf_hci/web/assets.py` as an in-memory stylesheet constant. This checkout does not include a script that rebuilds that module. No Node.js access is required to run the UI.
 
 ### 3.3. Broadcom vSAN Hardware Compatibility Dataset (`vsan-hcl-dataset`)
 - **Version:** 9.1.0
 - **License:** Broadcom Community / Proprietary Dataset
 - **Purpose:** Maps PCI Vendor ID, Device ID, Sub-Vendor ID, and Sub-Device ID to VMware Compatibility Guide (VCG / BCG) records for network interfaces, NVMe drives, and storage controllers.
-- **Delivery:** Packaged offline inside `vcf_hci/io_nics.json` and `hcl/vcf_hcl_bundle_latest.zip`.
+- **Delivery:** Local catalog data in `vcf_hci/hcl/io_nics.json`. Operators can import an approved offline bundle with `--import-hcl`. This checkout does not contain a prebuilt HCL zip.
 
-### 3.4. PyInstaller Bootloader & Bundled Binaries (`bin/`)
-- **License:** GPL-2.0-only WITH Bootloader-exception
-- **Exception Clause:** The PyInstaller Bootloader exception explicitly permits the creation and distribution of standalone executables containing proprietary, commercial, or non-GPL software without triggering copyleft requirements on the packaged application code.
-- **Purpose:** Optional convenience executables (`VCF-Readiness-Web-mac`, `VCF-Readiness-Web.exe`, `vcf-assess`) for operators without a local Python runtime.
-- **Contained Runtimes:** Statically bundles CPython 3.11+, OpenSSL 3.0+ (Apache-2.0), SQLite3 (Public Domain), zlib (Zlib), and libffi (MIT).
+### 3.4. What this checkout does not ship
 
-### 3.5. VMware VCF Operations Management Pack (`integrations/vcf-ops/`)
-- **Version:** 9.7.1
-- **License:** Community Tooling License (`management_pack/eula.txt`)
-- **Purpose:** Optional adapter for VMware Aria Operations / VCF Operations 9.1 integration. Deploys via `.pak` archive to ingest readiness metrics directly into enterprise dashboards.
+There is no compiled executable, PyInstaller payload, management-pack archive, or helper script directory in this tree. The only supported launch path is the Python source documented in `README.md`.
 
 ---
 
-## 4. Master Offline Distribution Zip Contents (`Distribution-VCF-Readiness.zip`)
+## 4. Source tree you can run
 
-When built using `./build_offline_package.sh`, the master distribution package contains strictly the following vetted assets:
+Use the files that are actually in the checkout:
 
-| Directory / File | Description & Purpose |
+| Path | Role |
 |---|---|
-| `00_HOWTOLAUNCH.TXT` | Quick-start guide with zero-dependency launch commands for Mac, Linux, and Windows. |
-| `README.md` | Comprehensive user guide covering Web UI, CLI, BMC security baseline, and ESA requirements. |
-| `INSTALL.md` | Deployment prerequisites, Python installation instructions, and network firewall requirements. |
-| `ARCHITECTURE.md` | Four-layer architectural blueprint (Collector, Enrichment, BCG Links, UI/Reporting). |
-| `CHANGELOG.md` | Complete version history, feature release notes, and compatibility updates. |
-| `LICENSE.md` | Software License Agreement (Broadcom / CA, Inc.). |
-| `NOTICE` | Official Broadcom subcomponents and third-party license notice. |
-| `THIRD_PARTY_LICENSES.md` | Notices and license texts for bundled third-party open-source components (Clarity Apache-2.0, OpenSSL, CPython, libffi, zlib). |
-| `CONTRIBUTING.md` | Guidelines for testing, code formatting, and OEM extension development. |
-| `pyproject.toml` | Project metadata, PEP 517 build configuration, and zero-dependency declarations. |
-| `vcfr_web.py / redfish_web.py` | Local Web Browser UI launcher (starts lightweight HTTP server on 127.0.0.1:7182). |
-| `vcfr_collector.py / redfish_collector.py` | Command-line interface entry points for multi-host batch assessments. |
-| `build-web.sh / build-web.bat` | Local platform binary compilation scripts for Mac/Linux and Windows. |
-| `bin/` | Staged single latest compiled standalone platform executables (no Python installation required). |
-| `vcf_hci/` | Core application Python package (100% standard library, zero external pip dependencies). |
-| `docs/` | Customer-facing documentation whitelist (guides, OEM reference, security architecture, SBOM). |
-| `scripts/` | Customer-facing helper and execution wrapper scripts. |
-| `tools/` | Customer-facing build utilities (build_management_pack.py, clean_build_artifacts.py, etc.). |
-| `hcl/` | Offline Broadcom vSAN HCL database extracts and bundle archives. |
-| `integrations/vcf-ops/` | VMware VCF Operations 9.1 Management Pack (.pak) and installation documentation. |
+| `00_HOWTOLAUNCH.TXT` | Short source launch card |
+| `README.md` | Beginner guide |
+| `docs/INSTALL.md` | Source install, headless use, and explicit offline HCL workflow |
+| `ARCHITECTURE.md` | Runtime, remote, and security flows |
+| `vcfr_web.py` | Local web UI launcher |
+| `vcfr_collector.py` | Command-line collector |
+| `vcf_hci/` | Application package |
+| `docs/` | Longer guides |
+| `tools/check_data_hygiene.py` | Contributor data-hygiene check |
+| `tools/bundle_docs.py` | Deterministic help-bundle generator |
 
 ---
 
 ## 5. Vulnerability & Risk Management Statements
 
 - **CVE Risk Surface:** Because runtime Python dependencies are zero, this application is immune to dependency confusion attacks, malicious PyPI package takeovers, or unvetted transitive wheel vulnerabilities.
-- **Network Exposure:** The Web UI listens strictly on `127.0.0.1` (loopback only) by default, preventing unauthorized LAN access.
+- **Network Exposure:** The Web UI binds to loopback by default. A non-loopback listener requires an explicit allow flag and TLS material, and it disables vault and jump-host features.
 - **SSL Verification:** Uses `ssl.CERT_NONE` by default for BMC HTTPS queries because enterprise BMCs frequently utilize self-signed internal certificates. Operator credentials remain encrypted in transit over TLS.
 - **Reporting:** Standalone reports are self-contained single HTML files with zero external tracking pixels, external scripts, or external font stylesheets.
 
 ---
 
-*Document generated automatically by `tools/generate_sboms.py` on 2026-09-27.*
+*Maintained with the source tree. The JSON files under `docs/sbom/` are historical companions and are not rebuilt by a command in this checkout.*

@@ -610,7 +610,16 @@ def redfish_get(
 
             is_expired_p1 = getattr(collector, "_phase1_expired", False) and getattr(_thread_local, "is_phase1", False)
             is_expired_p2 = getattr(collector, "_phase2_expired", False) and getattr(_thread_local, "is_phase2", False)
-            is_non_critical = not critical or any(nc in url for nc in ("/TelemetryService", "/MetricReports"))
+            # Optional/slow FW members (e.g. CPLD_Backplane) must not drive BMC-death streak.
+            is_optional_fw = any(
+                frag in url
+                for frag in ("CPLD_Backplane", "/FirmwareInventory/Staging_", "/FirmwareInventory/Capsule_")
+            )
+            is_non_critical = (
+                not critical
+                or is_optional_fw
+                or any(nc in url for nc in ("/TelemetryService", "/MetricReports"))
+            )
             if "/TelemetryService" in url:
                 collector._telemetry_service_supported = False
             if not is_expired_p1 and not is_expired_p2 and not is_non_critical:
@@ -628,6 +637,9 @@ def redfish_get(
                     collector._total_timeouts_encountered = getattr(collector, "_total_timeouts_encountered", 0) + 1
                     consec = getattr(collector, "_consecutive_timeouts", 0)
             logger.debug(f"Timeout querying {url} (consecutive timeouts: {consec}): {e}")
+            # Optional FW: single attempt only (no timeout retry).
+            if is_optional_fw:
+                return None
             if attempt < max_attempts - 1 and consec < 5 and not (callable(is_cancelled_fn) and is_cancelled_fn()) and not is_non_critical:
                 logger.debug(f"Retrying GET {url} after timeout...")
                 if "handshake" in str(e).lower() or "ssl" in str(e).lower():

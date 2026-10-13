@@ -4,7 +4,9 @@ import os
 import re
 from typing import Optional
 
+from vcf_hci.branding import FAVICON_DATA_URI, MARK_SVG
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
+from vcf_hci.gpu_label import format_gpu_count_label
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
@@ -145,6 +147,7 @@ def generate_summary_html(
         all_drives = [d for ctrl in data.get("storage_subsystem", []) for d in ctrl.get("drives", [])]
         esa_count = sum(1 for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe")
         osa_count = sum(1 for d in all_drives if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA"))
+        osa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA Only")
         verdict = cpu_info.get("verdict", "")
         if "Unsupported" in verdict:
             cpu_td = "<span class='badge danger'>🔴 Unsupported</span>"
@@ -185,6 +188,7 @@ def generate_summary_html(
             vmd_enabled=vmd_on,
             trimode_nvme_count=trimode_nvme,
             raid_nvme_count=raid_nvme,
+            osa_nvme_count=osa_nvme_count,
         )
         if "ESA Ready" in vsan_verdict:
             esa_td = f"<span class='badge success'>🟢 ESA Ready</span> <small style='color:#64748b'>{esa_count} NVMe</small>"
@@ -195,6 +199,8 @@ def generate_summary_html(
                 _subtext = f"{esa_count} ESA + {osa_count} OSA"
             elif esa_count > 0:
                 _subtext = f"{esa_count} NVMe"
+            elif osa_nvme_count > 0:
+                _subtext = f"{osa_nvme_count} NVMe (OSA Only)"
             else:
                 _subtext = f"{osa_count} drives"
             _title_attr = f" title='{_h(vsan_detail)}'" if vsan_detail else ""
@@ -245,7 +251,7 @@ def generate_summary_html(
                 _counted[_key_g] = _counted.get(_key_g, 0) + 1
             for _k, _c in sorted(_counted.items(), key=lambda x: -x[1])[:3]:
                 _vl, _ml = _k.split(":", 1)
-                _gpu_parts.append(f"{_c}\u00d7 {_vl} {_ml}" if _vl != "GPU" else f"{_c}\u00d7 {_ml}")
+                _gpu_parts.append(format_gpu_count_label(_c, _vl, _ml))
             gpu_td = "\U0001f7e3 " + "; ".join(_gpu_parts)
         else:
             gpu_td = "—"
@@ -407,17 +413,31 @@ def generate_summary_html(
     )
 
     os_th_cell = '<th title="Click to sort">Host OS<span class="sort-ind">⇅</span></th>\n    ' if has_any_host_os else ""
+    has_topology = bool(switch_matrix_block and switch_matrix_block.strip())
+    fleet_detail_seg = (
+        '<div class="fleet-detail-seg" role="tablist" aria-label="Fleet detail view">'
+        '<button type="button" class="active" data-action="fleet-detail-view" data-fleet-view="hosts">Hosts</button>'
+        '<button type="button" data-action="fleet-detail-view" data-fleet-view="topology">Network Topology</button>'
+        "</div>"
+    ) if has_topology else ""
+    hosts_pane_open = ' class="fleet-detail-pane active" id="fleet-detail-hosts"' if has_topology else ' id="fleet-detail-hosts"'
+    topology_pane = (
+        f'<div class="fleet-detail-pane" id="fleet-detail-topology">{switch_matrix_block}</div>'
+        if has_topology
+        else switch_matrix_block
+    )
     html_content = f"""<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>VCF Readiness \u2014 Fleet Health Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="{FAVICON_DATA_URI}">
   <style>{_page_css}</style>
 </head>
 <body>
 <div class="container">
 {_obf_banner_sum}
-<h1>VCF / vSphere 9.1 Readiness \u2014 Fleet Health Dashboard</h1>
+<h1 style="display:flex;align-items:center">{MARK_SVG}VCF / vSphere 9.1 Readiness \u2014 Fleet Health Dashboard</h1>
 <p style="color:#64748b">
   {host_count} host(s) assessed &mdash; click a hostname to open the full per-host report.
   &nbsp;&nbsp;
@@ -430,7 +450,9 @@ def generate_summary_html(
 <h2>Fleet Health Tiles</h2>
 {tiles_block}
 
-<h2>Per-Host Assessment Table</h2>
+{fleet_detail_seg}
+<div{hosts_pane_open}>
+<h2 id="fleet-per-host-table">Per-Host Assessment Table</h2>
 <div id="table-controls" style="display:flex;gap:1.25rem;align-items:center;margin:.5rem 0 .75rem;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.6rem 1rem;font-size:.87rem">
   <label style="display:flex;align-items:center;gap:.45rem;font-weight:600;color:var(--text-muted)">
     OEM Filter:
@@ -461,8 +483,9 @@ def generate_summary_html(
   </tr></thead>
   <tbody>{rows}</tbody>
 </table>
-{switch_matrix_block}
 {failed_table_html}
+</div>
+{topology_pane}
 
 </div>
 <script>

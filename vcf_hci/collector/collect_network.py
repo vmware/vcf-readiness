@@ -65,7 +65,7 @@ from vcf_hci.collector.pci_utils import (
     normalize_pci_id,
     pcie_has_fc_candidates,
 )
-from vcf_hci.constants import is_generic_name
+from vcf_hci.constants import is_generic_name, normalize_component_manufacturer
 from vcf_hci.logging_utils import get_nested
 
 _STORAGE_ARRAY_OUI_TABLE = [
@@ -143,6 +143,11 @@ def _evaluate_npar_partitions(partitions: list, port_count: int = 1, is_vic: boo
         if spd > 0.0 and spd not in standard_speeds:
             return True
 
+    # Count distinct partition IDs
+    unique_pids = {str(p.get("partition_id") or "").strip() for p in partitions if str(p.get("partition_id") or "").strip()}
+    if len(unique_pids) < 2:
+        return False
+
     # Group partitions by physical port identifier
     port_map = {}
     port_distinct_nums = {}
@@ -155,7 +160,7 @@ def _evaluate_npar_partitions(partitions: list, port_count: int = 1, is_vic: boo
         p_port = str(p.get("physical_port") or p.get("physical_port_assignment") or "").strip()
         if p_port:
             phys_port = p_port.split("/")[-1].upper()
-            part_num = pid
+            part_num = "1"
         else:
             # Match standard vendor partition schemes:
             # Dell: NIC.Slot.2-1-1 -> port "NIC.Slot.2-1", part "1"
@@ -193,12 +198,16 @@ def _evaluate_npar_partitions(partitions: list, port_count: int = 1, is_vic: boo
             bw = pdata.get("allocated_pct")
             if bw is not None:
                 try:
-                    if 0 < float(bw) < 100 and (len(port_distinct_ids.get(phys_port, set())) > 1 or len(partitions) > port_count):
+                    if 0 < float(bw) < 100 and (len(port_distinct_ids.get(phys_port, set())) > 1 or len(unique_pids) > port_count):
                         return True
                 except (ValueError, TypeError):
                     pass
 
-    return False
+    return bool(
+        port_count > 0
+        and len(unique_pids) > port_count
+        and len(port_distinct_ids) <= port_count
+    )
 
 
 def lookup_storage_array_vendor(wwpn: str) -> dict:
@@ -223,29 +232,81 @@ def lookup_storage_array_vendor(wwpn: str) -> dict:
     }
 
 
-def classify_cna_adapter(name: str, manufacturer: str = "", model: str = "", part_number: str = "", net_dev_funcs: Optional[list] = None) -> dict:
+def parse_fc_netdev_function(fc: Optional[dict]) -> dict:
+    """Extract initiator WWPN/WWNN and SAN boot targets from a FibreChannel object.
+
+    Handles DMTF keys (WWNN, LUN) and Dell iDRAC aliases (LUNID; PermanentWWN*).
+    """
+    fc = fc or {}
+    fn_wwpn = str(fc.get("WWPN") or fc.get("PermanentWWPN") or "").strip()
+    fn_wwnn = str(
+        fc.get("WWNN") or fc.get("PermanentWWNN") or fc.get("WWN") or ""
+    ).strip()
+    boot_targets = []
+    for bt in (fc.get("BootTargets") or []):
+        if not isinstance(bt, dict):
+            continue
+        t_wwpn = str(bt.get("WWPN") or bt.get("TargetWWPN") or "").strip()
+        if not t_wwpn:
+            continue
+        arr_info = lookup_storage_array_vendor(t_wwpn)
+        lun_raw = bt.get("LUNID") or bt.get("LUN") or bt.get("BootLUN") or "0"
+        boot_targets.append({
+            "target_wwpn": t_wwpn,
+            "lun": str(lun_raw).strip(),
+            "priority": int(bt.get("BootPriority", 0) or 0),
+            "target_array_vendor": arr_info["vendor"],
+            "target_array_family": arr_info["family"],
+        })
+    return {
+        "wwpn": fn_wwpn,
+        "wwnn": fn_wwnn,
+        "boot_targets": boot_targets,
+    }
+
+
+def classify_cna_adapter(name: str, manufacturer: str = "", model: str = "", part_number: str = "", net_dev_funcs: Optional[list] = None, adapter_id: str = "") -> dict:
     """Detect if an adapter is a Converged Network Adapter (CNA) and classify its dual personas.
 
     Covers Cisco VIC (1200/1300/1400/1500), HPE FlexFabric (580/620/630/650),
     Marvell FastLinQ / QLogic 57810S/57840S, and Emulex OneConnect.
     """
-    s_comb = f"{name} {manufacturer} {model} {part_number}".strip()
+    s_comb = f"{name} {manufacturer} {model} {part_number} {adapter_id}".strip()
 
     # 1. Cisco VIC
     vic_match = re.search(r"\bVIC[-\s]?(\d{4,5}[A-Za-z0-9\-]*)", s_comb, re.I)
+    mlom_blade_match = re.search(r"\bUCS[BX]-(?:MLOM|VIC|V[45]|MEZZ)[-\s]?([A-Za-z0-9\-]+)", s_comb, re.I)
     is_cisco_vic = (
         bool(vic_match)
+        or bool(mlom_blade_match)
+        or "73-19235" in s_comb
+        or "73-16181" in s_comb
+        or "73-18341" in s_comb
+        or "73-14986" in s_comb
         or "cisco virtual interface card" in s_comb.lower()
         or ("cisco" in s_comb.lower() and "vic" in s_comb.lower())
         or ("cisco" in s_comb.lower() and any(f.get("Oem", {}).get("Cisco") for f in (net_dev_funcs or [])))
     )
     if is_cisco_vic:
         vic_num = vic_match.group(1) if vic_match else ""
+        if not vic_num:
+            if "73-19235" in s_comb or "73-16181" in s_comb or re.search(r"\bUCSB-MLOM-40G-0[34]\b", s_comb, re.I):
+                vic_num = "1340"
+            elif "73-18341" in s_comb or re.search(r"\bUCSB-MLOM-100G\b", s_comb, re.I):
+                vic_num = "1440"
+            elif "73-14986" in s_comb or re.search(r"\bUCSB-MLOM-40G-01\b", s_comb, re.I):
+                vic_num = "1240"
+            elif re.search(r"\bUCSX-V4-Q25G\b", s_comb, re.I):
+                vic_num = "14425"
+            elif re.search(r"\bUCSX-V5-Q50G\b", s_comb, re.I):
+                vic_num = "15428"
+            elif mlom_blade_match:
+                vic_num = mlom_blade_match.group(1)
         return {
             "is_cna": True,
             "is_vic": True,
             "cna_family": "cisco_vic",
-            "family_label": f"Cisco VIC {vic_num}".strip() or "Cisco Virtual Interface Card",
+            "family_label": f"Cisco VIC {vic_num}".strip() if vic_num else "Cisco Virtual Interface Card",
             "eth_driver": "nenic",
             "fc_driver": "fnic",
             "protocols": ["Ethernet (vNIC)", "Fibre Channel / FCoE (vHBA)"],
@@ -360,6 +421,40 @@ def classify_cna_adapter(name: str, manufacturer: str = "", model: str = "", par
     }
 
 
+def link_fields_from_payload(payload: Any) -> dict:
+    """Copy permanent MAC, MTU, duplex, and autoneg already present on a port."""
+    if not isinstance(payload, dict):
+        return {}
+    ethernet = payload.get("Ethernet") if isinstance(payload.get("Ethernet"), dict) else {}
+    link_cfg = payload.get("LinkConfiguration") if isinstance(payload.get("LinkConfiguration"), dict) else {}
+    permanent = _clean_mac_address(
+        payload.get("PermanentMACAddress")
+        or ethernet.get("PermanentMACAddress")
+        or ""
+    )
+    mtu = payload.get("MTUSize")
+    if mtu in (None, ""):
+        mtu = ethernet.get("MTUSize")
+    duplex = payload.get("FullDuplex")
+    if duplex is None:
+        duplex = ethernet.get("FullDuplex")
+    autoneg = payload.get("AutoNeg")
+    if autoneg is None:
+        autoneg = link_cfg.get("AutoSpeedNegotiationEnabled")
+    if autoneg is None:
+        autoneg = ethernet.get("AutoNeg")
+    fields = {}
+    if permanent:
+        fields["permanent_mac_address"] = permanent
+    if mtu not in (None, "", 0):
+        fields["mtu"] = mtu
+    if isinstance(duplex, bool):
+        fields["full_duplex"] = duplex
+    if isinstance(autoneg, bool):
+        fields["auto_neg"] = autoneg
+    return fields
+
+
 def _clean_mac_address(mac_val: Any) -> str:
     s = str(mac_val or "").strip()
     if not s or s.upper() in ("N/A", "NONE", "UNKNOWN", "NULL", "00:00:00:00:00:00", "00-00-00-00-00-00", "0000.0000.0000"):
@@ -381,7 +476,7 @@ def infer_nic_manufacturer(raw_mfg: str, pci_info: Optional[dict] = None, adapte
     """Infer manufacturer when BMC returns 'Unknown', empty, or unhelpful string."""
     mfg = str(raw_mfg or "").strip()
     if mfg and mfg.lower() not in ("unknown", "n/a", "none", "", "null"):
-        return mfg
+        return normalize_component_manufacturer(mfg)
 
     pci = pci_info or {}
     vid = normalize_pci_id(pci.get("vendor_id", ""))
@@ -542,6 +637,11 @@ class _NetworkMixin(_CollectorBase):
             return 100.0
         if re.search(r"\b(?:ConnectX[-_]?4|CX[-_]?4)\b", search_str, re.IGNORECASE):
             return 25.0
+        # Supermicro/Nutanix NX NIC SKUs often omit Port MaxSpeedMbps
+        if re.search(r"\b(?:MCX631102|MCX631102AS|ConnectX[-_]?6\s*Lx)\b", search_str, re.IGNORECASE):
+            return 25.0
+        if re.search(r"\b(?:AOC-S25GC|AOC-ATG|AOC-A25G)\b", search_str, re.IGNORECASE):
+            return 25.0
         if re.search(r"\bE810\b", search_str, re.IGNORECASE):
             return 100.0
 
@@ -673,11 +773,17 @@ class _NetworkMixin(_CollectorBase):
                         "MLOM" in p_id_raw
                         or "MLOM" in p_name_raw
                         or "UCSC-M-" in p_id_raw
+                        or "UCSB-M" in p_id_raw
                         or p_nic.get("cna_family") == "cisco_vic"
                         or "VIC" in p_name_raw
                     )
-                    if is_mlom_adapter and (uid.upper().startswith("MLOM.") or uid.upper().startswith("MLOM-")):
-                        return p_id
+                    if is_mlom_adapter:
+                        uid_u = uid.upper()
+                        if uid_u.startswith(("MLOM.", "MLOM-", "UCSB-MLOM", "UCSC-MLOM", "UCSB-VIC", "UCSC-VIC", "UCSX-MLOM", "UCSX-VIC", "UCSX-V4", "UCSX-V5", "UCSX-MEZZ")):
+                            return p_id
+                        for sep in ("_", "-", "."):
+                            if p_id_raw.startswith(uid_u + sep) or uid_u.startswith(p_id_raw + sep):
+                                return p_id
 
             # 4. PCIe Device Link Correlation against existing adapters (for MLOM / VIC deduplication)
             if pcie_cache and nics:
@@ -847,7 +953,15 @@ class _NetworkMixin(_CollectorBase):
                     if uid in seen_ids:
                         continue
                     # Skip BMC virtual management NICs early
-                    if re.search(r"virtual(?:nic|ethernet)", str(uid), re.I) or re.search(r"virtual(?:nic|ethernet)", str(adapter.get("Name") or ""), re.I):
+                    if (
+                        re.search(r"virtual(?:nic|ethernet)", str(uid), re.I)
+                        or re.search(r"virtual(?:nic|ethernet)", str(adapter.get("Name") or ""), re.I)
+                        or str(uid).lower() in ("tomanager", "hostinterface", "usb0", "bmc_nic")
+                        or "tomanager" in str(adapter_uri).lower()
+                        or str(adapter.get("Name") or "").strip().lower() in ("host ethernet interface", "system ethernet interface")
+                        or get_nested(adapter, "Links", "HostInterface")
+                        or get_nested(adapter, "Oem", "Supermicro", "USBConnection")
+                    ):
                         continue
                     # Sub-interface / partition of a NetworkAdapter already captured
                     adapter_mac = _clean_mac_address(adapter.get("MACAddress"))
@@ -863,6 +977,8 @@ class _NetworkMixin(_CollectorBase):
                             if p_nic.get("id") == parent_uid:
                                 if p_nic.get("is_vic_virtual") or p_nic.get("cna_family") == "cisco_vic":
                                     logger.debug("Deduplicated duplicate logical interface %s on Cisco VIC %s", uid, parent_uid)
+                                    if (not p_nic.get("part_number") or p_nic.get("part_number") in ("N/A", "Unknown", "")) and adapter.get("PartNumber"):
+                                        p_nic["part_number"] = str(adapter.get("PartNumber")).strip()
                                     seen_ids.add(uid)
                                     break
                                 sub_speed = self._extract_nic_speed_gbps(adapter, adapter, "")
@@ -870,10 +986,16 @@ class _NetworkMixin(_CollectorBase):
                                 sub_mac = _clean_mac_address(adapter.get("MACAddress"))
                                 sub_parts_raw = p_nic.setdefault("npar_partitions", [])
                                 sub_parts = sub_parts_raw if isinstance(sub_parts_raw, list) else []
-                                # Deduplicate / merge by partition_id
+                                # Deduplicate / merge by partition_id or matching MAC address
                                 existing_part = None
                                 for sp in sub_parts:
-                                    if isinstance(sp, dict) and sp.get("partition_id") == uid:
+                                    if not isinstance(sp, dict):
+                                        continue
+                                    if sp.get("partition_id") == uid:
+                                        existing_part = sp
+                                        break
+                                    sp_mac = _clean_mac_address(sp.get("mac_address"))
+                                    if sub_mac and sp_mac and sp_mac.lower() == sub_mac.lower():
                                         existing_part = sp
                                         break
                                 if existing_part is not None:
@@ -884,12 +1006,25 @@ class _NetworkMixin(_CollectorBase):
                                     if sub_mac and not existing_part.get("mac_address"):
                                         existing_part["mac_address"] = sub_mac
                                 else:
-                                    sub_parts.append({
-                                        "partition_id": uid,
-                                        "speed_gbps": int(sub_speed) if sub_speed == int(sub_speed) else round(sub_speed, 2),
-                                        "link_status": sub_link,
-                                        "mac_address": sub_mac,
-                                    })
+                                    # Match against physical ports to avoid treating host OS interfaces as NPAR partitions
+                                    port_match = None
+                                    for pt in p_nic.get("ports") or []:
+                                        pt_mac = _clean_mac_address(pt.get("mac_address"))
+                                        if sub_mac and pt_mac and pt_mac.lower() == sub_mac.lower():
+                                            port_match = pt
+                                            break
+                                    if port_match:
+                                        if sub_speed > 0 and not port_match.get("current_speed_gbps"):
+                                            port_match["current_speed_gbps"] = int(sub_speed) if sub_speed == int(sub_speed) else round(sub_speed, 2)
+                                        if sub_link and sub_link != "Down" and port_match.get("link_status") in ("Down", None, ""):
+                                            port_match["link_status"] = sub_link
+                                    else:
+                                        sub_parts.append({
+                                            "partition_id": uid,
+                                            "speed_gbps": int(sub_speed) if sub_speed == int(sub_speed) else round(sub_speed, 2),
+                                            "link_status": sub_link,
+                                            "mac_address": sub_mac,
+                                        })
                                 p_ports = p_nic.get("ports")
                                 p_ports_len = len(p_ports) if isinstance(p_ports, (list, tuple)) else 0
                                 p_nic["is_npar"] = _evaluate_npar_partitions(sub_parts, p_ports_len)
@@ -1017,6 +1152,7 @@ class _NetworkMixin(_CollectorBase):
                         str(adapter.get("Manufacturer") or ""),
                         str(adapter.get("Model") or ""),
                         str(adapter.get("PartNumber") or ""),
+                        adapter_id=str(uid),
                     )
                     _name_fc_check = f"{resolved_name} {adapter.get('Name', '')} {adapter.get('Description', '')} {adapter.get('Model', '')} {adapter.get('Id', '')} {uid}".lower()
                     is_pure_fc = (
@@ -1151,29 +1287,39 @@ class _NetworkMixin(_CollectorBase):
                                     or port.get("PhysicalPortNumber")
                                     or idx
                                 )
-                                link_status_raw = str(port.get("LinkStatus") or "Down").strip()
+                                raw_link = port.get("LinkStatus")
+                                has_explicit_link = (
+                                    raw_link is not None and str(raw_link).strip() != ""
+                                ) or bool(port.get("CurrentSpeedGbps")) or bool(port.get("CurrentLinkSpeedMbps"))
+
+                                link_status_raw = str(raw_link or "Down").strip()
                                 link_status = (
                                     "Up" if link_status_raw.lower() in ("up", "linkup")
                                     else ("Down" if link_status_raw.lower() in ("down", "linkdown", "nolink", "no_link", "notconnected")
                                     else link_status_raw)
                                 )
-                                dynamic_ports.append({
+                                speed_source = "unreported" if not has_explicit_link else ("current_speed_gbps" if link_status == "Up" else "capability")
+                                port_record = {
                                     "port_id": port_id,
                                     "link_status": link_status,
                                     "current_speed_gbps": int(final_speed) if final_speed == int(final_speed) else round(final_speed, 2),
                                     "mac_address": port_mac,
-                                    "transceiver_identifier": t_info.get("identifier_type", "N/A"),
-                                    "transceiver_interface": t_info.get("interface_type", "N/A"),
-                                    "transceiver_vendor": t_info.get("vendor_name", "N/A"),
-                                    "transceiver_part_number": t_info.get("part_number", "N/A"),
-                                    "transceiver_serial": t_info.get("serial_number", "N/A"),
+                                    "link_reported": has_explicit_link,
+                                    "speed_source": speed_source,
+                                    "transceiver_identifier": t_info.get("identifier_type") or "",
+                                    "transceiver_interface": t_info.get("interface_type") or "",
+                                    "transceiver_vendor": t_info.get("vendor_name") or "",
+                                    "transceiver_part_number": t_info.get("part_number") or "",
+                                    "transceiver_serial": t_info.get("serial_number") or "",
                                     "rx_power_dbm": t_info.get("rx_power_dbm"),
                                     "tx_power_dbm": t_info.get("tx_power_dbm"),
                                     "temperature_c": t_info.get("temperature_c"),
                                     "transceiver_temperature_c": t_info.get("temperature_c"),
                                     "laser_bias_current_ma": t_info.get("laser_bias_current_ma"),
                                     "voltage_v": t_info.get("voltage_v"),
-                                })
+                                }
+                                port_record.update(link_fields_from_payload(port))
+                                dynamic_ports.append(port_record)
                             except Exception as p_exc:
                                 logger.debug("Error parsing NIC port detail: %s", p_exc)
 
@@ -1181,28 +1327,39 @@ class _NetworkMixin(_CollectorBase):
                     # These resources ARE a port: link status and speed live at the
                     # top level, not in a NetworkPorts sub-collection.
                     if is_eth_iface_ep and not dynamic_ports:
-                        link_status = adapter.get("LinkStatus") or ""
+                        raw_link = adapter.get("LinkStatus")
+                        has_explicit_link = raw_link is not None and str(raw_link).strip() != ""
+                        link_status = str(raw_link or "Down").strip()
+                        if link_status.lower() in ("up", "linkup"):
+                            link_status = "Up"
+                        elif link_status.lower() in ("down", "linkdown", "nolink", "no_link", "notconnected"):
+                            link_status = "Down"
                         final_speed = self._extract_nic_speed_gbps(adapter, adapter, resolved_name)
                         eth_mac = _clean_mac_address(adapter.get("MACAddress"))
                         if link_status or final_speed > 0 or eth_mac:
                             t_info = self.oem_port_transceiver(adapter) if hasattr(self, "oem_port_transceiver") else {}
-                            dynamic_ports.append({
+                            speed_source = "unreported" if not has_explicit_link else ("current_speed_gbps" if link_status == "Up" else "capability")
+                            eth_port = {
                                 "port_id": uid,
-                                "link_status": link_status or "Down",
+                                "link_status": link_status,
+                                "link_reported": has_explicit_link,
+                                "speed_source": speed_source,
                                 "current_speed_gbps": int(final_speed) if final_speed == int(final_speed) else round(final_speed, 2),
                                 "mac_address": eth_mac,
-                                "transceiver_identifier": t_info.get("identifier_type", "N/A"),
-                                "transceiver_interface": t_info.get("interface_type", "N/A"),
-                                "transceiver_vendor": t_info.get("vendor_name", "N/A"),
-                                "transceiver_part_number": t_info.get("part_number", "N/A"),
-                                "transceiver_serial": t_info.get("serial_number", "N/A"),
+                                "transceiver_identifier": t_info.get("identifier_type") or "",
+                                "transceiver_interface": t_info.get("interface_type") or "",
+                                "transceiver_vendor": t_info.get("vendor_name") or "",
+                                "transceiver_part_number": t_info.get("part_number") or "",
+                                "transceiver_serial": t_info.get("serial_number") or "",
                                 "rx_power_dbm": t_info.get("rx_power_dbm"),
                                 "tx_power_dbm": t_info.get("tx_power_dbm"),
                                 "temperature_c": t_info.get("temperature_c"),
                                 "transceiver_temperature_c": t_info.get("temperature_c"),
                                 "laser_bias_current_ma": t_info.get("laser_bias_current_ma"),
                                 "voltage_v": t_info.get("voltage_v"),
-                            })
+                            }
+                            eth_port.update(link_fields_from_payload(adapter))
+                            dynamic_ports.append(eth_port)
 
                     # ── Check NetworkDeviceFunctions for NPAR partitions & CNA functions ──
                     raw_ndf = (
@@ -1379,6 +1536,9 @@ class _NetworkMixin(_CollectorBase):
                                     "partition_id": fn_id,
                                     "protocol": fn_type or ("FibreChannel" if fc_blk else "Ethernet"),
                                     "mac_address": fn_mac,
+                                    "permanent_mac_address": _clean_mac_address(eth_blk.get("PermanentMACAddress")),
+                                    "full_duplex": eth_blk.get("FullDuplex") if isinstance(eth_blk.get("FullDuplex"), bool) else None,
+                                    "auto_neg": eth_blk.get("AutoNeg") if isinstance(eth_blk.get("AutoNeg"), bool) else None,
                                     "allocated_pct": fn_bw_pct,
                                     "speed_gbps": fn_speed_gbps,
                                     "physical_port": phys_port_ref,
@@ -1528,6 +1688,33 @@ class _NetworkMixin(_CollectorBase):
                     ):
                         logger.debug("Skipping pure Fibre Channel adapter %s from network_adapters list", uid)
                         continue
+
+                    # For Cisco VIC / MLOM blade adapters where physical ports are routed through
+                    # the chassis fabric midplane (omitted by CIMC Redfish NetworkPorts API):
+                    # synthesize an active fabric uplink port if adapter has rated speed and no ports.
+                    if not dynamic_ports and (cna_info.get("cna_family") == "cisco_vic" or is_vic or "MLOM" in str(uid).upper()):
+                        synth_speed = adapter_speed or 0
+                        if synth_speed <= 0:
+                            adp_spd = self._extract_nic_speed_gbps(adapter, adapter, resolved_name)
+                            if adp_spd > 0:
+                                synth_speed = int(adp_spd) if adp_spd == int(adp_spd) else round(adp_spd, 2)
+                        if synth_speed > 0:
+                            synth_port = {
+                                "port_id": 1,
+                                "link_status": "Up",
+                                "link_reported": True,
+                                "speed_source": "VIC Fabric Link",
+                                "current_speed_gbps": synth_speed,
+                                "mac_address": adapter_mac or "",
+                                "transceiver_identifier": "Chassis Fabric Backplane",
+                                "transceiver_interface": "Internal KR/CR Fabric",
+                                "transceiver_vendor": "Cisco",
+                                "transceiver_part_number": part_number if part_number not in ("N/A", "Unknown", "") else "",
+                                "transceiver_serial": "",
+                            }
+                            dynamic_ports.append(synth_port)
+                            if not adapter_speed:
+                                adapter_speed = synth_speed
 
                     nic_list.append({
                         "id": uid,
@@ -1897,7 +2084,9 @@ class _NetworkMixin(_CollectorBase):
 
                         port_entries.append({
                             "adapter_name":      resolved_hba_name,
-                            "manufacturer":      adapter.get("Manufacturer", "Unknown"),
+                            "manufacturer":      normalize_component_manufacturer(
+                                adapter.get("Manufacturer", "Unknown")
+                            ),
                             "firmware_version":  adapter_fw,
                             "vendor_class":      vendor_class,
                             "port_id":           port.get("Id", "Unknown"),
@@ -2013,23 +2202,12 @@ class _NetworkMixin(_CollectorBase):
                         continue
                     if not fc:
                         continue
-                    fn_wwpn = str(fc.get("WWPN") or "").strip()
-                    fn_wwnn = str(fc.get("WWN") or "").strip()
+                    _fc_id = parse_fc_netdev_function(fc)
+                    fn_wwpn = _fc_id["wwpn"]
+                    fn_wwnn = _fc_id["wwnn"]
                     if not _is_valid_wwpn(fn_wwpn):
                         continue
-                    boot_targets = []
-                    for bt in (fc.get("BootTargets") or []):
-                        t_wwpn = str(bt.get("WWPN") or bt.get("TargetWWPN") or "").strip()
-                        if not t_wwpn:
-                            continue
-                        arr_info = lookup_storage_array_vendor(t_wwpn)
-                        boot_targets.append({
-                            "target_wwpn": t_wwpn,
-                            "lun": str(bt.get("LUN") or bt.get("BootLUN") or "0").strip(),
-                            "priority": int(bt.get("BootPriority", 0) or 0),
-                            "target_array_vendor": arr_info["vendor"],
-                            "target_array_family": arr_info["family"],
-                        })
+                    boot_targets = _fc_id["boot_targets"]
 
                     fn_speed = "N/A"
                     fn_link_status = "Unknown"
@@ -2075,7 +2253,9 @@ class _NetworkMixin(_CollectorBase):
                     if not matched and (fn_wwpn or fn_wwnn):
                         port_entries.append({
                             "adapter_name":      resolved_hba_name,
-                            "manufacturer":      adapter.get("Manufacturer", "Unknown"),
+                            "manufacturer":      normalize_component_manufacturer(
+                                adapter.get("Manufacturer", "Unknown")
+                            ),
                             "firmware_version":  adapter_fw,
                             "vendor_class":      vendor_class,
                             "port_id":           fn.get("Id", "Unknown"),

@@ -15,12 +15,32 @@ _KNOWN_VSPHERE_OEMS = {
 }
 
 
+def _clean_cpu_model_display(model: str, default: str = "Unknown") -> str:
+    """Strip trademark / clock noise and redundant trailing 'Processor' from CPU model labels."""
+    cleaned = re.sub(r"\(R\)|\(TM\)|@\s*[\d.]+\s*GHz?", "", model or "", flags=re.I).strip()
+    cleaned = re.sub(r"\s+Processor\b", "", cleaned, flags=re.I).strip()
+    return cleaned or default
+
+
+def _format_cpu_frequency(cpu_info: Dict[str, Any]) -> str:
+    """Return a short frequency label when base and/or max GHz are present."""
+    base = cpu_info.get("base_freq_ghz")
+    mx = cpu_info.get("max_freq_ghz")
+    if base and mx and mx != base:
+        return f"{base} GHz base · {mx} GHz turbo"
+    if base:
+        return f"{base} GHz"
+    if mx:
+        return f"{mx} GHz max"
+    return ""
+
+
 def render_cpu_combined_card(
     cpu_info: Dict[str, Any],
     sys_info: Dict[str, Any],
     cpu_verdict: str,
 ) -> str:
-    """Render merged CPU summary card (verdict badge + condensed spec table)."""
+    """Render merged CPU / server summary card (vSphere support badges + condensed specs)."""
     _vendor_str = str(sys_info.get("vendor") or "")
     _model_str = str(sys_info.get("model") or "")
     _vendor_upper = _vendor_str.upper()
@@ -31,19 +51,36 @@ def render_cpu_combined_card(
     _is_dell_14g = "DELL" in _vendor_upper and bool(re.search(r"R[23456789]40|T[1346]40|C6420|MX[78]40C|XC[679]40", _model_str, re.I))
     _requires_vendor_confirm = _is_dell_14g or "Verify with OEM" in cpu_verdict or "Confirm with vendor" in cpu_verdict
 
-    _is_certified_chassis = _is_oem_chassis_certified(_vendor_str, _model_str) or (_oem_known and bool(_model_str))
-    if _is_certified_chassis:
-        if _requires_vendor_confirm:
-            _server_badge = '<span class="badge warning">🟡 Confirm with Vendor</span>'
-        else:
-            _server_badge = '<span class="badge success">🟢 Certified Server Chassis</span>'
-    elif _vendor_str or _model_str:
-        _server_badge = '<span class="badge warning">🟡 Unverified Server Chassis</span>'
-    else:
-        _server_badge = ''
+    _model_upper = _model_str.upper()
+    _is_nutanix_appliance = bool(sys_info.get("hci_appliance")) or (
+        "NUTANIX" in _vendor_upper or _model_upper.startswith("NX-") or " NX-" in f" {_model_upper}"
+    )
 
+    _server_subtext = ""
+    if _is_nutanix_appliance:
+        # Nutanix appliance chassis is not BCG OEM SYS/AS certified — TQR / account team path.
+        _server_badge = (
+            '<span class="badge caution">🟠 Talk to account team about TQR</span>'
+        )
+        _server_subtext = (
+            "Nutanix appliance chassis VCF 9.1 support is via Technical Qualification Request (TQR) "
+            "with your account team — not the Broadcom Compatibility Guide OEM SYS/AS chassis list."
+        )
+    else:
+        _is_certified_chassis = _is_oem_chassis_certified(_vendor_str, _model_str) or (_oem_known and bool(_model_str))
+        if _is_certified_chassis:
+            if _requires_vendor_confirm:
+                _server_badge = '<span class="badge warning">🟡 Server: Confirm Vendor</span>'
+            else:
+                _server_badge = '<span class="badge success">🟢 Server Compatible</span>'
+        elif _vendor_str or _model_str:
+            _server_badge = '<span class="badge warning">🟡 Server Unverified</span>'
+        else:
+            _server_badge = ''
+
+    cpu_subtext = ""
     if "VCF 9.x Supported" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge success">🟢 VCF 9.x Supported</span>'
+        vsphere_9_badge = '<span class="badge success">🟢 CPU Compatible</span>'
         if _requires_vendor_confirm:
             cpu_subtext = (
                 f'Intel Cascade Lake-SP 2nd Gen — Supported for VCF 9.x / vSphere 9.x. '
@@ -57,7 +94,7 @@ def render_cpu_combined_card(
                 f'Verify details on <a href="{_bcg_server_url}" target="_blank" class="btn-link">BCG ↗</a>.'
             )
     elif ("Override Required" in cpu_verdict) or ("Deprecated Mode" in cpu_verdict and "9.1 Only" in cpu_verdict):
-        vsphere_9_badge = '<span class="badge warning">🟡 Supported (Override Required)</span>'
+        vsphere_9_badge = '<span class="badge warning">🟡 CPU Compatible (Override)</span>'
         cpu_subtext = (
             f'Intel Skylake-SP — Supported for VCF 9.x per Broadcom KB 428874. '
             f'Installation or upgrade requires CPU support override. '
@@ -65,14 +102,18 @@ def render_cpu_combined_card(
             f'<a href="{BROADCOM_KB_428874_URL}" target="_blank" class="btn-link">KB 428874 ↗</a>'
         )
     elif "Deprecated Mode" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge success">🟢 VCF 9.x Supported</span>' if _requires_vendor_confirm else '<span class="badge warning">🟡 Deprecated Mode</span>'
+        vsphere_9_badge = (
+            '<span class="badge success">🟢 CPU Compatible</span>'
+            if _requires_vendor_confirm
+            else '<span class="badge warning">🟡 CPU Deprecated</span>'
+        )
         cpu_subtext = (
             f'CPU platform in deprecated mode for vSphere 9.x. Confirm OEM support and qualification on '
             f'<a href="{_bcg_server_url}" target="_blank" class="btn-link">BCG ↗</a> &nbsp;·&nbsp; '
             f'<a href="{BROADCOM_KB_428874_URL}" target="_blank" class="btn-link">KB 428874 ↗</a>'
         )
     elif "Unsupported" in cpu_verdict or "Not VCF-Eligible" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge danger">🔴 Not VCF-Eligible</span>'
+        vsphere_9_badge = '<span class="badge danger">🔴 CPU Incompatible</span>'
         if "Not VCF-Eligible" in cpu_verdict:
             _cpu_arch_label = cpu_info.get("arch_label", "Consumer CPU")
             cpu_subtext = (
@@ -86,19 +127,15 @@ def render_cpu_combined_card(
                 f"Refer to <a href='{BROADCOM_KB_428874_URL}' target='_blank' class='btn-link'>KB 428874 ↗</a>."
             )
     elif "Unverified" in cpu_verdict or "Unknown" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge warning">🟡 Unverified CPU</span>'
-        _model_clean = re.sub(r'\(R\)|\(TM\)|@\s*[\d.]+\s*GHz?', '', cpu_info.get('model', 'Unknown CPU'), flags=re.I).strip()
+        vsphere_9_badge = '<span class="badge warning">🟡 CPU Unverified</span>'
+        _model_clean = _clean_cpu_model_display(cpu_info.get("model", "Unknown CPU"), default="Unknown CPU")
         cpu_subtext = (
             f"Unverified CPU model ({_h(_model_clean)}). "
             f'Verify hardware compatibility on <a href="{_bcg_server_url}" target="_blank" class="btn-link">BCG ↗</a>.'
         )
     else:
-        vsphere_9_badge = '<span class="badge success">🟢 Fully Compatible</span>'
-        _model_clean = re.sub(r'\(R\)|\(TM\)|@\s*[\d.]+\s*GHz?', '', cpu_info.get('model', ''), flags=re.I).strip()
-        cpu_subtext = (
-            f"<a href='{BCGLinkGenerator.cpu(cpu_info.get('model', ''), cpu_info.get('processor_id', ''))}' "
-            f"target='_blank' class='btn-link'>{_h(_model_clean)} — BCG ↗</a>"
-        )
+        # Success path: CPU link above already points at BCG — no duplicate subtext link.
+        vsphere_9_badge = '<span class="badge success">🟢 CPU Compatible</span>'
 
     _cpu_prof = VCF9CompatibilityEngine.get_cpu_deep_profile(
         cpu_info.get("model", ""),
@@ -107,29 +144,34 @@ def render_cpu_combined_card(
         cpu_info.get("cores_per_socket", 0),
     )
 
-    _model_disp = re.sub(r'\(R\)|\(TM\)|@\s*[\d.]+\s*GHz?', '', cpu_info.get('model', 'Unknown'), flags=re.I).strip()
-    _cpu_spec_rows = []
-    if _vendor_str or _model_str:
-        _server_disp = f"{_h(_vendor_str)} {_h(_model_str)}".strip()
-        _cpu_spec_rows.append(("Server Chassis", f"<a href='{_bcg_server_url}' target='_blank' class='btn-link'>{_server_disp} ↗</a>"))
+    _model_disp = _clean_cpu_model_display(cpu_info.get("model", "Unknown"))
+    _server_disp = f"{_h(_vendor_str)} {_h(_model_str)}".strip()
+
+    _spec_bits = []
     if cpu_info.get("count", 1) > 1:
-        _cpu_spec_rows.append(("Sockets", str(cpu_info.get("count", 1))))
+        _spec_bits.append(f"<span><span style='color:var(--text-muted)'>Sockets</span> <strong>{cpu_info.get('count', 1)}</strong></span>")
     if cpu_info.get("cores_per_socket"):
-        _cpu_spec_rows.append(("Cores / socket", str(cpu_info["cores_per_socket"])))
+        _spec_bits.append(
+            f"<span><span style='color:var(--text-muted)'>Cores</span> <strong>{cpu_info['cores_per_socket']}</strong></span>"
+        )
     if cpu_info.get("threads_per_socket"):
-        _cpu_spec_rows.append(("Threads / socket", str(cpu_info["threads_per_socket"])))
-    if cpu_info.get("base_freq_ghz"):
-        _freq_line = f"{cpu_info['base_freq_ghz']} GHz"
-        if cpu_info.get("max_freq_ghz") and cpu_info["max_freq_ghz"] != cpu_info["base_freq_ghz"]:
-            _freq_line += f" base · {cpu_info['max_freq_ghz']} GHz turbo"
-        _cpu_spec_rows.append(("Frequency", _freq_line))
+        _spec_bits.append(
+            f"<span><span style='color:var(--text-muted)'>Threads</span> <strong>{cpu_info['threads_per_socket']}</strong></span>"
+        )
+    _freq_line = _format_cpu_frequency(cpu_info)
+    if _freq_line:
+        _spec_bits.append(
+            f"<span><span style='color:var(--text-muted)'>Freq</span> <strong>{_h(_freq_line)}</strong></span>"
+        )
     if cpu_info.get("architecture"):
         _arch_short = re.sub(
             r'\s+\d(?:st|nd|rd|th)\s+Gen(?:\s+Xeon\s+Scalable)?|\s+Series|\s+\([^)]+\)',
             '', cpu_info["architecture"]
         ).strip()
         _arch_short = re.sub(r'^(?:Intel|AMD)\s+', '', _arch_short, flags=re.I).strip()
-        _cpu_spec_rows.append(("Architecture", _h(_arch_short)))
+        _spec_bits.append(
+            f"<span><span style='color:var(--text-muted)'>Arch</span> <strong>{_h(_arch_short)}</strong></span>"
+        )
 
     _nt_card = _cpu_prof.get("numa_topology", {})
     if _nt_card.get("numa_nodes_default"):
@@ -137,22 +179,59 @@ def render_cpu_combined_card(
         if _cpu_prof.get("is_amd"):
             _nns_c = f"NPS-{_nnd_c}" if _nnd_c > 1 else str(_nnd_c)
         elif _nnd_c > 1:
-            _nns_c = f"SNC-{_nnd_c} active"
+            _nns_c = f"SNC-{_nnd_c}"
         else:
             _nns_c = str(_nnd_c)
-        _cpu_spec_rows.append(("NUMA nodes / socket", _nns_c))
+        _spec_bits.append(
+            f"<span><span style='color:var(--text-muted)'>NUMA</span> <strong>{_h(_nns_c)}</strong></span>"
+        )
 
-    _cpu_spec_tbl = "".join(
-        f"<tr><td style='color:var(--text-muted);padding:.15rem .3rem .15rem 0;white-space:nowrap'>{k}</td>"
-        f"<td style='font-weight:600;padding:.15rem 0'>{v}</td></tr>"
-        for k, v in _cpu_spec_rows
+    _specs_html = (
+        f"<div style='display:flex;flex-wrap:wrap;gap:.3rem 1rem;font-size:.8rem;line-height:1.45;"
+        f"margin-top:.15rem;align-items:baseline'>{''.join(_spec_bits)}</div>"
+        if _spec_bits else ""
+    )
+
+    _server_block = ""
+    if _server_disp:
+        _server_block = (
+            f"<div style='margin-bottom:.45rem'>"
+            f"<div style='font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;"
+            f"color:var(--text-muted);font-weight:600;margin-bottom:.15rem'>Server</div>"
+            f"<div style='font-size:.9rem;font-weight:700;line-height:1.3'>"
+            f"<a href='{_bcg_server_url}' target='_blank' class='btn-link' style='color:var(--primary)'>"
+            f"{_server_disp} ↗</a></div>"
+            f"</div>"
+        )
+
+    _cpu_block = (
+        f"<div style='margin-bottom:.35rem'>"
+        f"<div style='font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;"
+        f"color:var(--text-muted);font-weight:600;margin-bottom:.15rem'>CPU</div>"
+        f"<div style='font-size:.86rem;font-weight:700;line-height:1.3'>"
+        f"<a href='{_bcg_cpu_url}' target='_blank' class='btn-link' style='color:var(--primary)'>"
+        f"{_h(_model_disp)} ↗</a></div>"
+        f"{_specs_html}"
+        f"</div>"
     )
 
     _cpu_tab_link = (
         "<a href='#tab-cpu' data-jump-tab='tab-cpu' class='btn-link tab-jump-link' style='font-size:.78rem'>"
         "Full details in CPU tab &#8599;</a>"
     )
-    _badges_html = f"<div style='margin-bottom:.4rem;display:flex;gap:.4rem;flex-wrap:wrap'>{vsphere_9_badge}{(' ' + _server_badge) if _server_badge else ''}</div>"
+    _badges_html = (
+        f"<div style='margin-bottom:.55rem'>"
+        f"<div style='font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;"
+        f"color:var(--text-muted);font-weight:600;margin-bottom:.25rem'>vSphere Support</div>"
+        f"<div style='display:flex;gap:.4rem;flex-wrap:wrap;align-items:center'>"
+        f"{vsphere_9_badge}{(' ' + _server_badge) if _server_badge else ''}"
+        f"</div></div>"
+    )
+    _combined_sub = " ".join(p for p in (_server_subtext, cpu_subtext) if p)
+    _subtext_html = (
+        f"<p style='font-size:.8rem;color:var(--text-muted);margin:.35rem 0 0'>{_combined_sub}</p>"
+        if _combined_sub else ""
+    )
 
     return (
         f"<div class='card'>"
@@ -161,11 +240,9 @@ def render_cpu_combined_card(
         f"<a href='#tab-cpu' data-jump-tab='tab-cpu' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to CPU section'>Details &rarr;</a>"
         f"</div>"
         f"{_badges_html}"
-        f"<div style='font-size:.83rem;font-weight:700;margin-bottom:.3rem'>"
-        f"<a href='{_bcg_cpu_url}' target='_blank' class='btn-link' style='color:var(--primary)'>{_h(_model_disp)} ↗</a>"
-        f"</div>"
-        f"<table style='font-size:.8rem;width:100%;border-collapse:collapse'><tbody>{_cpu_spec_tbl}</tbody></table>"
-        f"<p style='font-size:.8rem;color:var(--text-muted);margin-top:.4rem'>{cpu_subtext}</p>"
+        f"{_server_block}"
+        f"{_cpu_block}"
+        f"{_subtext_html}"
         f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>{_cpu_tab_link}</div>"
         f"</div>"
     )
@@ -189,17 +266,21 @@ def render_cpu_deep_section(
     _requires_vendor_confirm = _is_dell_14g or "Verify with OEM" in cpu_verdict or "Confirm with vendor" in cpu_verdict
 
     if "VCF 9.x Supported" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge success">🟢 VCF 9.x Supported</span>'
+        vsphere_9_badge = '<span class="badge success">🟢 CPU Compatible</span>'
     elif ("Override Required" in cpu_verdict) or ("Deprecated Mode" in cpu_verdict and "9.1 Only" in cpu_verdict):
-        vsphere_9_badge = '<span class="badge warning">🟡 Supported (Override Required)</span>'
+        vsphere_9_badge = '<span class="badge warning">🟡 CPU Compatible (Override)</span>'
     elif "Deprecated Mode" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge success">🟢 VCF 9.x Supported</span>' if _requires_vendor_confirm else '<span class="badge warning">🟡 Deprecated Mode</span>'
+        vsphere_9_badge = (
+            '<span class="badge success">🟢 CPU Compatible</span>'
+            if _requires_vendor_confirm
+            else '<span class="badge warning">🟡 CPU Deprecated</span>'
+        )
     elif "Unsupported" in cpu_verdict or "Not VCF-Eligible" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge danger">🔴 Not VCF-Eligible</span>'
+        vsphere_9_badge = '<span class="badge danger">🔴 CPU Incompatible</span>'
     elif "Unverified" in cpu_verdict or "Unknown" in cpu_verdict:
-        vsphere_9_badge = '<span class="badge warning">🟡 Unverified CPU</span>'
+        vsphere_9_badge = '<span class="badge warning">🟡 CPU Unverified</span>'
     else:
-        vsphere_9_badge = '<span class="badge success">🟢 Fully Compatible</span>'
+        vsphere_9_badge = '<span class="badge success">🟢 CPU Compatible</span>'
 
     _cpu_prof = VCF9CompatibilityEngine.get_cpu_deep_profile(
         cpu_info.get("model", ""),
@@ -208,7 +289,7 @@ def render_cpu_deep_section(
         cpu_info.get("cores_per_socket", 0),
     )
 
-    _deep_model_disp = re.sub(r'\(R\)|\(TM\)|@\s*[\d.]+\s*GHz?', '', cpu_info.get('model', 'Unknown'), flags=re.I).strip()
+    _deep_model_disp = _clean_cpu_model_display(cpu_info.get("model", "Unknown"))
 
     _pcie_gen_badge = (
         f"<span class='badge success'>{_cpu_prof['pcie_gen']} · "
@@ -226,11 +307,9 @@ def render_cpu_deep_section(
         _dd_spec_parts.append(f"{cpu_info['count']}\u00d7 sockets")
     if cpu_info.get("cores_per_socket"):
         _dd_spec_parts.append(f"{cpu_info['cores_per_socket']} cores/socket")
-    if cpu_info.get("base_freq_ghz"):
-        _f = f"{cpu_info['base_freq_ghz']} GHz"
-        if cpu_info.get("max_freq_ghz") and cpu_info["max_freq_ghz"] != cpu_info["base_freq_ghz"]:
-            _f += f" \u2191{cpu_info['max_freq_ghz']} GHz turbo"
-        _dd_spec_parts.append(_f)
+    _dd_freq = _format_cpu_frequency(cpu_info)
+    if _dd_freq:
+        _dd_spec_parts.append(_dd_freq)
     _chan = cpu_info.get("channels_per_socket")
     _ddr  = "DDR5" if cpu_info.get("max_ram_speed_mhz", 0) >= 4000 else "DDR4"
     if _chan:
@@ -291,11 +370,9 @@ def render_cpu_deep_section(
         _dd_spec_rows.append(("Threads / socket", str(cpu_info["threads_per_socket"])))
     if cpu_info.get("ht_enabled") is not None:
         _dd_spec_rows.append(("Hyper-Threading", "✅ Enabled" if cpu_info["ht_enabled"] else "❌ Disabled"))
-    if cpu_info.get("base_freq_ghz"):
-        _fline = f"{cpu_info['base_freq_ghz']} GHz base"
-        if cpu_info.get("max_freq_ghz") and cpu_info["max_freq_ghz"] != cpu_info["base_freq_ghz"]:
-            _fline += f" · {cpu_info['max_freq_ghz']} GHz turbo"
-        _dd_spec_rows.append(("Frequency", _fline))
+    _dd_freq_row = _format_cpu_frequency(cpu_info)
+    if _dd_freq_row:
+        _dd_spec_rows.append(("Frequency", _dd_freq_row))
     if cpu_info.get("channels_per_socket"):
         _dd_spec_rows.append(("Memory Channels", f"{cpu_info['channels_per_socket']} / socket ({_ddr})"))
     if cpu_info.get("max_ram_speed_mhz"):

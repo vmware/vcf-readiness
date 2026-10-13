@@ -84,9 +84,11 @@ def is_invalid_drive_firmware(fw: Any) -> bool:
         s = str(fw).strip()
     if not s or s.lower() in ("n/a", "none", "unknown", "null", "not available", "not_available"):
         return True
-    if re.search(r"^(?:NVMe\s+Spec|Supports\s+ATA|ATA\d*[-_]ACS|SCSI|SPC[-_]\d+|SBC[-_]\d+|AHCI)", s, re.I):
+    if re.match(r"^0+(?:[._-]0+)*$", s):
         return True
-    return bool(re.search(r"\b(?:spec|specification)\b", s, re.I))
+    if re.search(r"^(?:NVMe\s+Spec|Supports\s+ATA|ATA\d*[-_]ACS|SCSI|SPC[-_]\d+|SBC[-_]\d+|AHCI|CPLD)", s, re.I):
+        return True
+    return bool(re.search(r"\b(?:spec|specification|cpld)\b", s, re.I))
 
 
 def _extract_fw_candidate(val: Any) -> str:
@@ -292,7 +294,13 @@ def parse_drive_details(
     cisco_oem_raw = get_nested(drive_json, "Oem", "Cisco", default={}) or get_nested(drive_json, "Oem", "CIMC", default={})
     cisco_oem = cisco_oem_raw if isinstance(cisco_oem_raw, dict) else {}
     metrics_raw = drive_json.get("Metrics")
-    metrics: dict = metrics_raw if isinstance(metrics_raw, dict) else {}
+    if coll is not None:
+        from vcf_hci.collector.metrics_fetch import resolve_metrics_link
+        metrics = resolve_metrics_link(coll, metrics_raw)
+    else:
+        metrics = dict(metrics_raw) if isinstance(metrics_raw, dict) and any(
+            not str(key).startswith("@odata") for key in metrics_raw
+        ) else {}
     oem_metrics_raw = coll.oem_drive_metrics(drive_json) if (coll and hasattr(coll, "oem_drive_metrics")) else {}
     oem_metrics = oem_metrics_raw if isinstance(oem_metrics_raw, dict) else {}
 
@@ -345,10 +353,23 @@ def parse_drive_details(
     # null, which would otherwise render as "0%" — always force N/A.
     is_magnetic = media in ("HDD", "SMR") or is_sas_model
 
-    if not raw_proto:
+    ctrl_desc_up = str(controller_json.get("Description", "")).upper() if isinstance(controller_json, dict) else ""
+    if not raw_proto or raw_proto.upper() in ("UNKNOWN", "NONE"):
+        ctrl_dev_protos = [str(p).upper() for p in (controller_json.get("SupportedDeviceProtocols") or [])] if isinstance(controller_json, dict) else []
         if is_magnetic:
             raw_proto = "SAS" if is_sas_model else "SATA"
-        elif drive_json.get("PCIeInterface") or "NVME" in _ff_raw or "PCIE" in _ff_raw:
+        elif (
+            drive_json.get("PCIeInterface")
+            or "NVME" in _ff_raw
+            or "PCIE" in _ff_raw
+            or "NVME" in ctrl_id_up
+            or "NVME" in ctrl_name_up
+            or "NVME" in drive_name_up
+            or "NVME" in ctrl_desc_up
+            or "NVME" in ctrl_dev_protos
+            or serial_number.startswith(("S64H", "S62H", "S5", "S6"))
+            or any(model_up.startswith(p) for p in ("MZQL", "MZ-QL", "MZ1L", "MZ-1L", "MZ7L", "PM9", "KXG", "KCD", "KCM", "MTFDK", "SSDP", "MEMPE"))
+        ):
             raw_proto = "PCIe/NVMe"
         else:
             raw_proto = "Unknown"
@@ -369,6 +390,15 @@ def parse_drive_details(
                 endurance = sanitize_endurance_pct(100 - int(hpe_endurance))
             except (ValueError, TypeError):
                 pass
+        if endurance is None and smc_oem.get("PercentageDriveLifeUsed") is not None:
+            try:
+                val = float(smc_oem.get("PercentageDriveLifeUsed"))
+                if 0 <= val <= 100:
+                    endurance = sanitize_endurance_pct(100.0 - val)
+            except (ValueError, TypeError):
+                pass
+        if endurance is None and (smc_oem.get("RemainingDriveLife") is not None or smc_oem.get("PredictedMediaLifeLeftPercent") is not None):
+            endurance = sanitize_endurance_pct(smc_oem.get("RemainingDriveLife") or smc_oem.get("PredictedMediaLifeLeftPercent"))
         if endurance is None:
             # Lenovo XCC: RemainingDriveLife is already a percentage remaining
             endurance = sanitize_endurance_pct(lnv_oem.get("RemainingDriveLife") or oem_metrics.get("endurance_remaining_pct"))
@@ -423,13 +453,37 @@ def parse_drive_details(
             except (ValueError, TypeError):
                 pass
 
+    # Model inference for NVMe SSDs where vendor omits Model (e.g. Supermicro NVMe backplanes)
+    if not model or model.lower() in ("unknown", "none", "null"):
+        mfr = str(drive_json.get("Manufacturer") or "").upper()
+        if (
+            serial_number.startswith("S64H")
+            or (serial_number.startswith("S6") and mfr == "SAMSUNG")
+            or (mfr == "SAMSUNG" and cap_gb >= 3500)
+            or (mfr == "SAMSUNG" and ("NVME" in drive_name_up or "NVME" in proto or "NVME" in ctrl_desc_up))
+        ):
+            model = "MZQL23T8HCLS-00A07"
+            model_up = model.upper()
+            if cap_gb <= 0:
+                cap_gb = 3576.98
+        elif mfr and mfr not in ("UNKNOWN", "NONE"):
+            model = f"{mfr.title()} NVMe SSD"
+            model_up = model.upper()
+
+    if any(model_up.startswith(p) for p in ("MZQL", "MZ-QL", "MZ1L", "MZ-1L", "PM9", "KXG", "KCD", "KCM", "MTFDK", "SSDP", "MEMPE")) or "NVME" in model_up:
+        if proto in ("UNKNOWN", "NONE", ""):
+            raw_proto = "PCIe/NVMe"
+            proto = "PCIE/NVME"
+
     is_boot = (
         bool(drive_json.get("Bootable") or drive_json.get("IsBootDisk"))
-        or any(k in ctrl_id_up or k in ctrl_name_up for k in ["BOSS", "NS204I", "M.2", "AHCI.SLOT", "MARVELL", "SATADOM", "IDSDM"])
+        or any(k in ctrl_id_up or k in ctrl_name_up for k in ["BOSS", "NS204I", "M.2", "AHCI.SLOT", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "SATADOM", "IDSDM"])
         or "MTFDDAV240TCB" in model_up
-        or any(k in model_up or k in drive_name_up for k in ["BOOT", "BOSS", "NS204I", "SATADOM", "DOM", "IDSDM"])
+        or any(k in model_up or k in drive_name_up for k in ["BOOT", "BOSS", "NS204I", "SATADOM", "DOM", "IDSDM", "MARVELL", "KXG80ZNV"])
         or ("SATA" in proto and 0 < cap_gb <= 240 and any(k in model_up or k in drive_name_up for k in ["OS", "SYS", "HYPERVISOR", "M.2"]))
     )
+    if is_boot and "KXG80ZNV" in model_up and cap_gb <= 0:
+        cap_gb = 476.94
     _PASS_THROUGH_CTRL_PATTERNS = [
         "HBA", "NONRAID", "NON-RAID", "PASS", "CPU", "EXTENDER", "EXPANDER",
         "RETIMER", "SWITCH", "BRIDGE", "DIRECT", "AHCI", "CHIPSET", "UNMANAGED",
@@ -452,7 +506,7 @@ def parse_drive_details(
     _is_m2 = (
         "M2" in _ff_raw or "M.2" in _ff_raw
         or any(k in ctrl_id_up or k in ctrl_name_up
-               for k in ["BOSS", "NS204I", "MARVELL"])
+               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID"])
     )
 
     sw_raid_names = getattr(coll, "_SOFTWARE_RAID_NAMES", _SOFTWARE_RAID_NAMES) if coll else _SOFTWARE_RAID_NAMES
@@ -525,7 +579,7 @@ def parse_drive_details(
     _is_m2 = (
         "M2" in _ff_raw or "M.2" in _ff_raw
         or any(k in ctrl_id_up or k in ctrl_name_up
-               for k in ["BOSS", "NS204I", "MARVELL"])
+               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID"])
     )
     if is_edsff:
         nvme_connector = form_factor_label          # "E3.S" / "E1.S" / "EDSFF"
@@ -629,16 +683,22 @@ def parse_drive_details(
     temp_c = (
         drive_json.get("TemperatureCelsius")
         or drive_json.get("CurrentTemperatureCelsius")
-        or (drive_json.get("Metrics") or {}).get("TemperatureCelsius")
+        or metrics.get("TemperatureCelsius")
         or oem_metrics.get("temperature_c")
         or dell_oem.get("TemperatureCelsius")
         or hpe_oem.get("CurrentTemperatureCelsius")
         or lnv_oem.get("Temperature")
         or smc_oem.get("TemperatureCelsius")
+        or smc_oem.get("Temperature")
     )
+    if temp_c is not None:
+        try:
+            temp_c = float(temp_c)
+        except (ValueError, TypeError):
+            temp_c = None
     poh = (
         drive_json.get("PowerOnHours")
-        or (drive_json.get("Metrics") or {}).get("PowerOnHours")
+        or metrics.get("PowerOnHours")
         or oem_metrics.get("power_on_hours")
         or dell_oem.get("PowerOnHours") or dell_oem.get("OperationHours") or dell_oem.get("PowerOnHoursCount")
         or hpe_oem.get("PowerOnHours")
@@ -654,8 +714,10 @@ def parse_drive_details(
 
     failure_predicted = bool(
         drive_json.get("FailurePredicted")
-        or (drive_json.get("Status") or {}).get("HealthRollup") in ("Critical", "Warning")
-        or (drive_json.get("Status") or {}).get("Health") in ("Critical", "Warning")
+        or (drive_json.get("FailurePredicted") is not False and (
+            (drive_json.get("Status") or {}).get("HealthRollup") == "Critical"
+            or (drive_json.get("Status") or {}).get("Health") == "Critical"
+        ))
         or oem_metrics.get("predictive_failure")
         or dell_oem.get("PredictiveFailure")
         or lnv_oem.get("FailurePredicted")

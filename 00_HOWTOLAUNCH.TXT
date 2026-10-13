@@ -1,76 +1,58 @@
-================================================================================
-          VCF / vSphere 9.1 HCI Readiness Assessment Tool
-                   How to Launch Guide (Scripts & Binaries)
-================================================================================
+VCF READINESS ASSESSMENT TOOL — SOURCE LAUNCH GUIDE
+====================================================
 
-1. SYSTEM REQUIREMENTS
---------------------------------------------------------------------------------
-- Python Version: Python 3.9 or newer (e.g., Python 3.9, 3.10, 3.11, 3.12, 3.13, 3.14+).
-- Dependencies: ZERO external pip packages required. Runs 100% on the Python
-  standard library.
-- Network Access: Network connectivity to target BMC IP addresses (Dell iDRAC,
-  HPE iLO, Supermicro BMC, Lenovo XCC, Cisco IMC, etc.) over HTTPS (port 443).
+Requirements
+------------
+- Python 3.9 or newer
+- A current web browser
+- Network access to authorized BMC management addresses
+- A read-only BMC account
 
+No runtime pip packages are required.
 
-2. LAUNCHING THE BROWSER WEB UI (RECOMMENDED)
---------------------------------------------------------------------------------
-The Web UI provides an interactive interface for single or multi-host scanning,
-subnet discovery, credential management, and report generation.
+Run these commands from the directory containing vcfr_web.py.
 
-Option A — From the root directory:
-  macOS / Linux:   python3 vcfr_web.py
-  Windows:         python vcfr_web.py
+Web UI (recommended)
+--------------------
+macOS / Linux:
+  python3 vcfr_web.py
 
-Option B — As a Python module from root:
-  macOS / Linux:   python3 -m vcf_hci.web
-  Windows:         python -m vcf_hci.web
+Windows:
+  python vcfr_web.py
 
-* Note: The Web UI automatically opens http://127.0.0.1:7182 in your browser.
-  To exit, press Ctrl-C in the terminal or click 'Quit' in the browser header.
-  (Legacy redfish_web.py shim is also supported).
+The server binds to loopback and prints a one-time browser URL. Stop it with
+Ctrl-C or the Quit control.
 
+Command line
+------------
+Show verified options:
+  python3 vcfr_collector.py --help
 
-3. LAUNCHING THE COMMAND-LINE INTERFACE (CLI)
---------------------------------------------------------------------------------
-The CLI is ideal for headless environments, automated batch runs, or SSH sessions.
+Example:
+  export REDFISH_PASSWORD='replace-me'
+  python3 vcfr_collector.py --targets 192.0.2.50 --username readonly \
+    --password-env REDFISH_PASSWORD --output-dir ./VCF-Scans
 
-Option A — From the root directory:
-  macOS / Linux:   python3 vcfr_collector.py --help
-  Windows:         python vcfr_collector.py --help
+Windows Command Prompt:
+  set REDFISH_PASSWORD=replace-me
+  python vcfr_collector.py --targets 192.0.2.50 --username readonly ^
+    --password-env REDFISH_PASSWORD --output-dir VCF-Scans
 
-Option B — As a Python module from root:
-  macOS / Linux:   python3 -m vcf_hci --help
-  Windows:         python -m vcf_hci --help
+Security notes
+--------------
+- Collection is strict read-only. It does not change power, firmware, BIOS,
+  accounts, boot settings, or managed-system configuration.
+- Ordinary scans are offline except for the BMC targets you provide.
+- Public HCL downloads require an explicit --refresh-hcl or --bundle-hcl.
+- BMC certificate verification is off by default for self-signed controllers;
+  use --verify-ssl and --ca-bundle where an enterprise CA is available.
+- Do not share credentials, launch URLs, raw captures, or unreviewed reports.
 
-Example Scan Command:
-  export REDFISH_PASSWORD='MySecretPass!'
-  python3 vcfr_collector.py --targets 192.0.2.50 -u root --password-env REDFISH_PASSWORD --output-dir VCF-Scans/
-  (Passwords are never accepted on the command line. Legacy redfish_collector.py shim is also supported.)
+Use --lean or --profile readiness-lean for the supported faster profile.
 
-Optional — different BMC passwords per rack/subnet (encrypted local vault, OFF by default):
-  python3 -m vcf_hci.vault init                      # create, choose a passphrase (no recovery!)
-  python3 -m vcf_hci.vault import-csv credentials.csv  # target,username,password[,note]; then delete the CSV
-  python3 vcfr_collector.py --targets 192.0.2.0/24 --vault
-  See docs/CREDENTIAL_VAULT.md for details.
-
-
-4. NO-PYTHON STANDALONE BINARIES & LAUNCHERS
---------------------------------------------------------------------------------
-If Python is not installed on your system, standalone compiled executables and
-launchers are located in the bin/ directory (or pre-packaged in dist/):
-
-  macOS Web UI Launcher: ./bin/Launch-VCF-Readiness-Web.command (or double-click)
-  macOS Web UI Binary:   ./bin/VCF-Readiness-Web-mac
-  Windows Web UI:        .\bin\VCF-Readiness-Web.exe
-  macOS CLI:             ./bin/vcf-assess
-  Windows CLI:           .\bin\vcf-assess.exe
-  macOS Launch Guide:    ./bin/HOW_TO_OPEN_ON_MAC.txt
-
-
-5. SUPPORT & DOCUMENTATION
---------------------------------------------------------------------------------
-- Full User Guide:        README.md
-- Installation Guide:     docs/INSTALL.md
-- Architecture Overview: ARCHITECTURE.md
-- OEM Reference:         docs/OEM_REFERENCE.md
-================================================================================
+More help
+---------
+README.md             Beginner guide and troubleshooting
+docs/INSTALL.md       Installation, headless, and air-gapped use
+ARCHITECTURE.md       Runtime and security flows
+CONTRIBUTING.md       Developer setup and canonical checks

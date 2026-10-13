@@ -11,6 +11,12 @@ import io
 import os
 from typing import Any, Dict, List, Optional
 
+from vcf_hci.collector.pci_utils import clean_oem_adapter_title
+from vcf_hci.constants import (
+    is_generic_name,
+    is_unfriendly_nic_name,
+    prefer_storage_ctrl_display_name,
+)
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.report.schema_registry import (
     FLEET_SUMMARY_FIELDS,
@@ -70,12 +76,16 @@ def generate_drives_csv(
         ip = str(si.get("ip") or data.get("host") or "").strip()
         host = str(si.get("hostname") or "").strip()
         for ctrl in data.get("storage_subsystem", []):
-            base_ctrl_name = str(ctrl.get("name") or ctrl.get("controller_model") or "Controller").strip()
+            ctrl_model = str(ctrl.get("ctrl_model") or ctrl.get("controller_model") or "").strip()
             ctrl_fw = str(ctrl.get("ctrl_firmware") or ctrl.get("firmware_version") or "").strip()
             for d in ctrl.get("drives", []):
                 if not d.get("populated", True) and d.get("category") == "Empty":
                     continue
-                ctrl_name = str(d.get("controller_name") or base_ctrl_name).strip()
+                ctrl_name = prefer_storage_ctrl_display_name(
+                    name=d.get("controller_name") or ctrl.get("name"),
+                    ctrl_model=ctrl_model,
+                    ctrl_id=ctrl.get("id"),
+                )
                 ep = d.get("endurance_remaining_pct", "")
                 if ep in (255, "255", "255%"):
                     ep = "N/A"
@@ -146,6 +156,15 @@ def generate_nics_csv(
 
         for n in data.get("network_adapters", []):
             nic_name = str(n.get("name") or "Network Adapter").strip()
+            pn = str(n.get("part_number") or "").strip()
+            if is_unfriendly_nic_name(nic_name, pn):
+                cand_m = str(n.get("model") or "").strip()
+                if cand_m and not is_unfriendly_nic_name(cand_m, pn):
+                    nic_name = cand_m
+                elif pn and not is_generic_name(pn):
+                    nic_name = pn
+            sys_m = str((data.get("system") or {}).get("manufacturer") or "")
+            nic_name = clean_oem_adapter_title(nic_name, host_mfg=sys_m, adapter_mfg=str(n.get("manufacturer") or ""), part_number=pn)
             pn = str(n.get("part_number") or "").strip()
             fw = str(n.get("firmware_version") or "").strip()
             pci = str(n.get("pci_quad") or n.get("pci_pair") or "").strip()

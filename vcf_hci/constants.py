@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.9.1"
+TOOL_VERSION = "9.9.2"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -239,6 +239,7 @@ GENERIC_NAME_BLOCKLIST = [
     "network adapter view", "network adapter", "adapter", "unknown",
     "pcie device", "ethernet controller", "device", "none", "n/a",
     "system ethernet interface",   # Dell iDRAC BMC virtual port — not a real data NIC
+    "host ethernet interface",     # Supermicro BMC USB-to-host virtual interface (ToManager)
     "unknown network adapter",
     "ethernet network adapter",    # HPE iLO generic PCIe NIC name — fall through to Model
     "poweredge rx5xx lom board",   # Dell generic LOM board description
@@ -251,7 +252,19 @@ def is_generic_name(name: Optional[str]) -> bool:
         return True
     s = str(name).strip()
     sl = s.lower()
-    if sl in GENERIC_NAME_BLOCKLIST:
+    if sl in GENERIC_NAME_BLOCKLIST or "tomanager" in sl:
+        return True
+    if re.match(r"^network\s+adapter(?:\s+[0-9]+)?$", sl):
+        return True
+    if re.match(r"^network\s+device(?:\s+[0-9]+)?$", sl):
+        return True
+    if re.match(r"^network\s+interface(?:\s+[0-9]+)?$", sl):
+        return True
+    if re.match(r"^ethernet\s+adapter(?:\s+[0-9]+)?$", sl):
+        return True
+    if re.match(r"^ethernet\s+interface(?:\s+[0-9]+)?$", sl):
+        return True
+    if re.match(r"^nic\s*[0-9]+$", sl):
         return True
     if re.match(r"^devtype\d+(?:_\w+)?$", sl):
         return True
@@ -260,6 +273,121 @@ def is_generic_name(name: Optional[str]) -> bool:
     if re.match(r"^pcie(?:device)?\s*\d*$", sl):
         return True
     return bool(re.search(r"virtual(?:nic|ethernet|interface)", sl))
+
+
+def is_raw_part_number(name: Optional[str]) -> bool:
+    """Return True if name appears to be an unformatted OEM part number or SKU rather than a friendly marketing title."""
+    if not name:
+        return False
+    s = str(name).strip()
+    # Friendly marketing names have spaces and descriptive words
+    if not s or " " in s:
+        return False
+    # Known vendor part number / SKU prefixes:
+    # Mellanox MCX... (e.g. MCX631102AS-ADAT, MCX512F-ACHT)
+    if re.match(r"^MCX\d{5,}[A-Z0-9\-]*$", s, re.I):
+        return True
+    # Supermicro AOC-... (e.g. AOC-ATG-b2TM-NI22, AOC-S25GC-i4S)
+    if re.match(r"^AOC-[A-Z0-9\-]+$", s, re.I):
+        return True
+    # General part number heuristic: uppercase alphanumeric with hyphens/underscores,
+    # containing at least one digit and at least 3 letters, length between 6 and 32 chars, no spaces.
+    return bool(re.match(r"^[A-Z0-9\-_]{6,32}$", s) and re.search(r"\d", s) and len(re.findall(r"[A-Za-z]", s)) >= 3)
+
+
+def is_unfriendly_nic_name(name: Optional[str], part_number: Optional[str] = None) -> bool:
+    """Return True if the adapter name is generic, equal to part number, or matches raw part number heuristics."""
+    if not name or is_generic_name(name):
+        return True
+    s = str(name).strip()
+    if part_number:
+        pn = str(part_number).strip()
+        if pn and s.upper() == pn.upper():
+            return True
+    return is_raw_part_number(s)
+
+
+# Verbose Redfish / PCIe Manufacturer strings → short display labels (NIC / HBA).
+# Keys are casefolded; unknown strings pass through unchanged.
+COMPONENT_MANUFACTURER_ALIASES = {
+    "broadcom inc. and subsidiaries": "Broadcom",
+    "mellanox technologies": "Mellanox",
+    "mlnx": "Mellanox",
+    "intel corporation": "Intel",
+    "hewlett packard enterprise": "HPE",
+    "emulex corporation": "Emulex",
+    "cisco systems inc": "Cisco",
+    "cisco systems inc.": "Cisco",
+    "cisco systems, inc.": "Cisco",
+    "qlogic corp.": "QLogic / Marvell",
+    "qlogic corp": "QLogic / Marvell",
+    "dell": "Dell",
+    "nvidia": "NVIDIA",
+    "nvidia corporation": "NVIDIA",
+}
+
+
+def normalize_component_manufacturer(raw: Optional[str]) -> str:
+    """Shorten verbose OEM Manufacturer strings for NIC/HBA inventory display."""
+    s = str(raw or "").strip()
+    if not s:
+        return s
+    return COMPONENT_MANUFACTURER_ALIASES.get(s.casefold(), s)
+
+
+# Storage / RAID controller display names that should yield to Model (ctrl_model).
+# Uppercase forms match the collector's historic _generic_names set; lowercase is
+# used by is_generic_ctrl_name. Includes Lenovo XCC "RAID Controller".
+GENERIC_CTRL_NAME_BLOCKLIST = {
+    "storage controller",
+    "hpe smart storage array controller",
+    "array controller",
+    "smart array controller",
+    "smartstorage array controller",
+    "controller",
+    "storage",
+    "raid controller",
+}
+
+
+def is_generic_ctrl_name(name: Optional[str]) -> bool:
+    """Return True if a storage controller Name is OEM-generic and Model should win."""
+    if not name:
+        return True
+    s = str(name).strip()
+    if not s:
+        return True
+    sl = s.lower()
+    if sl in GENERIC_CTRL_NAME_BLOCKLIST:
+        return True
+    if sl.startswith("hpe smart storage array") or sl.startswith("smart storage array"):
+        return True
+    return bool(sl.startswith("controller_"))
+
+
+def prefer_storage_ctrl_display_name(
+    name: Optional[str] = None,
+    ctrl_model: Optional[str] = None,
+    ctrl_id: Optional[str] = None,
+    fallback: str = "Controller",
+) -> str:
+    """Pick a human-useful storage controller label.
+
+    Prefer a non-generic Name; otherwise prefer a specific ctrl_model (e.g.
+    ThinkSystem RAID 930-8i when Name is "RAID Controller").
+    """
+    n = str(name or "").strip()
+    m = str(ctrl_model or "").strip()
+    i = str(ctrl_id or "").strip()
+    if n and not is_generic_ctrl_name(n) and n != i:
+        return n
+    if m and not is_generic_ctrl_name(m):
+        return m
+    if n:
+        return n
+    if i:
+        return i
+    return fallback
 
 # ---------------------------------------------------------------------------
 # HPE ProLiant SKU → Chassis configuration database
@@ -476,6 +604,7 @@ HCI_APPLIANCE_PATTERNS = (
     "SIMPLIVITY", "OMNISTACK",                # HPE SimpliVity
     "POWERFLEX",                              # Dell PowerFlex
     "HXAF", "HX220C", "HX240C", "HX480C",    # Cisco HyperFlex
+    "NX-", "NUTANIX",                         # Nutanix NX appliance family
 )
 
 def _fw(latest, min_recommended, min_spectre, **extra):

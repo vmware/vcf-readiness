@@ -526,6 +526,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
                 (parsed_path == "/api/version" and not self._is_remote_server())
                 or parsed_path.startswith("/docs")
                 or parsed_path.startswith("/assets/")
+                or parsed_path in ("/favicon.ico", "/favicon.svg")
             )
         )
         if cmd == "OPTIONS" or is_public_get:
@@ -600,6 +601,16 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
             if path.startswith("/docs/"):
                 doc_id = urllib.parse.unquote(path[6:]).strip("/") or "readme"
             self._send_html(build_docs_html(doc_id, TOOL_VERSION))
+
+        elif path in ("/favicon.ico", "/favicon.svg"):
+            from vcf_hci.branding import FAVICON_SVG
+            fav_bytes = FAVICON_SVG.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(fav_bytes)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(fav_bytes)
 
         elif path == "/assets/clarity.css":
             self.send_response(200)

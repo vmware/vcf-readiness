@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from vcf_hci.bcg_links import BCGLinkGenerator
 from vcf_hci.collector.fc_plus import classify_fc_plus
 from vcf_hci.compat_engine import evaluate_npar
+from vcf_hci.constants import normalize_component_manufacturer
 from vcf_hci.hcl import lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.components import (
@@ -320,10 +321,11 @@ def render_network_section(
             )
         if not boot_html:
             boot_html = "<span style='color:var(--text-muted)'>—</span>"
+        _hba_mfr = normalize_component_manufacturer(hba.get("manufacturer", "Unknown"))
         hba_rows += (
             f"<tr>"
             f"<td><strong>{_h(hba['adapter_name'])}</strong>{hba_pci_badge}</td>"
-            f"<td>{_h(hba.get('manufacturer', 'Unknown'))}{_vendor_badge}</td>"
+            f"<td>{_h(_hba_mfr)}{_vendor_badge}</td>"
             f"<td>{hba_fw_cell}</td>"
             f"<td>{wwnn_cell}</td>"
             f"<td><code>{_pii_span(page_salt, _wwpn_raw, 'wwn')}</code></td>"
@@ -403,6 +405,12 @@ def render_network_section(
         nic_table_body = "<tr><td colspan='5' style='color:#7f1d1d'>⚠️ Network collection was blocked by a license restriction — see BMC License row for details.</td></tr>"
     elif data_src.startswith('wsman'):
         nic_table_body = f"<tr><td colspan='5' style='color:var(--text-muted)'>ℹ️ No NICs discovered via {wsman_proto_label}. CIM_NetworkPort returned no entries.</td></tr>"
+    elif linkdown_nics:
+        nic_table_body = (
+            f"<tr><td colspan='5' style='color:var(--text-muted)'>"
+            f"ℹ️ All {len(linkdown_nics)} discovered adapter(s) currently have inactive or disconnected links — "
+            f"detailed in the Inactive / Disconnected Adapters table below.</td></tr>"
+        )
     else:
         nic_table_body = "<tr><td colspan='5'>No NICs discovered via Redfish API.</td></tr>"
 

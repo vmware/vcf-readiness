@@ -151,6 +151,10 @@ class _LogsMixin(_CollectorBase):
                     "timestamp": str(e.get("Created", "Unknown")).strip(),
                     "message_id": msg_id,
                     "badge": badge,
+                    "entry_type": str(e.get("EntryType") or "").strip(),
+                    "resolution": str(e.get("Resolution") or "").strip(),
+                    "event_timestamp": str(e.get("EventTimestamp") or "").strip(),
+                    "modified": str(e.get("Modified") or "").strip(),
                 })
                 limit = max_entries if max_entries is not None and max_entries > 0 else 10
                 if len(unique) >= limit:

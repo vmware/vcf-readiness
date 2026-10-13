@@ -14,14 +14,15 @@ A clear and concise description of what the current tool is missing or could do 
 
 Describe the feature you'd like. If you have a specific implementation idea, include it here.
 
-## Which layer does this affect?
+## Which area does this affect?
 
-- [ ] Layer A — Collector (new hardware data to collect from Redfish)
-- [ ] Layer B — Compatibility Engine (new VCF 9.x rule or threshold change)
-- [ ] Layer C — BCG Links (new hardware category for Broadcom compatibility lookup)
-- [ ] Layer D — Report (new HTML section, chart, or fleet summary column)
+- [ ] Collector / OEM adapter
+- [ ] Compatibility or security evaluation
+- [ ] HCL / BCG correlation
+- [ ] Report or export
+- [ ] Browser UI
 - [ ] CLI (new `--flag` or output format)
-- [ ] Build / packaging
+- [ ] Documentation
 - [ ] Other
 
 ## Alternatives Considered

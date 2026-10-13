@@ -14,6 +14,7 @@ def evaluate_vsan(
     trimode_nvme_count: int = 0,
     raid_nvme_count: int = 0,
     software_raid_nvme_count: int = 0,
+    osa_nvme_count: int = 0,
 ) -> Tuple[str, str]:
     if trimode_nvme_count > 0 and nvme_direct_count == 0:
         return (
@@ -40,8 +41,11 @@ def evaluate_vsan(
         if software_raid_nvme_count > 0:
             sub_note += " (SW RAID: bypass in BIOS)"
         return "\U0001f7e1 ESA Storage Met (Needs 25GbE NIC)", sub_note
-    elif sas_sata_count >= 2 or (nvme_direct_count + sas_sata_count >= 2):
+    elif sas_sata_count >= 2 or (nvme_direct_count + sas_sata_count >= 2) or (nvme_direct_count + sas_sata_count + osa_nvme_count >= 2):
+        total_osa = sas_sata_count + osa_nvme_count
         if nvme_direct_count > 0:
-            return "\U0001f7e1 vSAN OSA Eligible", f"{nvme_direct_count} ESA NVMe + {sas_sata_count} OSA drive(s) (needs ≥2 ESA NVMe for ESA)"
+            return "\U0001f7e1 vSAN OSA Eligible", f"{nvme_direct_count} ESA NVMe + {total_osa} OSA drive(s) (needs ≥2 ESA NVMe for ESA)"
+        if osa_nvme_count > 0:
+            return "\U0001f7e1 vSAN OSA Eligible", f"{osa_nvme_count} NVMe drive(s) on vSAN OSA HCL (All-Flash OSA — not certified for vSAN ESA Storage Tier on BCG)"
         return "\U0001f7e1 vSAN OSA Eligible", f"{sas_sata_count} SAS/SATA drives"
     return "\U0001f534 Not vSAN Eligible", "Insufficient direct-attached drives"

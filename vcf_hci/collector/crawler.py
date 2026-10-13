@@ -43,6 +43,39 @@ _HIGH_VOLUME_KEYWORDS = (
     "eventlog",
 )
 
+# Paths that Full readiness crawls should not expand (high volume / low assessment value).
+_CRAWL_SKIP_FRAGMENTS = (
+    "/jsonschemas",
+    "/secureboot/databases",
+    "/signatures/",
+    "/redfish/v1/redfish",  # bogus nested path seen on some BMCs
+)
+
+# Oem admin knobs rarely needed for VCF readiness (BMC-audit profile can re-enable later).
+_CRAWL_SKIP_OEM_ADMIN_FRAGMENTS = (
+    "/oem/supermicro/radius",
+    "/oem/supermicro/mousemode",
+    "/oem/supermicro/ikvm",
+    "/oem/supermicro/kcs",
+    "/oem/supermicro/smcrakp",
+    "/oem/supermicro/dumpservice",
+    "/oem/supermicro/attestationdump",
+)
+
+
+def should_skip_crawl_uri(uri: str, include_oem_admin: bool = True) -> bool:
+    """Return True when a URI should not be enqueued during readiness crawls."""
+    if not uri:
+        return True
+    low = uri.lower()
+    if any(frag in low for frag in _CRAWL_SKIP_FRAGMENTS):
+        return True
+    if include_oem_admin and any(frag in low for frag in _CRAWL_SKIP_OEM_ADMIN_FRAGMENTS):
+        return True
+    # Cap SecureBoot signature leaf expansion; SecureBoot status is collected separately.
+    return bool("/secureboot" in low and ("/signatures" in low or "/certificates" in low))
+
+
 # Endpoints that are already evaluated/mapped by the readiness assessment tool.
 _MAPPED_PATH_FRAGMENTS = (
     "/redfish",
@@ -391,6 +424,7 @@ class RedfishCrawler:
         max_general_members: int = 100,
         is_cancelled_fn: Optional[Callable[[], bool]] = None,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
+        skip_oem_admin: bool = True,
     ):
         """Initialize crawler.
 
@@ -403,6 +437,7 @@ class RedfishCrawler:
             max_general_members: Maximum members to walk in hardware collections (DIMMs, drives).
             is_cancelled_fn: Optional callback returning True if scan was aborted/cancelled.
             progress_callback: Optional callback(stage_message, visited_count, queued_count).
+            skip_oem_admin: When True, skip Supermicro OEM admin knobs (RADIUS/IKVM/DumpService).
         """
         self.get_fn = get_fn
         self.host_label = host_label
@@ -412,6 +447,7 @@ class RedfishCrawler:
         self.max_general_members = max_general_members
         self.is_cancelled_fn = is_cancelled_fn
         self.progress_callback = progress_callback
+        self.skip_oem_admin = skip_oem_admin
 
         self.visited_uris: Set[str] = set()
         self.crawl_results: Dict[str, dict] = {}
@@ -481,7 +517,7 @@ class RedfishCrawler:
         # 1. Enqueue seed entry points
         for ep in entry_points:
             norm = normalize_redfish_uri(ep)
-            if norm and norm not in enqueued:
+            if norm and norm not in enqueued and not should_skip_crawl_uri(norm, self.skip_oem_admin):
                 queue.append((norm, 0))
                 enqueued.add(norm)
 
@@ -491,7 +527,7 @@ class RedfishCrawler:
             max_m = self.max_log_members if is_log_col else self.max_general_members
             child_links = extract_hypermedia_links(payload, max_members=max_m)
             for cl in child_links:
-                if cl not in enqueued:
+                if cl not in enqueued and not should_skip_crawl_uri(cl, self.skip_oem_admin):
                     queue.append((cl, 1))
                     enqueued.add(cl)
 
@@ -518,6 +554,10 @@ class RedfishCrawler:
 
             # If already visited via preseed or earlier step, skip GET
             if current_uri in self.visited_uris:
+                continue
+
+            if should_skip_crawl_uri(current_uri, self.skip_oem_admin):
+                self.visited_uris.add(current_uri)
                 continue
 
             self.visited_uris.add(current_uri)
@@ -576,7 +616,7 @@ class RedfishCrawler:
                 max_m = self.max_log_members if is_log_col else self.max_general_members
                 children = extract_hypermedia_links(data, max_members=max_m)
                 for child_uri in children:
-                    if child_uri not in enqueued:
+                    if child_uri not in enqueued and not should_skip_crawl_uri(child_uri, self.skip_oem_admin):
                         enqueued.add(child_uri)
                         queue.append((child_uri, depth + 1))
 

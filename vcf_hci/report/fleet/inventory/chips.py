@@ -11,11 +11,13 @@ import re
 from typing import Any, Dict, Optional
 
 from vcf_hci.bcg_links import BCGLinkGenerator
+from vcf_hci.collector.pci_utils import clean_oem_adapter_title
+from vcf_hci.compat.firmware import is_zero_or_null_firmware
 from vcf_hci.compat_engine import (
     evaluate_driver_firmware_recommendation,
     evaluate_pci_compatibility,
 )
-from vcf_hci.constants import NVME_FW_BASELINES, is_generic_name
+from vcf_hci.constants import NVME_FW_BASELINES, is_generic_name, is_unfriendly_nic_name
 from vcf_hci.hcl import lookup_unique_hcl_device
 from vcf_hci.report.fleet.escape import _xe
 
@@ -75,21 +77,23 @@ def _storage_qualification_chip(r: dict) -> str:
     raid_blocked = int(esa.get("raid_blocked") or 0)
     sw_raid_count = int(esa.get("sw_raid_count") or r.get("sw_raid_nvme") or 0)
     vmd_on = bool(r.get("vmd_on"))
-    ctrl_unsup = bool(r.get("ctrl_unsup"))
     ctrl_osa = bool(r.get("ctrl_osa"))
 
-    if raid_blocked > 0 or (ctrl_unsup and sw_raid_count == 0):
-        return "<span class='inv-bad' title='Ineligible for vSAN ESA: NVMe drives are attached to a HW RAID or Tri-Mode controller (direct PCIe pass-through required)'>✗ Behind RAID</span>"
     if vmd_on and count > 0:
         return "<span class='inv-bad' title='Ineligible for vSAN ESA: Intel VMD is enabled in BIOS (must be disabled for native NVMe pass-through)'>✗ VMD Enabled</span>"
     if count >= 2:
         if sw_raid_count > 0:
             return f"<span class='inv-good' title='vSAN ESA Storage Qualified: {count} direct-attached NVMe SSDs ({total_tb} TB total) — Host Software RAID detected; bypass in BIOS (AHCI / Non-RAID) for direct ESXi pass-through'>✓ Storage Qualified (SW RAID)</span>"
         return f"<span class='inv-good' title='vSAN ESA Storage Qualified: {count} direct-attached NVMe SSDs ({total_tb} TB total)'>✓ Storage Qualified</span>"
-    if ctrl_osa:
-        return "<span class='inv-warn' title='vSAN OSA Storage: SAS/SATA drives detected without direct NVMe SSDs'>▲ OSA (SAS/SATA)</span>"
+    if raid_blocked > 0:
+        return "<span class='inv-bad' title='Ineligible for vSAN ESA: NVMe drives are attached to a HW RAID or Tri-Mode controller (direct PCIe pass-through required)'>✗ Behind RAID</span>"
     if count == 1:
         return "<span class='inv-muted' title='Insufficient storage: 1 direct NVMe SSD detected (minimum 2 required for vSAN ESA)'>— Insufficient (1/2)</span>"
+    osa_nvme_c = int(r.get("osa_nvme_count") or 0)
+    if osa_nvme_c > 0:
+        return f"<span class='inv-warn' title='vSAN OSA Storage: {osa_nvme_c} direct NVMe drive(s) detected, but certified only for vSAN OSA on Broadcom BCG (not vSAN ESA)'>▲ OSA ({osa_nvme_c} NVMe)</span>"
+    if ctrl_osa:
+        return "<span class='inv-warn' title='vSAN OSA Storage: SAS/SATA drives detected without direct NVMe SSDs'>▲ OSA (SAS/SATA)</span>"
     return "<span class='inv-muted' title='No direct NVMe SSDs detected for vSAN ESA'>— No NVMe Disks</span>"
 
 
@@ -111,6 +115,8 @@ def _esa_profile_chip(profile: dict) -> str:
     if not tier_code or tier_code == "Ineligible":
         if status == "bad":
             return f"<span class='{cls_name}' title='{_xe(tooltip)}'>✗ {_xe(tier_label)}</span>"
+        if status == "warn":
+            return f"<span class='{cls_name}' title='{_xe(tooltip)}'>▲ {_xe(tier_label)}</span>"
         return f"<span class='{cls_name}' title='{_xe(tooltip)}'>— Ineligible</span>"
     return f"<span class='{cls_name}' title='{_xe(tooltip)}'>{icon}{_xe(tier_label)}</span>"
 
@@ -242,6 +248,9 @@ def _nic_fw_cell(n: dict, json_hcl: Optional[dict] = None) -> str:
     if not fw or fw == "N/A":
         return f"<span class='inv-muted'>{_DASH}</span>"
 
+    if is_zero_or_null_firmware(fw):
+        return f"<code class='inv-code' title='Firmware unread via BMC out-of-band query'>{_xe(fw)} (Unreported)</code>"
+
     vid = str(n.get("vendor_id") or "").strip()
     did = str(n.get("device_id") or "").strip()
     svid = str(n.get("subsystem_vendor_id") or "").strip()
@@ -276,10 +285,13 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
     if not name:
         return f"<span class='inv-muted'>{_DASH}</span>"
 
-    if is_generic_name(name):
+    pn_val = str(n.get("part_number") or "").strip()
+    if is_unfriendly_nic_name(name, pn_val):
         cand_model = str(n.get("model") or "").strip()
-        if cand_model and not is_generic_name(cand_model):
+        if cand_model and not is_unfriendly_nic_name(cand_model, pn_val):
             name = cand_model
+        elif pn_val and not is_generic_name(pn_val):
+            name = pn_val
 
     vid = str(n.get("vendor_id") or "").strip()
     did = str(n.get("device_id") or "").strip()
@@ -297,7 +309,7 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
         if isinstance(matched_entry, list) and matched_entry:
             matched_entry = matched_entry[0]
         matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
-        if is_generic_name(name) and matched_m:
+        if is_unfriendly_nic_name(name, pn_val) and matched_m:
             name = str(matched_m).strip()
 
         if pci_eval.get("vcglink"):
@@ -314,7 +326,7 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
     elif json_hcl:
         _unique = lookup_unique_hcl_device(json_hcl=json_hcl, model_name=name)
         if _unique:
-            if is_generic_name(name) and _unique.get("model"):
+            if is_unfriendly_nic_name(name, pn_val) and _unique.get("model"):
                 name = str(_unique["model"]).strip()
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
@@ -338,6 +350,7 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
     elif not bcg_vsan_nic and n.get("product_id"):
         bcg_vsan_nic = BCGLinkGenerator.device_detail(str(n["product_id"]).strip(), "rdmanic")
 
+    name = clean_oem_adapter_title(name, host_mfg=str(n.get("manufacturer") or ""), adapter_mfg=str(n.get("manufacturer") or ""), part_number=pn_val)
     bcg_url = bcg_nic or bcg_vsan_nic or BCGLinkGenerator.io_device(name)
     if bcg_url:
         return f"<a href='{_xe(bcg_url)}' target='_blank' class='btn-link' style='color:var(--primary,#3b82f6);text-decoration:none;font-weight:600' title='Open in Broadcom Compatibility Guide'>{_xe(name)} ↗</a>"

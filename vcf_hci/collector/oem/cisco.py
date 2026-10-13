@@ -147,6 +147,36 @@ class CiscoCollector(GenericCollector):
             logger.debug("Cisco XML query for %s failed on %s: %s", class_id, url, exc)
             return None
 
+    def oem_extract_bios_attributes(self, bios_data: dict) -> dict:
+        """Extract Cisco BIOS attributes from standard, Settings, or XML API fallback."""
+        if isinstance(bios_data, dict):
+            attrs = bios_data.get("Attributes")
+            if isinstance(attrs, dict) and attrs:
+                return attrs
+
+        sys_uri = getattr(self, "sys_uri", None)
+        if sys_uri:
+            for ep in (
+                f"{sys_uri}/Bios/Settings",
+                f"{sys_uri}/Bios/Current",
+            ):
+                res = self._get(ep)
+                if isinstance(res, dict):
+                    attrs = res.get("Attributes")
+                    if isinstance(attrs, dict) and attrs:
+                        return attrs
+
+        # Fallback to Cisco XML API (/nuova) for biosSettings
+        xml_root = self._query_cisco_xml("biosSettings")
+        if xml_root is not None:
+            xml_attrs = {}
+            for el in xml_root.findall(".//biosSettings"):
+                xml_attrs.update(el.attrib)
+            if xml_attrs:
+                return xml_attrs
+
+        return {}
+
     def oem_storage_fallback(self) -> list:
         """Fallback to Cisco CIMC XML API (/nuova) when Redfish storage returns empty.
 
@@ -739,7 +769,7 @@ def normalize_cisco_bios_attributes(
         if k in raw_attrs and raw_attrs[k] is not None:
             normalized["BootMode"] = str(raw_attrs[k]).strip()
             break
-    if "BootMode" not in normalized and fallback_boot_mode:
+    if "BootMode" not in normalized and fallback_boot_mode and str(fallback_boot_mode).strip().lower() not in ("unknown", "none", ""):
         normalized["BootMode"] = str(fallback_boot_mode).strip()
 
     # 12. ProcCStates / C1E

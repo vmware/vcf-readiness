@@ -275,6 +275,12 @@ def sanitize_hcl_entry(raw_entry: dict) -> dict:
 
 
 def load_vsan_hcl_json(local_path: Optional[str] = None, refresh_live: bool = False, max_age_days: int = 30) -> dict:
+    """Load a cached/local HCL dataset, optionally refreshing it explicitly.
+
+    Ordinary loads never access the network.  A missing or stale cache returns
+    the packaged/offline baseline; only ``refresh_live=True`` permits a
+    Broadcom download.
+    """
     from vcf_hci.hcl.bundle_manager import get_hcl_dir
 
     if not local_path:
@@ -295,16 +301,8 @@ def load_vsan_hcl_json(local_path: Optional[str] = None, refresh_live: bool = Fa
         except Exception:
             pass
 
-    should_download = refresh_live
-    if not os.path.exists(resolved_path):
-        should_download = True
-    else:
-        age = (time.time() - os.path.getmtime(resolved_path)) / 86400
-        if age > max_age_days:
-            should_download = True
-
     data_payload = None
-    if should_download:
+    if refresh_live:
         urls_to_try = [LIVE_VSAN_HCL_JSON_URL]
         if LIVE_VSAN_HCL_JSON_URL.endswith(".gz"):
             urls_to_try.append(LIVE_VSAN_HCL_JSON_URL[:-3])

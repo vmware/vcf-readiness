@@ -7,6 +7,7 @@ import re
 import time
 from typing import Optional
 
+from vcf_hci.branding import FAVICON_DATA_URI, MARK_SVG
 from vcf_hci.constants import COMBINED_HTML_DEFAULT_MAX_HOSTS, TOOL_VERSION
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.report.fleet.escape import _xe
@@ -328,14 +329,29 @@ def _generate_combined_html(
             '</p>'
         )
 
+    has_topology = bool(switch_matrix_block and switch_matrix_block.strip())
+    fleet_detail_seg = (
+        '<div class="fleet-detail-seg" role="tablist" aria-label="Fleet detail view">'
+        '<button type="button" class="active" data-action="fleet-detail-view" data-fleet-view="hosts">Hosts</button>'
+        '<button type="button" data-action="fleet-detail-view" data-fleet-view="topology">Network Topology</button>'
+        "</div>"
+    ) if has_topology else ""
+    hosts_pane_open = ' class="fleet-detail-pane active" id="fleet-detail-hosts"' if has_topology else ' id="fleet-detail-hosts"'
+    topology_pane = (
+        f'<div class="fleet-detail-pane" id="fleet-detail-topology">{switch_matrix_block}</div>'
+        if has_topology
+        else switch_matrix_block
+    )
     summary_tab = f"""<div class="container" style="padding-top:2rem">
 {header_controls}
-<h1>{summary_title}</h1>
+<h1 style="display:flex;align-items:center">{MARK_SVG}{summary_title}</h1>
 <p style="color:#64748b">{n_hosts} host(s) assessed — click a host tab for full detail.</p>
 <h2 style="font-size:.9rem;font-weight:700;color:var(--text-muted,#94a3b8);margin:2rem 0 .75rem;text-transform:uppercase">Fleet Health Tiles</h2>
 {tiles_html}
 {slow_bmc_alert_html}
-<h2 style="font-size:.9rem;font-weight:700;color:var(--text-muted,#94a3b8);margin:2rem 0 .75rem;text-transform:uppercase">Per-Host Assessment Table</h2>
+{fleet_detail_seg}
+<div{hosts_pane_open}>
+<h2 id="fleet-per-host-table" style="font-size:.9rem;font-weight:700;color:var(--text-muted,#94a3b8);margin:2rem 0 .75rem;text-transform:uppercase">Per-Host Assessment Table</h2>
 <div id="table-controls" style="display:flex;gap:1.25rem;align-items:center;margin:.5rem 0 .75rem;flex-wrap:wrap;background:var(--card, #f8fafc);border:1px solid var(--border, #e2e8f0);border-radius:6px;padding:.6rem 1rem;font-size:.87rem">
   <label style="display:flex;align-items:center;gap:.45rem;font-weight:600;color:var(--text-muted, #64748b)">
     OEM Filter:
@@ -376,7 +392,8 @@ def _generate_combined_html(
 <th title="Click to sort">FC HBAs<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">GPUs<span class="sort-ind">⇅</span></th>
 </tr></thead><tbody>{sum_rows}</tbody></table>
-{switch_matrix_block}
+</div>
+{topology_pane}
 </div>"""
 
     sibling_xlsx = None
@@ -603,6 +620,7 @@ def _generate_combined_html(
 <head>
   <meta charset="UTF-8">
   <title>{page_title}</title>
+  <link rel="icon" type="image/svg+xml" href="{FAVICON_DATA_URI}">
   <style>
 {css_block}
     html,body{{margin:0;padding:0}}
@@ -1357,6 +1375,12 @@ document.addEventListener('click', function(e) {{
       var src = actionEl.getAttribute('data-src');
       if (src) {{
         window.open(src, '_blank', 'noopener,noreferrer');
+      }}
+    }} else if (action === 'fleet-detail-view') {{
+      e.preventDefault();
+      var view = actionEl.getAttribute('data-fleet-view') || 'hosts';
+      if (window.showFleetDetailView) {{
+        window.showFleetDetailView(view);
       }}
     }}
   }}

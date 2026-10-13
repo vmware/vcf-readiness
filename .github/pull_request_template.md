@@ -16,9 +16,12 @@
 
 ## Testing
 
-- [ ] `python -m pytest tests/ -v` passes locally
+- [ ] `python -m pytest` passes locally
+- [ ] `python -m ruff check .` passes locally
+- [ ] `python tools/check_data_hygiene.py` passes locally
+- [ ] `python tools/bundle_docs.py --check` passes locally (when docs are affected)
 - [ ] New tests added for new code (or explain why tests are not needed)
-- [ ] Tested against real hardware (or describe mock/fixture approach)
+- [ ] Hardware-dependent behavior uses sanitized, minimal test data (or explain validation)
 
 ## OEM Support Checklist (if adding a new vendor)
 
@@ -26,9 +29,9 @@
 - [ ] `VENDOR_MATCH` tuple set correctly
 - [ ] Only non-default hooks overridden
 - [ ] Registered in `vcf_hci/collector/oem/__init__.py` `_REGISTRY`
-- [ ] Test class added to `tests/test_collector_oem.py` or new test file
-- [ ] Redfish capture added to `samples/<vendor>/` (scrubbed of credentials)
-- [ ] OEM quirks documented in `ARCHITECTURE.md` section 9
+- [ ] Focused test added
+- [ ] No unsanitized Redfish capture, credential, or customer identifier committed
+- [ ] OEM behavior documented where users or maintainers need it
 
 ## Compat Engine Checklist (if changing rules)
 

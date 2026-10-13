@@ -322,6 +322,7 @@ def _scan_one_host(
                 host_timeout=getattr(ctx, "host_timeout", 300),
                 verify_ssl=verify_ssl,
                 ca_bundle=getattr(ctx, "ca_bundle", None),
+                server_hostname=server_hostname,
             ) as c:
                 c.stage_callback = _stage_cb
                 c.cancel_event = cancel_event

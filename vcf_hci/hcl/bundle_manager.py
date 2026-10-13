@@ -1,7 +1,7 @@
 """
 VCF Readiness Tool — HCL bundle manager.
 
-Manages creation, import, and auto-refresh of dark-site HCL zip bundles
+Manages explicit creation and offline import of dark-site HCL zip bundles
 for air-gapped environments.
 """
 import csv
@@ -59,9 +59,11 @@ class HCLBundleManager:
 
 def ensure_auto_hcl_bundle(bundle_name: str = "vcf_hcl_bundle_latest.zip", max_age_days: int = 30) -> Optional[str]:
     """
-    Auto-builds or updates an HCL dark-site bundle zip on app startup if missing
-    or older than max_age_days (30 days). Returns the bundle file path.
-    Searches in ~/.vcf-readiness/hcl/ and current working directory.
+    Return the newest existing local HCL bundle without network access.
+
+    The historical function name is retained for API compatibility. Missing or
+    stale bundles are never built/refreshed here; callers must explicitly use
+    ``create_hcl_bundle`` (CLI ``--bundle-hcl``) or the refresh workflow.
     """
     hcl_dir = get_hcl_dir()
     candidates = set()
@@ -80,34 +82,33 @@ def ensure_auto_hcl_bundle(bundle_name: str = "vcf_hcl_bundle_latest.zip", max_a
         reverse=True
     )
 
-    should_build = False
     if os.path.isabs(bundle_name):
         target_path = bundle_name
     else:
         target_path = os.path.join(hcl_dir, bundle_name)
 
-    if existing_bundles:
-        newest_bundle = existing_bundles[0]
-        age_days = (time.time() - os.path.getmtime(newest_bundle)) / 86400.0
-        if age_days > max_age_days:
-            logger.info(f"Auto-HCL bundle '{newest_bundle}' is {age_days:.1f} days old (> {max_age_days} days). Refreshing...")
-            should_build = True
-        else:
-            target_path = newest_bundle
-    else:
-        logger.info(f"No local HCL bundle found. Auto-building '{target_path}'...")
-        should_build = True
+    if os.path.exists(target_path):
+        candidates.add(os.path.abspath(target_path))
+        existing_bundles = sorted(
+            candidates,
+            key=lambda p: os.path.getmtime(p),
+            reverse=True,
+        )
 
-    if should_build:
-        try:
-            target_path = create_hcl_bundle(target_path)
-        except Exception as e:
-            logger.warning(f"Could not auto-build HCL bundle: {e}")
-            if existing_bundles:
-                target_path = existing_bundles[0]
-                logger.info(f"Falling back to existing bundle: {target_path}")
+    if not existing_bundles:
+        logger.debug("No local HCL bundle found; continuing offline without a downloaded bundle")
+        return None
 
-    return target_path if (target_path and os.path.exists(target_path)) else None
+    newest_bundle = existing_bundles[0]
+    age_days = (time.time() - os.path.getmtime(newest_bundle)) / 86400.0
+    if age_days > max_age_days:
+        logger.info(
+            "Local HCL bundle '%s' is %.1f days old; using it offline. "
+            "Use an explicit HCL refresh or bundle command to update it.",
+            newest_bundle,
+            age_days,
+        )
+    return newest_bundle
 
 
 def create_hcl_bundle(output_zip_path: Optional[str] = None) -> str:

@@ -256,13 +256,9 @@ class BaseRedfishCollector:
 
 ### 1. Capture Redfish Data
 
-Use the bundled pure-standard-library capture tool to capture a full Redfish tree and endpoint manifest from the target BMC (zero pip dependencies):
+This checkout does not include a Redfish capture utility or a sample-capture directory. Do not commit a raw BMC capture, credential, or customer identifier.
 
-```bash
-python tools/crawl_oem_host.py -r <BMC_IP> -u <USER> -p <PASSWORD> -D samples/<vendor> --zip
-```
-
-The output directory contains DMTF-compliant JSON files for every endpoint along with `endpoints_manifest.json` and `endpoints_manifest.csv`. Save them in `samples/<vendor>/`.
+Put the smallest sanitized JSON shape directly in a focused test. To inspect a controller you are authorized to read, run a normal scan with `--crawl` and review the generated mockup locally before sharing any of it.
 
 ### 2. Identify Non-Standard Paths
 
@@ -355,7 +351,7 @@ If a BMC temporarily returns a "scan in progress" or "not ready" JSON body (as H
 In addition to Redfish collector hooks, OEMs and partners are encouraged to contribute chassis mapping data to enhance visual report fidelity:
 - **Order SKUs & Model Databases**: Add entries to `DELL_SKU_CHASSIS_DB`, `HPE_SKU_CHASSIS_DB`, or `DELL_MODEL_CHASSIS_DB` in `vcf_hci/constants.py`.
 - **Chassis SVG Overlays**: Submit slot numbering patterns and vector front-panel graphics for standalone HTML report diagrams.
-- **Redfish Dump Mockups**: Submit sanitized BMC JSON dumps via `tools/crawl_oem_host.py` to populate `samples/<vendor>/`.
+- **Redfish evidence**: Add the smallest sanitized JSON shape to a focused test. Do not commit raw captures.
 
 ### Non-Standard Manager URI
 

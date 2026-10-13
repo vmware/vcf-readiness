@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "vcf-readiness"
-version = "9.9.1"
+dynamic = ["version"]
 description = "VCF / vSphere 9.1 Readiness Assessment Tool — Redfish-based hardware compatibility scanner"
 readme = "README.md"
-license = { text = "CA, Inc. Software License Agreement" }
+license = "LicenseRef-CA-Inc"
+license-files = ["LICENSE.md", "NOTICE", "THIRD_PARTY_LICENSES.md"]
 requires-python = ">=3.9"
 dependencies = []  # Zero external dependencies — stdlib only
 
@@ -21,7 +22,6 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "Topic :: System Administration",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -32,6 +32,7 @@ classifiers = [
 
 [project.scripts]
 vcf-assess = "vcf_hci.cli:main"
+vcf-readiness-web = "vcf_hci.web:main"
 
 [project.urls]
 Homepage = "https://github.com/vmware/vcf-readiness"
@@ -39,7 +40,7 @@ Homepage = "https://github.com/vmware/vcf-readiness"
 Documentation = "https://github.com/vmware/vcf-readiness/blob/main/docs/"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.5", "ruff>=0.6", "ty==0.0.79"]
+dev = ["build>=1.2", "pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.5", "ruff>=0.6", "ty==0.0.79"]
 crypto = ["pycryptodomex>=3.20.0"]
 
 [tool.ruff]
@@ -127,6 +128,15 @@ ignore = [
 "tests/**"             = ["T20", "S"]
 "tools/**"             = ["T20"]
 "scripts/**"           = ["T20"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = { attr = "vcf_hci.constants.TOOL_VERSION" }
+
+[tool.setuptools.package-data]
+"vcf_hci.hcl" = ["io_nics.json"]
 
 [tool.setuptools.packages.find]
 where = ["."]

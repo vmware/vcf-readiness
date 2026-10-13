@@ -227,15 +227,16 @@ Examples:
             f"{hcl_bundle_metadata.get('json_models_count', 0) + hcl_bundle_metadata.get('csv_models_count', 0)} drive models indexed)\n"
         )
     else:
-        auto_bundle_path = ensure_auto_hcl_bundle(max_age_days=30)
-        if auto_bundle_path:
-            json_hcl, csv_db, hcl_bundle_metadata = import_hcl_bundle(auto_bundle_path)
-            if json_hcl or csv_db:
-                print(
-                    f"[🔒] Auto Dark-Site HCL Bundle Active: {hcl_bundle_metadata.get('bundle_filename')} "
-                    f"(Age: {hcl_bundle_metadata.get('dataset_age_days')} days, "
-                    f"{hcl_bundle_metadata.get('json_models_count', 0) + hcl_bundle_metadata.get('csv_models_count', 0)} drive models indexed)\n"
-                )
+        if not args.refresh_hcl:
+            auto_bundle_path = ensure_auto_hcl_bundle(max_age_days=30)
+            if auto_bundle_path:
+                json_hcl, csv_db, hcl_bundle_metadata = import_hcl_bundle(auto_bundle_path)
+                if json_hcl or csv_db:
+                    print(
+                        f"[🔒] Auto Dark-Site HCL Bundle Active: {hcl_bundle_metadata.get('bundle_filename')} "
+                        f"(Age: {hcl_bundle_metadata.get('dataset_age_days')} days, "
+                        f"{hcl_bundle_metadata.get('json_models_count', 0) + hcl_bundle_metadata.get('csv_models_count', 0)} drive models indexed)\n"
+                    )
 
         if not json_hcl:
             json_hcl = load_vsan_hcl_json(refresh_live=args.refresh_hcl, max_age_days=30)

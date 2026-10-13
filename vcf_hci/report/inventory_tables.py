@@ -10,11 +10,17 @@ import re
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
+from vcf_hci.collector.pci_utils import clean_oem_adapter_title
 from vcf_hci.compat_engine import (
     VCF9CompatibilityEngine,
     evaluate_driver_firmware_recommendation,
 )
-from vcf_hci.constants import NVME_FW_BASELINES, is_generic_name
+from vcf_hci.constants import (
+    NVME_FW_BASELINES,
+    is_generic_name,
+    is_unfriendly_nic_name,
+    prefer_storage_ctrl_display_name,
+)
 from vcf_hci.report.schema_registry import color_for_verdict, strip_html
 from vcf_hci.report.sel_links import (
     normalize_vendor,
@@ -72,6 +78,26 @@ def _all_drives(data: dict):
     for ctrl in data.get("storage_subsystem") or []:
         for d in ctrl.get("drives") or []:
             yield ctrl, d
+
+
+def _is_boot_ctrl(ctrl: dict) -> bool:
+    """Return True if storage controller is dedicated to OS boot (BOSS, NS204i, SATADOM, etc.)."""
+    if not isinstance(ctrl, dict):
+        return False
+    if ctrl.get("is_boot_ctrl"):
+        return True
+    ctrl_id = str(ctrl.get("id") or "").upper()
+    ctrl_name = str(ctrl.get("name") or "").upper()
+    ctrl_model = str(ctrl.get("ctrl_model") or "").upper()
+    ident = f"{ctrl_id} {ctrl_name} {ctrl_model}"
+    if any(k in ident for k in ("BOSS", "NS204", "SATADOM", "BOOT")):
+        return True
+    drives = ctrl.get("drives") or []
+    if drives:
+        non_empty = [d for d in drives if str(d.get("category") or "") != "Empty"]
+        if non_empty and all(d.get("is_boot") or str(d.get("category") or "") == "Boot Device" for d in non_empty):
+            return True
+    return False
 
 
 def _gb_to_tb_label(gb: float) -> float:
@@ -349,6 +375,7 @@ def evaluate_vsan_esa_profile(
     raid_nvme_count: Optional[int] = None,
     software_raid_nvme_count: Optional[int] = None,
     has_hw_raid: Optional[bool] = None,
+    osa_nvme_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Evaluate host against VMware vSAN ESA ReadyNode hardware profiles (ESA-L, ESA-M, ESA-S, ESA-XS).
 
@@ -378,12 +405,18 @@ def evaluate_vsan_esa_profile(
                 1 for _ctrl, d in _all_drives(data)
                 if d.get("behind_software_raid")
             )
+        if osa_nvme_count is None:
+            osa_nvme_count = sum(
+                1 for _ctrl, d in _all_drives(data)
+                if d.get("category") == "vSAN OSA Only"
+            )
         if vmd_enabled is None:
             vmd_enabled = bool((data.get("bios_checks") or {}).get("vmd_enabled_flag", False))
         if has_hw_raid is None:
             has_hw_raid = any(
                 ctrl.get("has_logical_volumes") and not ctrl.get("is_software_raid")
                 for ctrl in data.get("storage_subsystem") or []
+                if not _is_boot_ctrl(ctrl)
             )
 
         si = data.get("system") or {}
@@ -454,7 +487,22 @@ def evaluate_vsan_esa_profile(
             "meets_network": c_nic >= 25,
         }
 
+    c_osa_nvme = _safe_int(osa_nvme_count, 0)
     if c_esa < 2:
+        if c_osa_nvme >= 2:
+            return {
+                "tier_code": "Ineligible",
+                "tier_label": "vSAN OSA Only",
+                "profile": "vSAN OSA Only",
+                "status": "warn",
+                "tooltip": (
+                    f"Ineligible for ESA: {c_osa_nvme} direct NVMe drive(s) detected, "
+                    "but they are certified only for vSAN OSA (All-Flash Caching/Capacity Tier) "
+                    "on Broadcom BCG, not vSAN ESA Storage Tier."
+                ),
+                "meets_storage": False,
+                "meets_network": c_nic >= 25,
+            }
         return {
             "tier_code": "Ineligible",
             "tier_label": "Insufficient Disks (<2)",
@@ -720,6 +768,8 @@ def _map_esa_tier(vsan_verdict: str) -> str:
 
 def _tpm_ok(si: dict) -> Optional[bool]:
     badge = _strip_html(si.get("tpm_status_badge", "") or "").lower()
+    if "1.2" in badge or str(si.get("tpm_interface") or "") == "TPM 1.2":
+        return False
     if not badge or badge in ("n/a", "unknown", "—", "-"):
         return None
     raw_badge = str(si.get("tpm_status_badge") or "")
@@ -756,6 +806,10 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             1 for d in all_drives_list
             if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA")
         )
+        osa_nvme = sum(
+            1 for d in all_drives_list
+            if d.get("category") == "vSAN OSA Only"
+        )
         vmd_on = (data.get("bios_checks") or {}).get("vmd_enabled_flag", False)
         trimode_nvme = sum(
             1 for d in all_drives_list
@@ -769,9 +823,10 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             1 for d in all_drives_list
             if d.get("behind_software_raid")
         )
+        cap_ctrls = [c for c in data.get("storage_subsystem") or [] if isinstance(c, dict) and not _is_boot_ctrl(c)]
         has_hw_raid = any(
             ctrl.get("has_logical_volumes") and not ctrl.get("is_software_raid")
-            for ctrl in data.get("storage_subsystem", [])
+            for ctrl in cap_ctrls
         )
         vsan_verdict, _detail = VCF9CompatibilityEngine.evaluate_vsan(
             esa_count,
@@ -781,6 +836,7 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             trimode_nvme_count=trimode_nvme,
             raid_nvme_count=raid_nvme,
             software_raid_nvme_count=sw_raid_nvme,
+            osa_nvme_count=osa_nvme,
         )
         esa_tier = _map_esa_tier(vsan_verdict)
         esa_profile = evaluate_vsan_esa_profile(
@@ -794,6 +850,7 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             raid_nvme_count=raid_nvme,
             software_raid_nvme_count=sw_raid_nvme,
             has_hw_raid=has_hw_raid,
+            osa_nvme_count=osa_nvme,
         )
         tier = cpu_tier(data)
         vendor_raw = si.get("vendor") or ""
@@ -820,16 +877,16 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
         fc_hba = summarize_fc_hbas(data)
         has_osa_ctrl = any(
             any(k in str(c.get("name") or c.get("ctrl_model") or c.get("id") or "").upper() for k in ("HBA", "PASS-THROUGH", "PASSTHROUGH"))
-            for c in data.get("storage_subsystem") or []
+            for c in cap_ctrls
         )
         has_raid_ctrl = any(
             not c.get("is_software_raid")
             and re.search(r"\b(?:PERC|RAID|MEGARAID|SMART ARRAY)\b", str(c.get("name") or c.get("ctrl_model") or c.get("id") or ""), re.IGNORECASE)
-            for c in data.get("storage_subsystem") or []
+            for c in cap_ctrls
         )
         ctrl_esa = esa_count > 0
         ctrl_osa = osa_count > 0 or has_osa_ctrl
-        ctrl_unsup = trimode_nvme > 0 or raid_nvme > 0 or has_hw_raid or has_raid_ctrl
+        ctrl_unsup = trimode_nvme > 0 or raid_nvme > 0 or (esa_count == 0 and (has_hw_raid or has_raid_ctrl))
 
         # BMC Security Posture
         sec_score = score_host_security(data)
@@ -888,6 +945,7 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             "cpu_verdict": cpu_verdict,
             "esa": esa,
             "sw_raid_nvme": sw_raid_nvme,
+            "osa_nvme_count": osa_nvme,
             "esa_tier": esa_tier,
             "esa_profile": esa_profile,
             "nic": nic,
@@ -995,11 +1053,16 @@ def build_compact_fleet_inventory(
 
         # 1. Drives
         for ctrl in data.get("storage_subsystem") or []:
-            ctrl_name = str(ctrl.get("name") or ctrl.get("ctrl_model") or ctrl.get("id") or "")
+            ctrl_model = str(ctrl.get("ctrl_model") or "")
+            ctrl_name = prefer_storage_ctrl_display_name(
+                name=ctrl.get("name"),
+                ctrl_model=ctrl_model,
+                ctrl_id=ctrl.get("id"),
+            )
             is_perc7xx = bool(
                 _PERC_7XX_PATTERN.search(ctrl_name)
                 or _PERC_7XX_PATTERN.search(str(ctrl.get("id") or ""))
-                or _PERC_7XX_PATTERN.search(str(ctrl.get("ctrl_model") or ""))
+                or _PERC_7XX_PATTERN.search(ctrl_model)
             )
             for d in ctrl.get("drives") or []:
                 if (d.get("category") or "") == "Empty":
@@ -1009,9 +1072,19 @@ def build_compact_fleet_inventory(
                 behind_tm = bool(d.get("behind_trimode"))
                 behind_sw = bool(d.get("behind_software_raid"))
                 is_sw_ctrl = bool(ctrl.get("is_software_raid"))
+                is_boot = (
+                    cat == "Boot Device"
+                    or bool(d.get("is_boot"))
+                    or bool(ctrl.get("is_boot_ctrl"))
+                    or _is_boot_ctrl(ctrl)
+                )
 
-                if not is_sw_ctrl and not behind_sw and (is_perc7xx or "Tri-Mode" in cat or behind_tm or (cat == "Unsupported NVMe RAID")):
+                if is_boot:
+                    ctrl_type = "boot"
+                elif not is_sw_ctrl and not behind_sw and (is_perc7xx or "Tri-Mode" in cat or behind_tm or (cat == "Unsupported NVMe RAID")):
                     ctrl_type = "unsupported"
+                elif cat == "vSAN OSA Only":
+                    ctrl_type = "osa"
                 elif cat == ESA_CATEGORY or proto.upper() in ("NVME", "PCIE"):
                     ctrl_type = "esa"
                 elif "OSA" in cat or "HBA" in ctrl_name.upper():
@@ -1027,7 +1100,11 @@ def build_compact_fleet_inventory(
                     "host_idx": idx,
                     "hostname": h_name,
                     "ip": h_ip,
-                    "ctrl_name": str(d.get("controller_name") or ctrl_name),
+                    "ctrl_name": prefer_storage_ctrl_display_name(
+                        name=d.get("controller_name") or ctrl.get("name"),
+                        ctrl_model=ctrl_model,
+                        ctrl_id=ctrl.get("id"),
+                    ),
                     "model": str(d.get("model") or ""),
                     "media_type": str(d.get("media_type") or ""),
                     "protocol": proto,
@@ -1053,8 +1130,15 @@ def build_compact_fleet_inventory(
         # 2. NICs
         for ad in data.get("network_adapters") or []:
             ad_name = str(ad.get("name") or ad.get("model") or "Network Adapter")
-            if is_generic_name(ad_name) and ad.get("model") and not is_generic_name(ad.get("model")):
-                ad_name = str(ad.get("model"))
+            ad_pn = str(ad.get("part_number") or "").strip()
+            if is_unfriendly_nic_name(ad_name, ad_pn):
+                cand_m = str(ad.get("model") or "").strip()
+                if cand_m and not is_unfriendly_nic_name(cand_m, ad_pn):
+                    ad_name = cand_m
+                elif ad_pn and not is_generic_name(ad_pn):
+                    ad_name = ad_pn
+            sys_m = str((data.get("system") or {}).get("manufacturer") or "")
+            ad_name = clean_oem_adapter_title(ad_name, host_mfg=sys_m, adapter_mfg=str(ad.get("manufacturer") or ""), part_number=ad_pn)
             fw = str(ad.get("firmware_version") or ad.get("firmware") or "")
             for p in ad.get("ports") or []:
                 spd = p.get("current_speed_gbps") or p.get("speed_gbps") or 0
@@ -1065,6 +1149,12 @@ def build_compact_fleet_inventory(
                     meets_25g = float(spd or 0) >= 25
                 except (ValueError, TypeError):
                     meets_25g = False
+                if not meets_25g:
+                    try:
+                        rated = _extract_nic_rated_speed(ad, p)
+                        meets_25g = rated >= 25
+                    except Exception:
+                        pass
                 nics.append({
                     "host_idx": idx,
                     "hostname": h_name,
@@ -1277,18 +1367,20 @@ def build_inventory_sheets(
         ci = si.get("cpu_summary") or {}
         mem_topo = data.get("memory_topology") or {}
         sc = (data.get("bios_checks") or {}).get("side_channel") or []
-        ucode = ", ".join(c.get("label", "") for c in sc if "Microcode" in c.get("feature", "")) or "N/A"
+        ucode_bios = ", ".join(c.get("label", "") for c in sc if "Microcode" in c.get("feature", "")) or ""
+        ucode = ucode_bios or "N/A"
         verdict = _strip_html(str(ci.get("verdict") or ""))
         procs = ci.get("processors") or []
 
         if procs:
             for p in procs:
+                p_ucode = str(p.get("microcode") or "").strip() or ucode
                 cpu_rows.append([
                     ip, hostname, p.get("socket", ""), p.get("model") or ci.get("model", ""),
                     p.get("cores", ""), p.get("threads", ""),
                     ci.get("base_freq_ghz", ""), ci.get("max_freq_ghz", ""),
                     p.get("max_speed_mhz", ""), p.get("operating_speed_mhz", ""),
-                    p.get("health", ""), p.get("state", ""), ucode, p.get("processor_id", ""),
+                    p.get("health", ""), p.get("state", ""), p_ucode, p.get("processor_id", ""),
                     verdict, ci.get("architecture", ""),
                 ])
         else:
@@ -1427,8 +1519,15 @@ def build_inventory_sheets(
                     pass
                 meets_25g_cell = ("Yes", "green") if spd_val >= 25 else ("No", "yellow")
                 n_name = str(n.get("name") or "")
-                if is_generic_name(n_name) and n.get("model") and not is_generic_name(n.get("model")):
-                    n_name = str(n.get("model"))
+                n_pn = str(n.get("part_number") or "").strip()
+                if is_unfriendly_nic_name(n_name, n_pn):
+                    cand_m = str(n.get("model") or "").strip()
+                    if cand_m and not is_unfriendly_nic_name(cand_m, n_pn):
+                        n_name = cand_m
+                    elif n_pn and not is_generic_name(n_pn):
+                        n_name = n_pn
+                sys_m = str((data.get("system") or {}).get("manufacturer") or "")
+                n_name = clean_oem_adapter_title(n_name, host_mfg=sys_m, adapter_mfg=str(n.get("manufacturer") or ""), part_number=n_pn)
                 net_rows.append([
                     ip, hostname, n_name, n.get("id", ""),
                     n.get("manufacturer", ""), n.get("part_number", ""), pci,
@@ -1629,9 +1728,41 @@ def build_inventory_sheets(
             ])
             host_has_alarms = True
 
-        therm = data.get("thermal") or {}
-        if therm.get("status") in ("Warning", "Critical"):
-            sev_t = "Critical" if therm.get("status") == "Critical" else "Warning"
+        therm = data.get("thermal_telemetry") or data.get("thermal") or {}
+        thermal_hits = False
+        for sensor in therm.get("sensors") or []:
+            if not isinstance(sensor, dict):
+                continue
+            flag = str(sensor.get("status_flag") or "")
+            sensor_health = str(sensor.get("health") or sensor.get("status") or "")
+            if "🔴" in flag or sensor_health.lower() in ("critical", "failed"):
+                sev_t = "Critical"
+            elif "🟡" in flag or sensor_health.lower() in ("warning", "degraded"):
+                sev_t = "Warning"
+            else:
+                continue
+            thermal_hits = True
+            health_rows.append([
+                ip, hostname, (sev_t, "red" if sev_t == "Critical" else "yellow"),
+                "Thermal / Cooling", str(sensor.get("name") or "Thermal Sensor"),
+                str(sensor.get("message") or sensor.get("reading") or "Thermal threshold breach"), "—",
+            ])
+            host_has_alarms = True
+        for fan in therm.get("fan_faults") or []:
+            if not isinstance(fan, dict):
+                continue
+            fan_health = str(fan.get("health") or "Warning")
+            sev_t = "Critical" if fan_health.lower() in ("critical", "failed") else "Warning"
+            thermal_hits = True
+            health_rows.append([
+                ip, hostname, (sev_t, "red" if sev_t == "Critical" else "yellow"),
+                "Thermal / Cooling", str(fan.get("name") or "Fan"),
+                f"Fan fault ({fan_health})", "—",
+            ])
+            host_has_alarms = True
+        legacy_status = str(therm.get("status") or "")
+        if not thermal_hits and (legacy_status in ("Warning", "Critical") or therm.get("out_of_spec")):
+            sev_t = "Critical" if legacy_status == "Critical" or "🔴" in str(therm.get("overall_status_badge") or "") else "Warning"
             health_rows.append([
                 ip, hostname, (sev_t, "red" if sev_t == "Critical" else "yellow"),
                 "Thermal / Cooling", "Chassis Thermal", str(therm.get("message") or "Thermal threshold breach"), "—",

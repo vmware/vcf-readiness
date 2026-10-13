@@ -48,7 +48,7 @@ def annotate_port_contract(adapters: List[Dict[str, Any]]) -> None:
                 except (TypeError, ValueError):
                     port["speed_gbps"] = 0.0
             if not port.get("speed_source"):
-                if float(port.get("speed_gbps") or 0) > 0:
+                if float(port.get("speed_gbps") or 0) > 0 and str(port.get("link_status") or "").lower() == "up":
                     port["speed_source"] = "current_speed_gbps"
                 else:
                     port["speed_source"] = "unreported"

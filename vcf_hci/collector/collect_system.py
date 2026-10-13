@@ -1,10 +1,8 @@
 """
 VCF Readiness Tool — system/memory/BIOS/BMC collection mixin.
 """
-import ipaddress
 import logging
 import re
-import socket
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -84,6 +82,93 @@ def _normalize_cpu_summary_model(raw: Optional[Any]) -> str:
     if not s or s.lower() in _CPU_SUMMARY_PLACEHOLDERS:
         return "Unknown"
     return s
+
+
+_TPM_INTERFACE_LABELS = {
+    "TPM2_0": "TPM 2.0",
+    "TPM1_2": "TPM 1.2",
+    "TCM1_0": "TCM 1.0",
+}
+
+
+def _present_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.lower() in ("", "none", "null", "n/a"):
+        return ""
+    return text
+
+
+def computer_system_inventory(data: Optional[dict]) -> Dict[str, Any]:
+    """Normalize standard ComputerSystem identity fields without inventing health.
+
+    TrustedModules.InterfaceTypeSelection is reported as given. An enabled
+    module is not assumed to be TPM 2.0, and a missing Status.Health is left
+    blank rather than reported healthy.
+    """
+    payload = data if isinstance(data, dict) else {}
+    status = payload.get("Status") if isinstance(payload.get("Status"), dict) else {}
+    health = _present_text(status.get("Health"))
+    health_rollup = _present_text(status.get("HealthRollup"))
+    status_state = _present_text(status.get("State"))
+    power_state = _present_text(payload.get("PowerState")) or "Unknown"
+
+    modules = payload.get("TrustedModules") if isinstance(payload.get("TrustedModules"), list) else []
+    module = next((item for item in modules if isinstance(item, dict)), {})
+    module_status = module.get("Status") if isinstance(module.get("Status"), dict) else {}
+    interface_raw = _present_text(module.get("InterfaceType") or module.get("InterfaceTypeSelection"))
+    interface = _TPM_INTERFACE_LABELS.get(interface_raw, interface_raw)
+    firmware = _present_text(module.get("FirmwareVersion") or module.get("FirmwareVersion2"))
+    tpm_state = _present_text(module_status.get("State")) or ("Absent" if modules and not module else "Disabled")
+    if not modules:
+        tpm_state = "NotReported"
+    fw_note = f" FW {firmware}" if firmware else ""
+
+    if tpm_state in ("Absent", "NotPresent"):
+        tpm_badge = "<span class='badge danger'>🔴 Not Present (Hardware Missing)</span>"
+    elif tpm_state in ("Enabled", "EnabledAndActivated"):
+        if interface == "TPM 2.0":
+            tpm_badge = f"<span class='badge success'>🟢 Enabled (TPM 2.0 Active{fw_note})</span>"
+        elif interface == "TPM 1.2":
+            tpm_badge = f"<span class='badge warning'>🟡 Enabled (TPM 1.2{fw_note} — Upgrade Required)</span>"
+        elif interface:
+            tpm_badge = f"<span class='badge warning'>🟡 Enabled ({interface}{fw_note})</span>"
+        else:
+            tpm_badge = "<span class='badge warning'>🟡 Enabled (TPM interface not reported)</span>"
+    elif tpm_state == "NotReported":
+        tpm_badge = "<span class='badge info'>ℹ️ TPM Not Reported</span>"
+    else:
+        shown = interface or tpm_state
+        tpm_badge = f"<span class='badge warning'>🟡 {shown}{fw_note} (Action Required)</span>"
+
+    inventory: Dict[str, Any] = {
+        "asset_tag": _present_text(payload.get("AssetTag")),
+        "power_state": power_state,
+        "health": health,
+        "health_rollup": health_rollup,
+        "status_state": status_state,
+        "tpm_interface": interface,
+        "tpm_firmware": firmware,
+        "tpm_state": tpm_state,
+        "tpm_status_badge": tpm_badge,
+    }
+    boot_progress = payload.get("BootProgress")
+    if isinstance(boot_progress, dict) and boot_progress:
+        inventory["boot_progress"] = {
+            "last_state": _present_text(boot_progress.get("LastState")),
+            "last_state_time": _present_text(boot_progress.get("LastStateTime")),
+            "oem_last_state": _present_text(boot_progress.get("OemLastState")),
+        }
+    watchdog = payload.get("HostWatchdogTimer")
+    if isinstance(watchdog, dict) and watchdog:
+        watchdog_status = watchdog.get("Status") if isinstance(watchdog.get("Status"), dict) else {}
+        inventory["watchdog"] = {
+            "function_enabled": watchdog.get("FunctionEnabled"),
+            "state": _present_text(watchdog_status.get("State")),
+            "health": _present_text(watchdog_status.get("Health")),
+            "timeout_action": _present_text(watchdog.get("TimeoutAction")),
+            "warning_action": _present_text(watchdog.get("WarningAction")),
+        }
+    return inventory
 
 
 KNOWN_XEON_E5_E7_CORES: Dict[str, Tuple[int, int]] = {
@@ -518,12 +603,9 @@ class _SystemMixin(_CollectorBase):
         chassis_mgmt = getattr(self, "chassis_management_info", {}) or {}
         if not self.sys_uri:
             if chassis_mgmt and chassis_mgmt.get("is_modular_chassis"):
-                dns_name = None
-                try:
-                    ipaddress.ip_address(self.host)
-                    dns_name = socket.gethostbyaddr(self.host)[0]
-                except (ValueError, socket.herror, socket.gaierror, OSError):
-                    pass
+                # DNS resolution is performed centrally only when --dns-lookup
+                # (or certificate verification) explicitly requests it.
+                dns_name = getattr(self, "server_hostname", None)
                 m_model = chassis_mgmt.get("chassis_model") or "Modular Server Chassis"
                 m_vendor = chassis_mgmt.get("vendor") or "Modular Chassis"
                 m_mgr_name = chassis_mgmt.get("chassis_manager_name") or "Enclosure Management Controller"
@@ -639,12 +721,33 @@ class _SystemMixin(_CollectorBase):
                 p_state = str(p_status.get("State", "") or "").strip()
                 p_health = str(p_status.get("Health", "") or "").strip()
 
-                # ProcessorId — VCG/BCG CPU search helper
+                # ProcessorId — VCG/BCG CPU search helper + microcode revision
                 _pid = proc.get("ProcessorId", {}) or {}
                 _id_reg = _pid.get("IdentificationRegisters", "")
                 _eff_fam = _pid.get("EffectiveFamily", "")
                 _eff_mod = _pid.get("EffectiveModel", "")
                 _step    = _pid.get("Step", "")
+                _ucode   = _pid.get("MicrocodeInfo")
+                p_microcode = None
+                if _ucode is not None and str(_ucode).strip() not in ("", "None", "null", "N/A"):
+                    p_microcode = str(_ucode).strip()
+                    if p_microcode.isdigit() or (
+                        p_microcode.lower().startswith("0x") is False and re.fullmatch(r"[0-9A-Fa-f]+", p_microcode)
+                    ):
+                        # Normalize bare hex / int to 0x-prefixed form when numeric.
+                        try:
+                            p_microcode = hex(int(_ucode)) if isinstance(_ucode, int) else (
+                                hex(int(p_microcode, 16)) if re.fullmatch(r"[0-9A-Fa-f]+", p_microcode) else p_microcode
+                            )
+                        except (TypeError, ValueError):
+                            pass
+                # Supermicro OEM fallback on processor object
+                if not p_microcode:
+                    _smc_proc = ((proc.get("Oem") or {}).get("Supermicro") or {})
+                    if isinstance(_smc_proc, dict):
+                        _alt = _smc_proc.get("MicrocodeVersion") or _smc_proc.get("MicrocodeInfo")
+                        if _alt is not None and str(_alt).strip():
+                            p_microcode = str(_alt).strip()
                 p_proc_id_str = None
                 if _id_reg:
                     p_proc_id_str = _id_reg.strip()
@@ -696,6 +799,7 @@ class _SystemMixin(_CollectorBase):
                     "health": p_health,
                     "state": p_state,
                     "processor_id": p_proc_id_str,
+                    "microcode": p_microcode,
                     "cache_list": p_cache_list,
                 })
 
@@ -773,16 +877,9 @@ class _SystemMixin(_CollectorBase):
         )
         max_freq_ghz = round(max_speed_mhz / 1000, 2) if max_speed_mhz else None
 
-        trusted_modules = data.get("TrustedModules") or []
-        tpm_state = "Disabled"
-        if trusted_modules and isinstance(trusted_modules[0], dict):
-            tpm_state = (trusted_modules[0].get("Status") or {}).get("State") or "Disabled"
-        if tpm_state in ["Enabled", "EnabledAndActivated"]:
-            tpm_badge = "<span class='badge success'>🟢 Enabled (TPM 2.0 Active)</span>"
-        elif tpm_state in ["Absent", "NotPresent"]:
-            tpm_badge = "<span class='badge danger'>🔴 Not Present (Hardware Missing)</span>"
-        else:
-            tpm_badge = f"<span class='badge warning'>🟡 {tpm_state} (Action Required)</span>"
+        system_identity = computer_system_inventory(data)
+        tpm_badge = system_identity["tpm_status_badge"]
+        tpm_posture_note = ""
 
         bios_version = data.get("BiosVersion", "Unknown")
         bios_date = self.oem_bios_date(data)
@@ -844,14 +941,9 @@ class _SystemMixin(_CollectorBase):
         else:
             os_src = ""
 
-        # Attempt reverse-DNS PTR lookup when the target is a bare IP address.
-        # Silently skipped if the target is already an FQDN or if no PTR record exists.
-        dns_name = None
-        try:
-            ipaddress.ip_address(self.host)
-            dns_name = socket.gethostbyaddr(self.host)[0]
-        except (ValueError, socket.herror, socket.gaierror, OSError):
-            pass
+        # scan_host resolves and verifies DNS only when explicitly requested.
+        # Collection must not perform an implicit PTR lookup.
+        dns_name = getattr(self, "server_hostname", None)
 
         serial_num = str(data.get("SerialNumber", "Unknown")).strip()
 
@@ -963,11 +1055,9 @@ class _SystemMixin(_CollectorBase):
 
         # Boot mode & boot target extraction
         boot_obj = data.get("Boot") or {}
-        raw_boot_mode = str(boot_obj.get("BootSourceOverrideMode") or boot_obj.get("BootMode") or "").strip()
-        boot_mode = raw_boot_mode or "Unknown"
         override_target = str(boot_obj.get("BootSourceOverrideTarget") or "").strip()
         override_enabled = str(boot_obj.get("BootSourceOverrideEnabled") or "Disabled").strip()
-        override_mode = str(boot_obj.get("BootSourceOverrideMode") or raw_boot_mode or "").strip()
+        override_mode = str(boot_obj.get("BootSourceOverrideMode") or "").strip()
 
         is_override_active = (
             override_enabled.lower() not in ("disabled", "", "none", "null")
@@ -979,6 +1069,17 @@ class _SystemMixin(_CollectorBase):
             "enabled": override_enabled,
             "mode": override_mode,
         }
+
+        # Determine persistent boot_mode (do not assume dormant override_mode=Legacy is persistent)
+        system_boot_mode = str(boot_obj.get("BootMode") or "").strip()
+        if is_override_active and override_mode:
+            boot_mode = override_mode
+        elif system_boot_mode:
+            boot_mode = system_boot_mode
+        elif not is_override_active and override_mode.upper() == "UEFI":
+            boot_mode = "UEFI"
+        else:
+            boot_mode = ""  # Defer to BIOS attributes and boot order details below
 
         boot_order = boot_obj.get("BootOrder") or []
         boot_order_details: List[Dict[str, Any]] = []
@@ -1082,31 +1183,138 @@ class _SystemMixin(_CollectorBase):
             raw_target = str(boot_obj.get("BootSourceOverrideTarget") or "N/A").strip()
             boot_target = _clean_boot_name(raw_target) if raw_target.lower() not in ("none", "n/a", "null", "nonespecified") else "None"
 
-        # Infer UEFI boot mode if Redfish did not report explicit BootSourceOverrideMode/BootMode
+        # Infer persistent boot mode if Redfish did not report explicit BootMode or if override was dormant
         if not boot_mode or boot_mode.lower() in ("unknown", "none", "n/a"):
+            bios_ref = data.get("Bios") or {}
+            bios_uri = bios_ref.get("@odata.id") if isinstance(bios_ref, dict) else (f"{self.sys_uri}/Bios" if self.sys_uri else None)
+            bios_attrs = {}
+            if bios_uri:
+                bios_json = self._get(bios_uri, critical=False) or {}
+                bios_attrs = bios_json.get("Attributes") or {}
+                if not isinstance(bios_attrs, dict):
+                    bios_attrs = {}
+
+            boot_mode_attr = str(bios_attrs.get("BootModeSelect") or bios_attrs.get("BootMode") or bios_attrs.get("SystemBootMode") or "").strip().upper()
+            csm_attr = str(bios_attrs.get("CSMSupport") or "").strip().upper()
+
             has_uefi_entry = any(
                 ("uefi" in str(b.get("uefi_path", "")).lower())
                 or ("uefi" in str(b.get("name", "")).lower())
                 or ("uefi" in str(b.get("raw_name", "")).lower())
+                or ("esxi" in str(b.get("name", "")).lower())
                 for b in boot_order_details
             )
-            has_secure_boot = bool(data.get("SecureBoot"))
-            if has_uefi_entry or has_secure_boot:
+            has_secure_boot = bool(data.get("SecureBoot")) or str(bios_attrs.get("SecureBootEnable", "")).lower() in ("true", "enabled", "1")
+
+            if (
+                boot_mode_attr in ("UEFI", "PURE_UEFI")
+                or (boot_mode_attr and "UEFI" in boot_mode_attr)
+                or has_uefi_entry
+                or has_secure_boot
+            ):
                 boot_mode = "UEFI"
+            elif boot_mode_attr in ("LEGACY", "BIOS", "DUAL"):
+                boot_mode = "Legacy"
+            elif override_mode:
+                boot_mode = override_mode
+            else:
+                boot_mode = "Unknown"
 
         enclosure_info = self._collect_enclosure_details()
+        model_str = str(model).lower()
+        sku_str = str(sku_raw).lower()
+        is_cisco_b_blade = bool(
+            re.search(r"\bucs[-_\s]?b|ucsb\b", model_str)
+            or re.search(r"\bucs[-_\s]?b|ucsb\b", sku_str)
+        )
+        is_cisco_x_blade = bool(
+            re.search(r"\bucs[-_\s]?x|ucsx\b", model_str)
+            or re.search(r"\bucs[-_\s]?x|ucsx\b", sku_str)
+        )
         is_blade = bool(
             enclosure_info.get("is_enclosure_contained")
-            or "e910" in str(model).lower()
-            or "blade" in str(model).lower()
-            or "sled" in str(model).lower()
+            or "e910" in model_str
+            or "blade" in model_str
+            or "sled" in model_str
+            or is_cisco_b_blade
+            or is_cisco_x_blade
         )
-        if not chassis_label and enclosure_info.get("is_enclosure_contained"):
-            chassis_label = f"Blade Sled · {enclosure_info.get('enclosure_name')}"
-            if enclosure_info.get("tray_id"):
-                chassis_label += f" (Tray {enclosure_info['tray_id']})"
+        if not chassis_label:
+            if is_cisco_b_blade:
+                chassis_label = f"Cisco UCS B-Series Blade ({model})"
+            elif is_cisco_x_blade:
+                chassis_label = f"Cisco UCS X-Series Compute Node ({model})"
+            elif enclosure_info.get("is_enclosure_contained"):
+                chassis_label = f"Blade Sled · {enclosure_info.get('enclosure_name')}"
+                if enclosure_info.get("tray_id"):
+                    chassis_label += f" (Tray {enclosure_info['tray_id']})"
+            elif is_blade:
+                chassis_label = f"Blade Server ({model})"
 
-        return {
+        # Chassis / board OEM identity (Supermicro BoardID / BoardSerial / GUID)
+        chassis_hardware = {}
+        for c_uri in chassis_candidates[:3]:
+            c_obj = self._get(c_uri) or {}
+            if not isinstance(c_obj, dict) or not c_obj:
+                continue
+            smc = ((c_obj.get("Oem") or {}).get("Supermicro") or {})
+            if not isinstance(smc, dict):
+                smc = {}
+            chassis_hardware = {
+                "manufacturer": str(c_obj.get("Manufacturer") or "").strip(),
+                "model": str(c_obj.get("Model") or "").strip(),
+                "part_number": str(c_obj.get("PartNumber") or "").strip(),
+                "serial_number": str(c_obj.get("SerialNumber") or "").strip(),
+                "board_serial": str(smc.get("BoardSerialNumber") or "").strip(),
+                "board_id": str(smc.get("BoardID") or "").strip(),
+                "guid": str(smc.get("GUID") or "").strip(),
+            }
+            if chassis_hardware.get("part_number") or chassis_hardware.get("board_id"):
+                break
+
+        # When TrustedModules is absent, surface BIOS TPM/TXT/TME policy as explicit posture.
+        if system_identity.get("tpm_state") == "NotReported":
+            bios_ref = data.get("Bios") or {}
+            bios_uri = bios_ref.get("@odata.id") if isinstance(bios_ref, dict) else (
+                f"{self.sys_uri}/Bios" if getattr(self, "sys_uri", None) else None
+            )
+            _tpm_attrs = {}
+            if bios_uri:
+                _bj = self._get(bios_uri, critical=False) or {}
+                _tpm_attrs = _bj.get("Attributes") if isinstance(_bj.get("Attributes"), dict) else {}
+            _tpm_pol = str(
+                _tpm_attrs.get("TPMSecurityPolicy")
+                or _tpm_attrs.get("TPM_KMSSupport")
+                or _tpm_attrs.get("SupermicroBIOS_BasedTPMProvisionSupport")
+                or ""
+            ).strip()
+            _txt = str(_tpm_attrs.get("TXTSupport") or "").strip()
+            _tme = str(_tpm_attrs.get("MemoryEncryption_TME_") or _tpm_attrs.get("MemoryEncryption") or "").strip()
+            if _tpm_pol or _txt or _tme:
+                tpm_posture_note = (
+                    f"TrustedModules not exposed by BMC; BIOS TPM policy={_tpm_pol or 'n/a'}, "
+                    f"TXT={_txt or 'n/a'}, TME={_tme or 'n/a'}"
+                )
+                tpm_badge = (
+                    "<span class='badge warning'>🟡 TPM Not Exposed "
+                    f"(BIOS {_tpm_pol or 'policy unknown'})</span>"
+                )
+                system_identity["tpm_state"] = "BiosPolicyOnly"
+                system_identity["tpm_status_badge"] = tpm_badge
+
+        # FixedBootOrder OEM (ESXi proof when HostName/OS absent)
+        fixed_boot_order = {}
+        if getattr(self, "sys_uri", None):
+            _fbo = self._get(f"{self.sys_uri}/Oem/Supermicro/FixedBootOrder", critical=False) or {}
+            if isinstance(_fbo, dict) and _fbo and not _fbo.get("error"):
+                fixed_boot_order = {
+                    "boot_mode_selected": str(_fbo.get("BootModeSelected") or "").strip(),
+                    "fixed_boot_order": _fbo.get("FixedBootOrder"),
+                    "uefi_hard_disk": _fbo.get("UEFIHardDisk"),
+                    "uefi_network": _fbo.get("UEFINetwork"),
+                }
+
+        summary = {
             "ip": self.host,
             "hostname": data.get("HostName", self.host),
             "dns_name": dns_name,
@@ -1118,13 +1326,23 @@ class _SystemMixin(_CollectorBase):
             "enclosure_info": enclosure_info,
             "hci_appliance": hci_appliance,
             "chassis_management_info": chassis_mgmt,
+            "chassis_hardware": chassis_hardware,
+            "tpm_posture_note": tpm_posture_note,
+            "fixed_boot_order": fixed_boot_order,
             "serial_number": serial_num,
             "system_uuid": str(data.get("UUID") or "").strip(),
-            "asset_tag": str(data.get("AssetTag") or "").strip(),
+            "asset_tag": system_identity["asset_tag"],
+            "power_state": system_identity["power_state"],
+            "health": system_identity["health"],
+            "health_rollup": system_identity["health_rollup"],
+            "status_state": system_identity["status_state"],
+            "tpm_interface": system_identity["tpm_interface"],
+            "tpm_firmware": system_identity["tpm_firmware"],
+            "tpm_state": system_identity["tpm_state"],
             "bios_version": bios_version,
             "bios_release_date": bios_date,
             "bios_eval": {},
-            "raw_boot_mode": raw_boot_mode,
+            "raw_boot_mode": boot_mode,
             "boot_mode": boot_mode,
             "boot_eval": {},
             "boot_target": boot_target,
@@ -1171,6 +1389,11 @@ class _SystemMixin(_CollectorBase):
                 "asymmetry_note":    asymmetry_note,
             },
         }
+        if "boot_progress" in system_identity:
+            summary["boot_progress"] = system_identity["boot_progress"]
+        if "watchdog" in system_identity:
+            summary["watchdog"] = system_identity["watchdog"]
+        return summary
 
 
     def collect_memory_details(self, cpu_count: int, channels_per_socket: int) -> dict:
@@ -1416,13 +1639,10 @@ class _SystemMixin(_CollectorBase):
                 metrics_raw = dimm.get("Metrics")
                 correctable_ecc = None
                 uncorrectable_ecc = None
-                if isinstance(metrics_raw, dict):
-                    correctable_ecc = metrics_raw.get("CorrectableECCErrorCount")
-                    uncorrectable_ecc = metrics_raw.get("UncorrectableECCErrorCount")
-                elif isinstance(metrics_raw, str) and metrics_raw:
-                    m_data = self._get(metrics_raw) or {}
-                    correctable_ecc = m_data.get("CorrectableECCErrorCount")
-                    uncorrectable_ecc = m_data.get("UncorrectableECCErrorCount")
+                from vcf_hci.collector.metrics_fetch import resolve_metrics_link
+                m_data = resolve_metrics_link(self, metrics_raw)
+                correctable_ecc = m_data.get("CorrectableECCErrorCount")
+                uncorrectable_ecc = m_data.get("UncorrectableECCErrorCount")
                 if correctable_ecc is None:
                     dell_mem = ((dimm.get("Oem") or {}).get("Dell") or {}).get("DellMemory") or {}
                     correctable_ecc = dell_mem.get("CorrectableECCErrorCount")
@@ -1711,6 +1931,13 @@ class _SystemMixin(_CollectorBase):
         if not isinstance(attrs, dict) or not attrs:
             oem_attrs = self.oem_extract_bios_attributes(bios_data) if hasattr(self, "oem_extract_bios_attributes") else {}
             attrs = oem_attrs if isinstance(oem_attrs, dict) else {}
+            if not attrs:
+                # Fallback to /Bios/Settings if /Bios had no attributes (e.g. Cisco CIMC)
+                s_obj = self._get(f"{self.sys_uri}/Bios/Settings")
+                if isinstance(s_obj, dict):
+                    s_attrs = s_obj.get("Attributes")
+                    if isinstance(s_attrs, dict) and s_attrs:
+                        attrs = dict(s_attrs)
             if not attrs and isinstance(bios_data, dict):
                 # Flat attributes fallback (e.g. HPE iLO 4 / Gen9)
                 attrs = {
@@ -1996,7 +2223,23 @@ class _SystemMixin(_CollectorBase):
             fw_inv = fetch_expand_fn(fw_uri_base) or {}
         else:
             fw_inv = self._get(fw_uri_base, timeout=15) or {}
+
+        def _record_firmware_completeness(available: int, collected: int, cap: Optional[int]) -> None:
+            truncated = collected < available
+            meta = {
+                "section": "firmware_inventory",
+                "complete": not truncated,
+                "truncated": truncated,
+                "members_available": int(available),
+                "members_collected": int(collected),
+                "member_cap": cap if truncated else None,
+            }
+            if truncated:
+                meta["reason"] = "firmware member cap"
+            self._firmware_collection = meta
+
         if not fw_inv or not isinstance(fw_inv.get("Members"), list):
+            _record_firmware_completeness(0, 0, None)
             return []
         items = []
         _skip_sw_keywords = [
@@ -2088,6 +2331,11 @@ class _SystemMixin(_CollectorBase):
             else:
                 members_to_fetch = deduped_uris[:40]
 
+            _record_firmware_completeness(
+                len(items) + len(deduped_uris),
+                len(items) + len(members_to_fetch),
+                len(members_to_fetch),
+            )
             if len(deduped_uris) > len(members_to_fetch):
                 logger.warning("[%s] Capping firmware inventory members from %d to %d prioritized items to reduce BMC load", getattr(self, "host", "unknown"), len(deduped_uris), len(members_to_fetch))
 
@@ -2115,6 +2363,8 @@ class _SystemMixin(_CollectorBase):
                 items.extend(fetched_objs)
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
+        elif not getattr(self, "_firmware_collection", None):
+            _record_firmware_completeness(len(items), len(items), None)
 
         parsed_items = []
         for fw_obj in items:
@@ -2131,6 +2381,9 @@ class _SystemMixin(_CollectorBase):
                 or fw_obj.get("DeviceContext")
                 or ""
             ).strip()
+            fw_status = fw_obj.get("Status") if isinstance(fw_obj.get("Status"), dict) else {}
+            status_health = fw_status.get("Health")
+            status_state = fw_status.get("State")
             parsed_items.append({
                 "id": str(fw_obj.get("Id") or "").strip(),
                 "name": name,
@@ -2139,6 +2392,10 @@ class _SystemMixin(_CollectorBase):
                 "component_id": comp_id,
                 "description": desc,
                 "device_context": dev_ctx,
+                "release_date": str(fw_obj.get("ReleaseDate") or "").strip(),
+                "lowest_supported_version": str(fw_obj.get("LowestSupportedVersion") or "").strip(),
+                "status_health": str(status_health).strip() if status_health not in (None, "") else "",
+                "status_state": str(status_state).strip() if status_state not in (None, "") else "",
             })
         return parsed_items
 

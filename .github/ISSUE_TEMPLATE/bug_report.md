@@ -21,7 +21,7 @@ A clear and concise description of what went wrong.
 ## Command Used
 
 ```bash
-python3 redfish_collector.py --targets <IP> ...
+python3 vcfr_collector.py --targets <IP> ...
 ```
 
 (Replace credentials with `***` before posting.)
@@ -38,16 +38,12 @@ What happened instead? Paste the relevant output or error traceback here.
 (paste output here)
 ```
 
-## Redfish Capture (Optional but Very Helpful)
+## Diagnostic Data (Optional)
 
-If the bug involves incorrect data from a specific BMC, a Redfish dump helps enormously.
-Run the bundled dump tool:
-
-```bash
-python tools/redfishMockupCreate.py -r <BMC_IP> -u <USER> -p <PASS> -D samples/<vendor>
-```
-
-Attach the resulting `.zip` file (scrub any sensitive data first).
+Provide the smallest sanitized JSON excerpt needed to demonstrate an incorrect
+field. Do not attach an unreviewed Redfish dump or report. Remove credentials,
+tokens, IPs, hostnames, serial numbers, MAC addresses, asset tags, and customer
+identifiers before posting.
 
 ## Additional Context
 

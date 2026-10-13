@@ -1670,4 +1670,81 @@ def normalize_pcie_errors(raw_errors: Any) -> Optional[dict]:
     }
 
 
+def clean_oem_adapter_title(
+    title: str,
+    host_mfg: str = "",
+    adapter_mfg: str = "",
+    part_number: str = "",
+) -> str:
+    """Strip misattributed OEM reseller suffixes like 'for HPE' or 'for Hitachi',
+    clean semicolon-delimited HCL spec strings into clean friendly titles,
+    and strip redundant parenthetical part numbers.
+    """
+    if not title:
+        return ""
+    h_mfg = (host_mfg or "").lower()
+    a_mfg = (adapter_mfg or "").lower()
+    is_hpe = "hpe" in h_mfg or "hewlett" in h_mfg or "hpe" in a_mfg or "hewlett" in a_mfg
+    is_hitachi = "hitachi" in h_mfg or "hitachi" in a_mfg
+    is_dell = "dell" in h_mfg or "dell" in a_mfg
+    is_lenovo = "lenovo" in h_mfg or "ibm" in h_mfg or "lenovo" in a_mfg or "ibm" in a_mfg
+
+    cleaned = title.strip()
+    if not is_hpe:
+        cleaned = re.sub(r"\s+for\s+HPE\b", "", cleaned, flags=re.I)
+    if not is_hitachi:
+        cleaned = re.sub(r"\s+for\s+Hitachi\b", "", cleaned, flags=re.I)
+    if not is_dell:
+        cleaned = re.sub(r"\s+for\s+Dell\b", "", cleaned, flags=re.I)
+    if not is_lenovo:
+        cleaned = re.sub(r"\s+for\s+(?:Lenovo|IBM(?:\s+System\s+x)?)\b", "", cleaned, flags=re.I)
+
+    # Strip trailing parenthetical part numbers (e.g. "(MCX631102AS-ADA)", "(MCX4121A-ACA)")
+    cleaned = re.sub(r"\s*\([A-Z0-9\-_/]{5,}\)\s*$", "", cleaned)
+    if part_number:
+        cleaned = re.sub(r"\s*\(" + re.escape(part_number.strip()) + r"\)\s*$", "", cleaned, flags=re.I)
+
+    # Clean semicolon-delimited HCL titles (e.g. "ConnectX-6 Lx EN NIC; 25GbE; dual-port SFP28; PCIe4.0 x8")
+    if ";" in cleaned:
+        segments = [s.strip() for s in cleaned.split(";") if s.strip()]
+        if segments:
+            base_model = segments[0]
+            base_model = re.sub(r"\s+(?:NIC|adapter card)\b", "", base_model, flags=re.I).strip()
+            spec_tokens = []
+            for seg in segments[1:]:
+                # Skip PCIe tokens (e.g. "PCIe4.0 x8", "PCIe5.0")
+                if re.search(r"\bpcie", seg, re.I):
+                    continue
+                # Normalize port count labels
+                seg = re.sub(r"\bdual-port\b", "2-Port", seg, flags=re.I)
+                seg = re.sub(r"\bsingle-port\b", "1-Port", seg, flags=re.I)
+                seg = re.sub(r"\bquad-port\b", "4-Port", seg, flags=re.I)
+                # Skip standalone part numbers
+                if re.match(r"^\(?[A-Z0-9\-_/]{5,}\)?$", seg):
+                    continue
+                for tok in seg.split():
+                    spec_tokens.append(tok)
+            if spec_tokens:
+                def _spec_sort_key(t: str) -> int:
+                    tl = t.lower()
+                    if "port" in tl:
+                        return 0
+                    if "gbe" in tl or "gbps" in tl or "ib" in tl:
+                        return 1
+                    return 2
+
+                spec_tokens = sorted(spec_tokens, key=_spec_sort_key)
+                cleaned = f"{base_model} ({' '.join(spec_tokens)})"
+            else:
+                cleaned = base_model
+
+    # Ensure Mellanox / NVIDIA brand prefix if title starts with ConnectX or BlueField
+    if re.match(r"^(?:ConnectX|BlueField)\b", cleaned, re.I):
+        if not re.search(r"\b(?:Mellanox|NVIDIA)\b", cleaned, re.I):
+            cleaned = f"NVIDIA Mellanox {cleaned}"
+
+    return cleaned.strip()
+
+
+
 

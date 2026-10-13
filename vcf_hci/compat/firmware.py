@@ -2,7 +2,7 @@
 BMC and Drive Firmware & Driver evaluation for VCF 9.1.
 """
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from ..collector.pci_utils import normalize_pci_id, select_best_pci_pair_entry
 from ..constants import NVME_FW_BASELINES
@@ -82,14 +82,29 @@ def _bmc_spectre_badge(installed_str: str, baseline: dict) -> tuple:
     return "exposed", f"<span class='badge danger'>⚠️ Pre-Spectre BMC: {installed_str} — min {floor}</span>"
 
 
+def is_zero_or_null_firmware(v_str: Any) -> bool:
+    """Return True if firmware string is empty, placeholder, or consists entirely of zeroes."""
+    if not v_str:
+        return True
+    s = str(v_str).strip()
+    if not s or s.upper() in ("N/A", "NONE", "UNKNOWN", "NULL", "NOT AVAILABLE", "NOT_AVAILABLE"):
+        return True
+    # Match strings consisting only of zeroes and punctuation, e.g. "0", "0000", "0.0", "0.0.0.0", "00.00.00", "0-0"
+    return bool(re.match(r"^0+(?:[._-]0+)*$", s))
+
+
 def _parse_fw_version_tuple(v_str: str) -> tuple:
+    if is_zero_or_null_firmware(v_str):
+        return ()
     nums = re.findall(r'\d+', str(v_str))
-    return tuple(int(x) for x in nums) if nums else (0,)
+    if not nums or all(int(x) == 0 for x in nums):
+        return ()
+    return tuple(int(x) for x in nums)
 
 
 def _compare_fw_versions(fw_installed: str, fw_recommended: str) -> int:
     """Return >0 if installed > recommended, 0 if equal, <0 if installed < recommended."""
-    if not fw_installed or not fw_recommended or fw_installed == "N/A" or fw_recommended == "N/A":
+    if is_zero_or_null_firmware(fw_installed) or is_zero_or_null_firmware(fw_recommended):
         return 0
     t_inst = _parse_fw_version_tuple(fw_installed)
     t_rec = _parse_fw_version_tuple(fw_recommended)
@@ -179,9 +194,12 @@ def evaluate_driver_firmware_recommendation(
 
     fw_installed = str(fw_ver).strip() if fw_ver else "N/A"
 
-    if not rec_fw or rec_fw == "N/A":
+    if is_zero_or_null_firmware(fw_installed) or not rec_fw or rec_fw == "N/A":
         fw_status = "unverified"
-        fw_badge = "<span class='badge info'>ℹ️ FW Unverified</span>"
+        if is_zero_or_null_firmware(fw_installed) and fw_installed.upper() not in ("N/A", "NONE", "UNKNOWN", "NULL", ""):
+            fw_badge = "<span class='badge info'>ℹ️ FW Unreported by BMC</span>"
+        else:
+            fw_badge = "<span class='badge info'>ℹ️ FW Unverified</span>"
     else:
         target_min = min_fw or rec_fw
         cmp_min = _compare_fw_versions(fw_installed, target_min)
@@ -305,7 +323,7 @@ def evaluate_drive_fw(
     firmware version exists on the HCL, it displays a yellow note indicating the newer version.
     """
     fw = str(installed_fw).strip() if installed_fw else "N/A"
-    if fw == "N/A" or not fw:
+    if fw == "N/A" or not fw or is_zero_or_null_firmware(fw):
         return f"<code>{fw}</code> <span style='font-size:.75rem;color:#94a3b8'>Unknown</span>"
 
     defect = check_defective_drive_firmware(model, fw)

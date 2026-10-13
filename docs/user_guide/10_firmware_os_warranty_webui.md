@@ -62,12 +62,12 @@ The tool supports flexible IP and hostname inputs:
 - **Single Host:** `192.0.2.10` or `esxi-01.rainpole.net`
 - **IP Range:** `192.0.2.10-30`
 - **CIDR Subnet:** `192.0.2.0/24`
-- **Target File:** Plain-text file containing one target per line (`--targets targets.txt`).
+- **Comma-separated list:** `192.0.2.10,192.0.2.11`
 
 #### 3. Scan Modes Comparison
 | Scan Profile | Average Duration | Telemetry Depth | When to Use |
 |---|---|---|---|
-| **Quick Scan (`--quick`)** | **~5 seconds / host** | CPU, RAM, BIOS settings, SEL alarms, and BMC firmware only. | Fast preliminary inventory; skips storage drives, NICs, and telemetry. |
+| **Inventory-lite (`--profile inventory-lite`)** | Shortest supported profile | Systems summary, CPU verdict, power/thermal rollup, storage controller rollup, and NIC summary. Skips the deep DIMM, PCIe, and firmware walk. | Rapid hardware pre-screening. |
 | **Lean Scan (`--lean`)** | **~15–30 seconds / host** | Complete hardware inventory: drive models, NIC ports, and vSAN ESA readiness. | High-speed complete assessment; skips heavy SMART wear counters and thermal telemetry. |
 | **Full Scan (Default)** | **~60–90 seconds / host** | Exhaustive hardware audit: 20 OCP NVMe SMART wear metrics, thermal sensors, and GPU topology. | **Recommended:** Complete assessment for production VCF 9.1 and vSAN ESA qualification. |
 

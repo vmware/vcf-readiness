@@ -74,7 +74,7 @@ VIOLATION_PATTERNS = [
     (re.compile(r"[A-Za-z]:\\\\?(dropbox|Dropbox|Users\\\\?john)[\w\\.-]*"),
      "developer-local Windows path — remove"),
     (re.compile(r"\bDump-Redfish1-2\.sh\b", re.I),
-     "deleted legacy BMC dump script — use tools/redfishMockupCreate.py"),
+     "deleted legacy BMC dump script — remove the reference"),
     (re.compile(r"\b(remote_log_tool|setup_lab_jump_host|remote_lab_smoke|generate_lab_inventory|set_bmc_credentials)\.sh\b", re.I),
      "deleted internal lab script — remove reference"),
     (re.compile(r"\b(lab_fleet_smoke|oem_expand_live_benchmark|enroll_iov_credentials|probe_jump_targets|generate_extended_inventory|run_remote)\.(py|sh)\b", re.I),

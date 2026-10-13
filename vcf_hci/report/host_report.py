@@ -8,6 +8,8 @@ import logging
 import os
 from typing import Optional
 
+from vcf_hci.branding import FAVICON_DATA_URI
+
 logger = logging.getLogger("vcf_assess")
 
 from vcf_hci.bcg_links import BCGLinkGenerator
@@ -102,7 +104,7 @@ def generate_host_html_report(
 
     all_drives = enrich_drives_hcl(storage, json_hcl=json_hcl, csv_db=csv_db)
     esa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe")
-    osa_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA SAS/SATA")
+    osa_count = sum(1 for d in all_drives if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA"))
 
     if cpu_info.get("model"):
         cpu_verdict, fresh_arch, _, _, _ = VCF9CompatibilityEngine.evaluate_cpu(
@@ -301,6 +303,7 @@ def generate_host_html_report(
 <head>
     <meta charset="UTF-8">
     <title>VCF Readiness — {_h(str(sys_info.get('dns_name') or sys_info.get('hostname', '')))}</title>
+    <link rel="icon" type="image/svg+xml" href="{FAVICON_DATA_URI}">
     <style>{HOST_REPORT_CSS}</style>
 </head>
 <body>

@@ -3,6 +3,7 @@ VCF Readiness Tool — header, banners & alert rollup report section builders (L
 """
 from typing import Any, Dict, List, Optional, Tuple
 
+from vcf_hci.branding import MARK_SVG
 from vcf_hci.constants import MTAT_GITHUB_URL, VCF_OPS_DEMO_URL
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h, host_has_redfish_latency
@@ -251,7 +252,7 @@ def render_header_and_banners(
         f'{_warning_banner}'
         f'<div class="header">'
         f'<div>'
-        f'<h1 style="margin:0 0 .25rem">VCF / vSphere 9.1 Readiness Assessment</h1>'
+        f'<h1 style="margin:0 0 .25rem;display:flex;align-items:center">{MARK_SVG}VCF / vSphere 9.1 Readiness Assessment</h1>'
         f'<span style="color:var(--text-muted)">Host: <strong>{_pii_host_label}</strong>'
         f'{(" &nbsp;|&nbsp; Target IP: <strong>" + _pii_ip_label + "</strong>") if (_ip and _ip not in host_display_label) else ""}'
         f' &nbsp;|&nbsp; Model: <strong>{_h(str(sys_info.get("vendor", "")))} {_h(str(sys_info.get("model", "")))}</strong>'
@@ -265,6 +266,11 @@ def render_header_and_banners(
         f'</div>'
         f'<div style="text-align:right">'
         f'<div>BIOS: <code>v{_h(str(sys_info.get("bios_version", "")))} ({_h(str(sys_info.get("bios_release_date", "")))})</code>'
+        f'{(" &nbsp;|&nbsp; Power: <strong>" + _h(str(sys_info.get("power_state"))) + "</strong>") if sys_info.get("power_state") else ""}'
+        f'{(" &nbsp;|&nbsp; Health: <strong>" + _h(str(sys_info.get("health"))) + "</strong>") if sys_info.get("health") else ""}'
+        f'{(" &nbsp;|&nbsp; Rollup: <strong>" + _h(str(sys_info.get("health_rollup"))) + "</strong>") if sys_info.get("health_rollup") else ""}'
+        f'{(" &nbsp;|&nbsp; Boot: <strong>" + _h(str((sys_info.get("boot_progress") or {}).get("last_state") or "")) + "</strong>") if isinstance(sys_info.get("boot_progress"), dict) and (sys_info.get("boot_progress") or {}).get("last_state") else ""}'
+        f'{(" &nbsp;|&nbsp; Watchdog: <strong>" + _h("Enabled" if (sys_info.get("watchdog") or {}).get("function_enabled") is True else ("Disabled" if (sys_info.get("watchdog") or {}).get("function_enabled") is False else "Not reported")) + "</strong>") if isinstance(sys_info.get("watchdog"), dict) else ""}'
         f' &nbsp;|&nbsp; <span class="badge {"info" if data_src.startswith("wsman") else "success"}" style="font-size:.78rem">{"🔌 " + wsman_proto_label if data_src.startswith("wsman") else "🔵 Redfish"}</span>'
         f'</div>'
         f'<div style="margin-top:.3rem;font-size:.85rem">'
@@ -303,6 +309,94 @@ def render_header_and_banners(
         '<span>📦 <b>Storage Appliance / HCI Node:</b> System identified as a specialized storage appliance. Redfish /Storage endpoint is managed by appliance firmware.</span>'
         '</div>'
     ) if sys_info.get("hci_appliance") or sys_info.get("is_storage_appliance") else ""
+
+    # Nutanix-on-Supermicro HCI posture card (dual identity, boot RAID, FixedBootOrder, security, FW depth)
+    hci_posture_card = ""
+    _vendor_u = str(sys_info.get("vendor") or "").upper()
+    _model_u = str(sys_info.get("model") or "").upper()
+    _is_nutanix_hci = bool(sys_info.get("hci_appliance")) or "NUTANIX" in _vendor_u or _model_u.startswith("NX-")
+    if _is_nutanix_hci:
+        _ch = sys_info.get("chassis_hardware") if isinstance(sys_info.get("chassis_hardware"), dict) else {}
+        _fbo = sys_info.get("fixed_boot_order") if isinstance(sys_info.get("fixed_boot_order"), dict) else {}
+        _sb = (data or {}).get("secure_boot") if isinstance((data or {}).get("secure_boot"), dict) else {}
+        _fw_inv = (data or {}).get("firmware_inventory") or []
+        _storage = (data or {}).get("storage_subsystem") or []
+        _boot_ctrls = [c for c in _storage if isinstance(c, dict) and c.get("is_boot_ctrl")]
+        _cap_ctrls = [c for c in _storage if isinstance(c, dict) and not c.get("is_boot_ctrl")]
+        _boot_bits = []
+        for c in _boot_ctrls[:2]:
+            vols = c.get("volumes") or []
+            v0 = vols[0] if vols else {}
+            _boot_bits.append(
+                f"{_h(c.get('ctrl_model') or c.get('name') or 'Boot ctrl')}"
+                f" · {_h(v0.get('raid_type') or v0.get('volume_type') or 'RAID')}"
+                f" {_h(v0.get('vd_name') or v0.get('name') or '')}".rstrip()
+            )
+        _cap_bits = []
+        for c in _cap_ctrls[:2]:
+            n_drv = len(c.get("drives") or [])
+            _cap_bits.append(f"{_h(c.get('name') or 'NVMeSSD')} ({n_drv} drives)")
+        _esxi_hint = ""
+        for b in (sys_info.get("boot_order_details") or []):
+            if isinstance(b, dict) and "esxi" in str(b.get("name") or "").lower():
+                _esxi_hint = str(b.get("name") or "")
+                break
+        if not _esxi_hint:
+            uhd = _fbo.get("uefi_hard_disk")
+            if isinstance(uhd, list) and uhd:
+                _esxi_hint = str(uhd[0])
+            elif isinstance(uhd, str) and uhd:
+                _esxi_hint = uhd
+        _golden = ""
+        _backup = ""
+        for fi in _fw_inv if isinstance(_fw_inv, list) else []:
+            if not isinstance(fi, dict):
+                continue
+            _fid = str(fi.get("Id") or fi.get("Name") or "")
+            if "Golden_BIOS" in _fid or _fid == "Golden_BIOS":
+                _golden = str(fi.get("Version") or "")[:80]
+            if "Backup_BIOS" in _fid or _fid == "Backup_BIOS":
+                _backup = str(fi.get("Version") or "")[:80]
+        _sb_mode = str(_sb.get("SecureBootMode") or _sb.get("mode") or "").strip()
+        _sb_en = _sb.get("SecureBootEnable")
+        if _sb_en is None:
+            _sb_en = _sb.get("enabled")
+        _tpm_note = str(sys_info.get("tpm_posture_note") or "").strip()
+        _identity_line = (
+            f"<b>Appliance</b> {_h(sys_info.get('vendor'))} {_h(sys_info.get('model'))}"
+            f" &nbsp;·&nbsp; <b>Chassis</b> {_h(_ch.get('manufacturer') or 'Supermicro')} "
+            f"{_h(_ch.get('part_number') or _ch.get('model') or '')}"
+        )
+        if _ch.get("board_id"):
+            _identity_line += f" &nbsp;·&nbsp; BoardID {_h(_ch.get('board_id'))}"
+        _rows = [
+            ("Identity", _identity_line),
+            ("Boot storage", " · ".join(_boot_bits) or "Marvell HA-RAID boot path not enumerated"),
+            ("Capacity NVMe", " · ".join(_cap_bits) or "NVMeSSD topology not enumerated"),
+            ("Boot order", _h(_esxi_hint) or _h(_fbo.get("boot_mode_selected") or sys_info.get("boot_mode") or "—")),
+            (
+                "Security",
+                (
+                    f"SecureBoot={'Enabled' if _sb_en else ('Disabled' if _sb_en is False else 'Unknown')}"
+                    + (f" ({_h(_sb_mode)})" if _sb_mode else "")
+                    + (f" · {_h(_tpm_note)}" if _tpm_note else f" · TPM {_h(sys_info.get('tpm_state') or 'NotReported')}")
+                ),
+            ),
+        ]
+        if _golden or _backup:
+            _rows.append(("FW depth", f"Golden BIOS: {_h(_golden) or '—'} · Backup BIOS: {_h(_backup) or '—'}"))
+        _row_html = "".join(
+            f"<tr><td style='color:var(--text-muted);padding:.2rem .6rem .2rem 0;white-space:nowrap'>{_h(k)}</td>"
+            f"<td style='padding:.2rem 0'>{v}</td></tr>"
+            for k, v in _rows
+        )
+        hci_posture_card = (
+            '<div style="background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);'
+            'border-left:4px solid #ea580c;padding:.75rem 1rem;border-radius:6px;margin-bottom:1rem;font-size:.85rem">'
+            '<div style="font-weight:700;margin-bottom:.4rem;color:#c2410c">Nutanix Appliance · Supermicro Chassis Posture</div>'
+            f'<table style="border-collapse:collapse;width:100%">{_row_html}</table>'
+            '</div>'
+        )
 
     generic_banner = (
         '<div style="background:var(--callout-info-bg,#eff6ff);border:1px solid var(--callout-info-border,#bfdbfe);'
@@ -359,7 +453,10 @@ def render_header_and_banners(
         f'<div style="margin-bottom:1rem"><b>Hardware findings</b><ul>{_finding_rows}</ul></div>'
         if _finding_rows else ""
     )
-    banners_html = f"{_blade_banner}{_quad_banner}{quick_banner}{wsman_banner}{appliance_banner}{generic_banner}{findings_banner}{callout_box}"
+    banners_html = (
+        f"{_blade_banner}{_quad_banner}{quick_banner}{wsman_banner}"
+        f"{appliance_banner}{hci_posture_card}{generic_banner}{findings_banner}{callout_box}"
+    )
     return header_html, banners_html
 
 
@@ -406,10 +503,13 @@ def render_alert_rollup(
     else:
         _rollup_items.append(("success", "✅ SEL: No Alarms", "tab-overview", "No critical or warning events in the System Event Log."))
 
-    # Storage
+    # Storage. Collectors persist drive status as drive_health; health/status remain fallbacks.
+    def _drive_health_token(drive: Dict[str, Any]) -> str:
+        return str(drive.get("drive_health") or drive.get("health") or drive.get("status") or "").lower()
+
     _stor_degraded = sum(
         1 for ctrl in storage for d in ctrl.get("drives", [])
-        if str(d.get("health", "")).lower() in ("critical", "warning", "failed")
+        if _drive_health_token(d) in ("critical", "warning", "failed", "degraded")
     )
     _stor_low_endurance = sum(
         1 for ctrl in storage for d in ctrl.get("drives", [])
@@ -444,9 +544,10 @@ def render_alert_rollup(
     elif thermal.get("sensors"):
         _rollup_items.append(("success", "✅ Thermal: In Spec", "tab-health", "All thermal sensors within normal operating range."))
 
-    # Memory
+    # Memory. The collector stores DIMMs on dimm_list; dimms is the legacy alias.
+    _dimm_rows = mem_info.get("dimm_list") or mem_info.get("dimms") or []
     _mem_failed = sum(
-        1 for dimm in mem_info.get("dimms", [])
+        1 for dimm in _dimm_rows
         if str(dimm.get("health", "")).lower() in ("critical", "failed")
     )
     _mem_score = mem_topo.get("interleaving_score_pct", 100)
@@ -456,7 +557,7 @@ def render_alert_rollup(
     elif _mem_score < 60:
         _rollup_items.append(("warning", f"⚠️ Memory interleaving {_mem_score}%", "tab-memory",
                                f"Channel interleaving efficiency is low ({_mem_score}%) — review DIMM population."))
-    elif mem_info.get("dimms"):
+    elif _dimm_rows:
         _rollup_items.append(("success", "✅ Memory: Healthy", "tab-memory", "No DIMM faults detected; channel interleaving optimal."))
 
     # Networking

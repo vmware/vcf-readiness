@@ -16,17 +16,14 @@ assignees: ""
 
 Describe what the tool currently does with this hardware (wrong data, missing sections, crashes, etc.).
 
-## Redfish Capture (Required)
+## Sanitized Redfish Evidence
 
-A Redfish dump is required for us to implement support without physical hardware.
+Provide the smallest JSON excerpts that show the missing or vendor-specific
+fields. Do not attach an unreviewed full capture. Remove credentials, tokens,
+IPs, hostnames, serial numbers, MAC addresses, asset tags, and customer
+identifiers before posting.
 
-```bash
-python tools/redfishMockupCreate.py -r <BMC_IP> -u <USER> -p <PASS> -D samples/<vendor>
-```
-
-Attach the resulting `.zip` to this issue. **Scrub all sensitive data** (credentials, IPs, serial numbers) before posting.
-
-At minimum, we need the responses from:
+Useful endpoint shapes often include:
 - `/redfish/v1`
 - `/redfish/v1/Systems` and `/redfish/v1/Systems/{id}`
 - `/redfish/v1/Systems/{id}/Storage`

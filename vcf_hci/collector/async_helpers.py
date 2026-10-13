@@ -55,6 +55,21 @@ def _safe_result(future: Any, label: str, host: str, timeout: float = 60.0, coll
         if label == "bmc_security_evidence":
             return empty_security_evidence("generic")
         return _SECTION_DEFAULTS.get(label)
+    # Fail fast: if BMC is already known dead, do not wait on in-flight section futures.
+    if collector is not None and (
+        getattr(collector, "_bmc_unresponsive", False)
+        or getattr(collector, "timed_out", False)
+        or getattr(collector, "skipped", False)
+    ):
+        if label not in getattr(collector, "_timed_out_sections", []):
+            collector._timed_out_sections.append(label)
+        if label not in getattr(collector, "_failed_sections", []):
+            collector._failed_sections.append(label)
+        logger.debug("[%s] Skipping wait for section '%s' — BMC already marked unresponsive/skipped", host, label)
+        if label == "bmc_security_evidence":
+            return empty_security_evidence("generic")
+        return _SECTION_DEFAULTS.get(label)
+
     try:
         return future.result(timeout=timeout)
     except (TimeoutError, FuturesTimeoutError, Exception) as exc:

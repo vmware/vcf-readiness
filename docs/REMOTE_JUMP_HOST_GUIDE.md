@@ -65,14 +65,11 @@ python -m vcf_hci.vault jump-host pin-key \
 
 In the Web UI, clicking **Pin Key** (or clicking **Test** or **Run Assessment** on an unpinned host) probes the host key via `ssh-keyscan` without sending credentials, displays the SHA256 fingerprint, and records the pin only after operator approval via **Trust & Pin**.
 
-## Scan from the command line
+## Where a remote scan starts
 
-Remote execution is fully integrated with the encrypted credential vault and Web UI.
-To execute a scan against targets routed through the configured network profile:
+Jump-host profiles are managed with `python -m vcf_hci.vault jump-host ...`. That CLI stores hosts, subnets, and pinned keys. It does not start an assessment.
 
-```bash
-python3 vcfr_collector.py --targets 192.0.2.10,198.51.100.20
-```
+`vcfr_collector.py --targets ...` always collects on the computer where you run it. It has no jump-host routing option. Start a remote assessment from the local web UI.
 
 ## Scan from the web UI
 
@@ -94,6 +91,6 @@ Ubuntu 20.04 often ships Python 3.8 as `python3`. Install a 3.9+ interpreter or 
 
 ## If a run is interrupted
 
-The remote directory is `/tmp/vcfr_remote_` plus 8 to 16 hex characters. After a successful artifact pull the current sandbox is deleted (`retain=0`). The next scan also deletes a leftover directory only when it contains a valid `.vcfr_marker` and the lock pid is not a live collector. A live scan is left alone unless you pass `--force` on the command line.
+The remote directory is `/tmp/vcfr_remote_` plus 8 to 16 hex characters. After a successful artifact pull the current sandbox is deleted. A later scan deletes a leftover directory only when it contains a valid `.vcfr_marker` and the lock pid is not a live collector. A live collector is left alone. The collector `--force` flag raises local target-expansion caps; it does not select a jump host or delete a live remote sandbox.
 
 If the report download fails, the remote directory is kept and the message names it for troubleshooting. Leftover sandboxes in `/tmp` can be safely inspected or removed after diagnostics.

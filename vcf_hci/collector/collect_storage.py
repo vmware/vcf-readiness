@@ -67,10 +67,52 @@ from vcf_hci.constants import (
     DELL_SKU_CHASSIS_DB,
     HPE_SKU_CHASSIS_DB,
     LENOVO_MODEL_CHASSIS_DB,
+    is_generic_ctrl_name,
 )
 from vcf_hci.logging_utils import get_nested
 
 from .collect_storage_drive import parse_drive_details
+
+
+def volume_identity_fields(v_obj: dict) -> dict:
+    """Keep encryption, RAID, and operation state already present on a volume."""
+    raw_ops = v_obj.get("Operations") or []
+    if isinstance(raw_ops, dict):
+        raw_ops = [raw_ops]
+    operation_state = []
+    for op in raw_ops if isinstance(raw_ops, list) else []:
+        if not isinstance(op, dict):
+            continue
+        operation_state.append({
+            "operation": str(op.get("OperationName") or op.get("Operation") or "").strip(),
+            "percentage_complete": op.get("PercentageComplete"),
+        })
+    enc_types = v_obj.get("EncryptionTypes")
+    if isinstance(enc_types, str):
+        enc_types = [enc_types]
+    elif not isinstance(enc_types, list):
+        enc_types = []
+    vol_status = v_obj.get("Status") if isinstance(v_obj.get("Status"), dict) else {}
+    smc = ((v_obj.get("Oem") or {}).get("Supermicro") or {})
+    if not isinstance(smc, dict):
+        smc = {}
+    raid_type = str(
+        v_obj.get("RAIDType")
+        or smc.get("RaidType")
+        or smc.get("RAIDType")
+        or ""
+    ).strip()
+    vd_name = str(smc.get("VDName") or smc.get("VirtualDiskName") or "").strip()
+    stripe = str(smc.get("StripeBlock") or smc.get("StripeSize") or "").strip()
+    return {
+        "raid_type": raid_type,
+        "vd_name": vd_name,
+        "stripe_block": stripe,
+        "state": str(vol_status.get("State") or smc.get("VDStatus") or "").strip(),
+        "encrypted": v_obj.get("Encrypted") if isinstance(v_obj.get("Encrypted"), bool) else None,
+        "encryption_types": [str(item) for item in enc_types if item],
+        "operation_state": operation_state,
+    }
 
 
 class _StorageMixin(_CollectorBase):
@@ -863,20 +905,12 @@ class _StorageMixin(_CollectorBase):
         # first — which will be the richer /Storage one.
         ordered_uris: dict = {}   # uri -> endpoint label, preserves order
 
-        if getattr(self, "vendor", "") == "supermicro":
+        if getattr(self, "vendor", "") in ("supermicro", "quanta"):
             self.expand_supported = False
-            # Route directly to SimpleStorage, avoiding DCMS license blocks on /Storage
-            primary_eps = [f"{self.sys_uri}/SimpleStorage"]
-            for extra in self.oem_storage_endpoints():
-                if extra and extra not in primary_eps:
-                    primary_eps.append(extra)
-        else:
-            if getattr(self, "vendor", "") in ("quanta",):
-                self.expand_supported = False
-            primary_eps = [f"{self.sys_uri}/Storage"]
-            for extra in self.oem_storage_endpoints():
-                if extra and extra not in primary_eps:
-                    primary_eps.append(extra)
+        primary_eps = [f"{self.sys_uri}/Storage"]
+        for extra in self.oem_storage_endpoints():
+            if extra and extra not in primary_eps:
+                primary_eps.append(extra)
 
         unsupported_endpoints = getattr(self, "_unsupported_expand_endpoints", None)
         if unsupported_endpoints is None:
@@ -886,6 +920,13 @@ class _StorageMixin(_CollectorBase):
         for ep in primary_eps:
             if not self.sys_uri:
                 continue
+            # If controllers were already discovered from /Storage, do not query
+            # fallback /SimpleStorage endpoints (which return 0-capacity or degraded stubs),
+            # unless all URIs discovered so far are unreachable / phantom stubs.
+            if "/SimpleStorage" in ep and ordered_uris:
+                if any(self._get(u) is not None for u in ordered_uris):
+                    continue
+                ordered_uris.clear()
             coll = None
             fetch_expand_fn = getattr(self, "_fetch_expanded_collection", None)
             if (
@@ -926,6 +967,10 @@ class _StorageMixin(_CollectorBase):
                 idx = primary_eps.index(ep) if ep in primary_eps else len(primary_eps)
                 has_pending_simple = any("/SimpleStorage" in p for p in primary_eps[idx + 1 :])
                 if ordered_uris or has_pending_simple:
+                    continue
+                # If /Storage is license-blocked, check if /SimpleStorage is available before giving up
+                simple_test = self._get(f"{self.sys_uri}/SimpleStorage") or {}
+                if not self._is_license_blocked(simple_test) and (self._get_members(simple_test) or simple_test.get("Members@odata.count", 0) > 0):
                     continue
                 storage_data.append({
                     "id": "license-blocked",
@@ -1001,6 +1046,10 @@ class _StorageMixin(_CollectorBase):
                                     self._populate_request_cache(d_uri, d)
 
         # Fall back to /SimpleStorage or /SmartStorage/ArrayControllers if no controllers found yet
+        # or if all discovered URIs are unreachable / phantom endpoints
+        if ordered_uris and all(self._get(u) is None for u in ordered_uris):
+            ordered_uris.clear()
+
         if not ordered_uris and self.sys_uri:
             fallback_eps = [
                 f"{self.sys_uri}/SimpleStorage",
@@ -1025,6 +1074,8 @@ class _StorageMixin(_CollectorBase):
                     uri = (m.get("@odata.id") or m.get("href")) if isinstance(m, dict) else (m if isinstance(m, str) else None)
                     if uri and uri not in ordered_uris:
                         ordered_uris[uri] = ep
+                    if isinstance(m, dict) and uri and len(m) > 2 and any(k in m for k in ("Id", "Name", "StorageControllers", "Drives", "PhysicalDrives", "DiskDrives", "Devices")):
+                        self._populate_request_cache(uri, m)
 
                 # Check inline/links ArrayControllers under SmartStorage root
                 for oem_ctrl_key in ("ArrayControllers", "HostBusAdapters"):
@@ -1102,7 +1153,7 @@ class _StorageMixin(_CollectorBase):
 
             is_boot_ctrl = any(
                 k in ctrl_id.upper() or k in ctrl_name.upper()
-                for k in ["BOSS", "NS204I", "AHCI.SLOT"]
+                for k in ["BOSS", "NS204I", "AHCI.SLOT", "88NR2241", "MRVL", "MARVELL", "HA-RAID"]
             )
 
             # Check for drive references before expanding enclosures or PCI cache
@@ -1155,11 +1206,6 @@ class _StorageMixin(_CollectorBase):
             # ── Controller firmware + model ────────────────────────────────
             ctrl_fw    = self._extract_fw_version(ctrl.get("FirmwareVersion"))
             ctrl_model = str(ctrl.get("Model") or "").strip()
-            _generic_names = {
-                "STORAGE CONTROLLER", "HPE SMART STORAGE ARRAY CONTROLLER",
-                "ARRAY CONTROLLER", "SMART ARRAY CONTROLLER", "SMARTSTORAGE ARRAY CONTROLLER",
-                "CONTROLLER", "STORAGE",
-            }
             # Fall back into Controllers or StorageControllers if top-level is absent or generic
             sc_candidates = []
             if isinstance(ctrl.get("Controllers"), list):
@@ -1173,32 +1219,41 @@ class _StorageMixin(_CollectorBase):
 
             for sc in sc_candidates:
                 if isinstance(sc, dict):
+                    _smc_sc = ((sc.get("Oem") or {}).get("Supermicro") or {})
+                    if not isinstance(_smc_sc, dict):
+                        _smc_sc = {}
                     if not ctrl_fw and not _has_multi_sc:
-                        ctrl_fw = self._extract_fw_version(sc.get("FirmwareVersion") or sc.get("FirmwarePackageVersion"))
+                        ctrl_fw = self._extract_fw_version(
+                            sc.get("FirmwareVersion")
+                            or sc.get("FirmwarePackageVersion")
+                            or _smc_sc.get("Firmware Version")
+                            or _smc_sc.get("FirmwareVersion")
+                        )
                     if not ctrl_model and not _has_multi_sc:
-                        ctrl_model = str(sc.get("Model") or sc.get("PartNumber") or "").strip()
+                        ctrl_model = str(
+                            sc.get("Model")
+                            or sc.get("PartNumber")
+                            or _smc_sc.get("Controller")
+                            or _smc_sc.get("PN")
+                            or ""
+                        ).strip()
                     sc_name = str(sc.get("Name") or "").strip()
-                    if sc_name and sc_name.upper() not in _generic_names and not _has_multi_sc:
+                    if sc_name and not is_generic_ctrl_name(sc_name) and not _has_multi_sc:
                         if (
                             not ctrl_name
-                            or ctrl_name == "Storage Controller"
-                            or ctrl_name.upper() in _generic_names
+                            or is_generic_ctrl_name(ctrl_name)
                             or ctrl_name == ctrl_id
-                            or ctrl_name.lower().startswith("controller_")
                         ):
                             ctrl_name = sc_name
                 if ctrl_fw and ctrl_model:
                     break
 
             if _has_multi_sc:
-                if not ctrl_name or ctrl_name == ctrl_id or ctrl_name.upper() in _generic_names:
+                if not ctrl_name or ctrl_name == ctrl_id or is_generic_ctrl_name(ctrl_name):
                     ctrl_name = f"Storage Subsystem ({ctrl_id})"
             elif ctrl_model and (
-                ctrl_name.upper() in _generic_names
-                or ctrl_name.upper().startswith("HPE SMART STORAGE ARRAY")
-                or ctrl_name.upper().startswith("SMART STORAGE ARRAY")
+                is_generic_ctrl_name(ctrl_name)
                 or ctrl_name == ctrl_id
-                or ctrl_name.lower().startswith("controller_")
             ):
                 ctrl_name = ctrl_model
 
@@ -1300,8 +1355,24 @@ class _StorageMixin(_CollectorBase):
                             if d_uri:
                                 vol_drive_uris.add(d_uri)
                                 vol_drive_ids.add(d_uri.rstrip("/").split("/")[-1])
-                    v_name = str(v_obj.get("LogicalDriveName") or v_obj.get("Name") or v_obj.get("Id") or "Volume").strip()
-                    v_type = str(v_obj.get("VolumeType") or v_obj.get("RAIDType") or (f"RAID {v_obj['Raid']}" if v_obj.get("Raid") else "") or v_obj.get("LogicalDriveType") or "RAID").strip()
+                    _smc_vol = ((v_obj.get("Oem") or {}).get("Supermicro") or {})
+                    if not isinstance(_smc_vol, dict):
+                        _smc_vol = {}
+                    v_name = str(
+                        v_obj.get("LogicalDriveName")
+                        or _smc_vol.get("VDName")
+                        or v_obj.get("Name")
+                        or v_obj.get("Id")
+                        or "Volume"
+                    ).strip()
+                    v_type = str(
+                        v_obj.get("VolumeType")
+                        or v_obj.get("RAIDType")
+                        or _smc_vol.get("RaidType")
+                        or (f"RAID {v_obj['Raid']}" if v_obj.get("Raid") else "")
+                        or v_obj.get("LogicalDriveType")
+                        or "RAID"
+                    ).strip()
                     cap_bytes = v_obj.get("CapacityBytes")
                     cap_gib = v_obj.get("CapacityGiB")
                     cap_mib = v_obj.get("CapacityMiB")
@@ -1323,6 +1394,7 @@ class _StorageMixin(_CollectorBase):
                         "capacity_gb": v_cap_gb,
                         "health": v_health,
                         "bootable": v_bootable,
+                        **volume_identity_fields(v_obj),
                     })
 
             _NON_RAID_VOL_TYPES = {
@@ -1366,11 +1438,11 @@ class _StorageMixin(_CollectorBase):
                 "port_metrics":        ctrl_port_metrics,
                 "enclosures":          enclosures,
                 "drives":              [],
-                # BOSS-S1/S2 and NS204I are M.2 boot-device cards, not standard drive bays.
+                # BOSS-S1/S2, NS204I, and Marvell 88NR2241 are M.2 boot-device cards, not standard drive bays.
                 # Flag them so bay-count logic and Drive Bay UI can exclude them.
                 "is_boot_ctrl":        any(
                     k in ctrl_id.upper() or k in ctrl_name.upper()
-                    for k in ["BOSS", "NS204I", "AHCI.SLOT"]
+                    for k in ["BOSS", "NS204I", "AHCI.SLOT", "88NR2241", "MRVL", "MARVELL", "HA-RAID"]
                 ),
                 "vendor_id":           ctrl_pci["vendor_id"],
                 "device_id":           ctrl_pci["device_id"],

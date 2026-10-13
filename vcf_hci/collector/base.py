@@ -38,7 +38,7 @@ from vcf_hci.security.contract import empty_security_evidence
 
 from .async_helpers import _safe_result, _timed
 from .collect_bmc_security import _BmcSecurityMixin
-from .collect_gpu import _GPUMixin
+from .collect_gpu import _GPUMixin, retain_collected_pcie
 from .collect_logs import _LogsMixin
 from .collect_network import _NetworkMixin
 from .collect_power import _PowerMixin
@@ -58,6 +58,7 @@ from .http_session import (
     record_auth_lockout,
     redfish_get,
 )
+from .metrics_fetch import METRICS_LINK_CAP, MetricsLinkBudget, fetch_chassis_sensors
 from .ops_collect import resolve_scan_profile
 from .os_eval import _evaluate_os_info
 from .pci_utils import pcie_has_fc_candidates, pcie_has_gpu_candidates
@@ -544,6 +545,8 @@ class BaseRedfishCollector(
         self._negative_endpoint_counts: Dict[str, int] = {}
         self._consecutive_timeouts = 0
         self._consecutive_successes = 0
+        self._bmc_unresponsive = False  # sticky across phase resets once BMC death is detected
+        self._session_create_failed = False
         self.auth_failed = False
         self.expand_supported = False
         self.expand_syntax: Optional[str] = None
@@ -609,9 +612,16 @@ class BaseRedfishCollector(
                     )
                 return True
 
+        if getattr(self, "_bmc_unresponsive", False):
+            if not getattr(self, "skipped", False):
+                self.skipped = True
+                self.timed_out = True
+            return True
+
         with self._cache_lock:
             consec = getattr(self, "_consecutive_timeouts", 0)
             if consec >= 4:
+                self._bmc_unresponsive = True
                 if not getattr(self, "skipped", False):
                     self.skipped = True
                     self.timed_out = True
@@ -1341,6 +1351,10 @@ class BaseRedfishCollector(
         collect_util_telemetry = prof_cfg["collect_util_telemetry"]
         if start_time is None:
             start_time = time.time()
+        self._firmware_collection = None
+        self._metrics_follow_enabled = not quick_mode
+        self._metrics_link_budget = MetricsLinkBudget(METRICS_LINK_CAP)
+        pcie_cache: list = []
         self._update_stage("Collecting System & CPU Info")
         sys_summary = self.collect_system_summary()
         self.sys_summary = sys_summary
@@ -1398,8 +1412,8 @@ class BaseRedfishCollector(
                 "lldp_neighbors":      p2_data.get("lldp_neighbors") or [],
                 "psu_status":          p2_data.get("psu_status") or {},
                 "pcie_slots":          p2_data.get("pcie_slots") or [],
-                "pcie_switches":       p2_data.get("pcie_switches") or [],
-                "pcie_devices":        pcie_cache if 'pcie_cache' in locals() and pcie_cache else [],
+                "pcie_switches":       list(p2_data.get("pcie_switches") or []),
+                "pcie_devices":        list(pcie_cache or []),
             }
             res["memory_topology"] = {}
             if capture_raw or crawl_endpoints:
@@ -1449,6 +1463,8 @@ class BaseRedfishCollector(
                 "multiple_http_requests": bool(getattr(self, "multiple_http_requests", False)),
                 "request_pacing_s": round(effective_pacing, 3),
                 "unsupported_expand_endpoints": unsupported_expand,
+                "bmc_unresponsive": bool(getattr(self, "_bmc_unresponsive", False)),
+                "session_create_failed": bool(getattr(self, "_session_create_failed", False)),
             }
 
             failed_sec = list(getattr(self, "_failed_sections", []) or getattr(self, "_timed_out_sections", []))
@@ -1476,6 +1492,27 @@ class BaseRedfishCollector(
             if getattr(self, "bmc_session_warning", None):
                 res["bmc_session_warning"] = self.bmc_session_warning
                 res.setdefault("warnings", []).append(self.bmc_session_warning)
+            retain_collected_pcie(res, name_patterns=tuple(getattr(self, "_PCIE_SWITCH_NAMES", ()) or ()))
+            if not quick_mode:
+                try:
+                    res["chassis_sensors"] = fetch_chassis_sensors(self)
+                except Exception as sensor_err:
+                    logger.debug("[%s] Chassis sensors skipped: %s", getattr(self, "host", "host"), sensor_err)
+                    res["chassis_sensors"] = []
+            if not quick_mode and hasattr(self, "collect_assembly_inventory"):
+                try:
+                    res["assembly_inventory"] = self.collect_assembly_inventory() or []
+                except Exception as asm_err:
+                    logger.debug("[%s] Assembly inventory skipped: %s", getattr(self, "host", "host"), asm_err)
+                    res["assembly_inventory"] = []
+            fw_meta = getattr(self, "_firmware_collection", None)
+            if isinstance(fw_meta, dict):
+                res.setdefault("collection_completeness", {})["firmware_inventory"] = dict(fw_meta)
+                if fw_meta.get("truncated"):
+                    res["diagnostics"]["firmware_inventory_truncated"] = True
+                    res["diagnostics"]["firmware_members_available"] = fw_meta.get("members_available")
+                    res["diagnostics"]["firmware_members_collected"] = fw_meta.get("members_collected")
+                    res["diagnostics"]["firmware_member_cap"] = fw_meta.get("member_cap")
             return res
 
         # ── Phase 1: run bios / SEL / license concurrently ─────────────────────
@@ -1484,15 +1521,22 @@ class BaseRedfishCollector(
         # License is cheap (1-3 GETs) but always collected — even quick mode needs
         # it to surface e.g. XCC Standard vs Enterprise warnings.
         with self._cache_lock:
-            self._consecutive_timeouts = 0
-            self._consecutive_successes = 0
+            # Do not clear sticky BMC-death flag; only reset soft timeout counters when BMC is still healthy.
+            if not getattr(self, "_bmc_unresponsive", False):
+                self._consecutive_timeouts = 0
+                self._consecutive_successes = 0
             user_cancelled = bool(getattr(self, "cancel_event", None) is not None and getattr(self.cancel_event, "is_set", lambda: False)())
             user_skipped = bool(getattr(self, "skip_host_set", None) is not None and self.skip_host_set and self.host in self.skip_host_set)
             host_timeout_exceeded = bool(getattr(self, "host_timeout", 0) > 0 and self.scan_start_time is not None and (time.time() - self.scan_start_time) > self.host_timeout)
-            if not user_cancelled and not user_skipped and not host_timeout_exceeded:
+            if (
+                not user_cancelled
+                and not user_skipped
+                and not host_timeout_exceeded
+                and not getattr(self, "_bmc_unresponsive", False)
+            ):
                 self.skipped = False
                 self.timed_out = False
-            if getattr(self, "_throttled", False):
+            if getattr(self, "_throttled", False) and not getattr(self, "_bmc_unresponsive", False):
                 self._throttled = False
                 if getattr(self, "multiple_http_requests", False):
                     self._request_pacing_s = 0.0
@@ -1571,14 +1615,21 @@ class BaseRedfishCollector(
             chan_per_socket  = sys_summary["cpu_summary"]["channels_per_socket"]
             total_ram       = sys_summary.get("total_memory_gb", 256)
 
-            # Reset Phase 1 accumulated timeouts & circuit-breaker flags before evaluating Phase 2 entry
+            # Soft-reset Phase 1 timeout counters only when BMC is still healthy.
+            # Sticky _bmc_unresponsive must survive into Phase 2 so we fail fast.
             with self._cache_lock:
-                self._consecutive_timeouts = 0
-                self._consecutive_successes = 0
+                if not getattr(self, "_bmc_unresponsive", False):
+                    self._consecutive_timeouts = 0
+                    self._consecutive_successes = 0
                 user_cancelled = bool(getattr(self, "cancel_event", None) is not None and getattr(self.cancel_event, "is_set", lambda: False)())
                 user_skipped = bool(getattr(self, "skip_host_set", None) is not None and self.skip_host_set and self.host in self.skip_host_set)
                 host_timeout_exceeded = bool(getattr(self, "host_timeout", 0) > 0 and self.scan_start_time is not None and (time.time() - self.scan_start_time) > self.host_timeout)
-                if not user_cancelled and not user_skipped and not host_timeout_exceeded:
+                if (
+                    not user_cancelled
+                    and not user_skipped
+                    and not host_timeout_exceeded
+                    and not getattr(self, "_bmc_unresponsive", False)
+                ):
                     self.skipped = False
                     self.timed_out = False
 
@@ -1595,12 +1646,13 @@ class BaseRedfishCollector(
             # pcie_slots is included here; pcie_lane_budget is derived from it
             # with a pure-Python call after Phase 2 completes.
             with self._inner_cv:
-                self._consecutive_timeouts = 0
-                self._consecutive_successes = 0
-                self._throttled = False
-                if getattr(self, "multiple_http_requests", False):
-                    self._request_pacing_s = 0.0
-                self._inner_cv.notify_all()
+                if not getattr(self, "_bmc_unresponsive", False):
+                    self._consecutive_timeouts = 0
+                    self._consecutive_successes = 0
+                    self._throttled = False
+                    if getattr(self, "multiple_http_requests", False):
+                        self._request_pacing_s = 0.0
+                    self._inner_cv.notify_all()
             self._phase2_expired = False
             def _p2_run(fn, *args, **kwargs):
                 _thread_local.is_phase2 = True
@@ -1687,8 +1739,11 @@ class BaseRedfishCollector(
                 crawler = RedfishCrawler(
                     get_fn=self._get,
                     host_label=str(getattr(self, "host", "host")),
+                    max_log_members=20,
+                    max_general_members=50,
                     is_cancelled_fn=self._is_cancelled_or_skipped,
                     progress_callback=lambda msg, v, q: self._update_stage(msg),
+                    skip_oem_admin=True,
                 )
                 with self._cache_lock:
                     cached_items = dict(self._request_cache)
@@ -1748,6 +1803,8 @@ class BaseRedfishCollector(
         self._update_stage("Connecting for Targeted Rescan...", force_broadcast=True)
 
         if not self.create_session():
+            self._session_create_failed = True
+            self._bmc_unresponsive = True
             logger.warning("[%s] Failed creating Redfish session for targeted rescan", self.host)
             return None
         self._update_stage("Discovering Endpoints for Rescan...", force_broadcast=True)

@@ -12,13 +12,13 @@ The **VCF / vSphere 9.1 HCI Readiness Assessment Tool** is a non-intrusive, read
 From an Information Security and Cyber Risk perspective, the tool is engineered with a strict minimal-attack-surface philosophy:
 
 1. **Zero Hypervisor / OS Footprint:** Requires **no** host agents, kernel modules, OS daemons, or in-band credentials. It operates entirely out-of-band (OOB).
-2. **Principle of Least Privilege:** Connects strictly via **read-only** Baseboard Management Controller (BMC) accounts over standard HTTPS (port 443). Zero write, reboot, firmware flashing, or configuration mutation actions are performed.
+2. **Principle of Least Privilege:** Connects via **read-only** Baseboard Management Controller (BMC) accounts. The usual path is HTTPS on port 443. HTTP on port 80 is accepted only with a warning because credentials are unencrypted. Zero write, reboot, firmware flashing, or configuration mutation actions are performed.
 3. **100% Python Standard Library (Zero Third-Party Dependencies):** Package code uses **only** built-in Python 3.9+ modules (`urllib.request`, `ssl`, `json`, `hashlib`). No unvetted third-party `pip` packages (e.g., `requests`, `aiohttp`, `jinja2`) are bundled or imported, eliminating supply-chain attack vectors.
-4. **Complete Source Auditability (No Opaque Binaries Required):** While convenience executables are published, the tool can be inspected and run purely as plain-text Python source code (`python3 vcfr_web.py` or `python3 -m vcf_hci`).
-5. **Zero Egress / No "Phone-Home":** The tool contains **no** analytics beacons, crash telemetry, license validation check-ins, or background egress channels. All compatibility evaluations and report generation occur 100% locally.
+4. **Complete Source Auditability (No Opaque Binaries Required):** The tracked and supported launch path is plain-text Python source (`python3 vcfr_web.py` or `python3 -m vcf_hci`). This repository does not require or promise a prebuilt executable.
+5. **Default-Offline / No "Phone-Home":** The tool contains **no** analytics beacons, crash telemetry, license validation check-ins, or background egress channels. Public-network egress is off by default; Broadcom HCL refresh/bundle creation, Dell warranty enrichment, and external credential providers require explicit operator opt-in.
 6. **Air-Gap / Dark-Site Support:** Operates seamlessly in isolated air-gapped networks. Public Broadcom Hardware Compatibility List (HCL) datasets can be packaged offline (`--bundle-hcl`) and imported (`--import-hcl`), eliminating any need for dual-homed management workstations.
 7. **Deterministic Data Obfuscation:** Built-in cryptographic PII sanitization hashes IPs, MACs, serial numbers, hostnames, and WWNs with a random salt while preserving essential hardware and topology relationships for external review.
-8. **Hardened Local Web UI:** Web UI server binds strictly to `127.0.0.1`, validates cryptographic launch tokens and session tokens, enforces strict Host/Origin headers to prevent DNS rebinding, and blocks SSRF access to cloud metadata endpoints.
+8. **Hardened Local Web UI:** The Web UI binds to `127.0.0.1` by default, validates a one-time launch token and then a session cookie, enforces Host/Origin checks to prevent DNS rebinding, and blocks SSRF access to cloud metadata endpoints. A non-loopback listener requires an explicit allow flag and TLS material, and it disables the vault and jump-host features.
 9. **Permissive Code & LLM Audit Rights:** The software license explicitly grants organizations full rights to inspect, audit, SAST-scan, or feed the source code into AI/LLM security analysis platforms (e.g., Mythos, Fable, CodeQL, SonarQube).
 
 ---
@@ -50,9 +50,9 @@ From an Information Security and Cyber Risk perspective, the tool is engineered 
 │   └──────────────────────────────────┘  └────────────────────────────┘   │
 └───────────────────────┬──────────────────────────────────────────────────┘
                         │
-                        │ Out-of-Band Network (HTTPS / 443 Only)
-                        │ DMTF Redfish / WS-Man [GET / Enumerate Only]
-                        │ TLS Verification or TOFU SHA-256 Thumbprint Pinning
+                        │ Out-of-Band Network (HTTPS/443 usual; HTTP/80 warned)
+                        │ Redfish reads, session POST/DELETE, WS-Man read POST
+                        │ TLS encryption by default; identity check is opt-in
                         │
                         ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -82,8 +82,8 @@ The assessment tool requires access only to the Out-of-Band management plane and
 | **Network Path** | Out-of-Band (OOB) BMC IP network over HTTPS (TCP 443) | No route to production VM traffic or internal application networks is required. |
 | **In-Band / Host Access** | **None** | No ESXi, Windows, or Linux OS credentials; no SSH access to hypervisors; no host-level agents or daemons. |
 | **BMC Account Role** | **Read-Only / Operator** | Zero administrative privileges required (no "Administrator" or "Configure" rights needed). |
-| **Allowed HTTP Verbs** | `GET`, `OPTIONS`, `HEAD` | Only non-state-changing read methods are executed. Session teardown issues a `DELETE` against the ephemeral `/redfish/v1/SessionService/Sessions/<id>` token. |
-| **Prohibited Actions** | `POST` / `PATCH` / `PUT` on system configs | **Zero** power state changes, **zero** reboot commands, **zero** firmware updates, **zero** BIOS configuration modifications. |
+| **Allowed HTTP Verbs** | `GET`, `OPTIONS`, `HEAD`; narrowly scoped `POST` / `DELETE` | Redfish session authentication uses `POST` only to create an ephemeral session and `DELETE` only to close that session. WS-Man and Cisco XML inventory use read-semantic `POST` requests because those protocols tunnel reads through POST. |
+| **Prohibited Actions** | Configuration `PATCH` / `PUT` and action `POST` | **Zero** power state changes, **zero** reboot commands, **zero** firmware updates, **zero** BIOS configuration modifications. |
 
 ### Recommended BMC Role Configuration by Vendor
 
@@ -113,7 +113,7 @@ Fleets with several server generations frequently use different BMC passwords pe
 
 The vault features progressive enhancement across two cryptographic operating modes:
 
-1. **Hardware-Accelerated AES-256-GCM (Preferred):** When the optional `pycryptodomex` library is present (installable via `pip install "vcf-readiness[crypto]"` or `pip install pycryptodomex`, or bundled in single-file binary distributions), new vaults default to standard NIST **AES-256-GCM** using CPU hardware acceleration (AES-NI). Nonces are 12 random bytes from `secrets.token_bytes`, and the 16-byte authentication tag is verified in constant time prior to decryption.
+1. **Hardware-Accelerated AES-256-GCM (Preferred):** When the optional `pycryptodomex` library is present (installable via `pip install "vcf-readiness[crypto]"` or `pip install pycryptodomex`), new vaults default to standard NIST **AES-256-GCM** using CPU hardware acceleration (AES-NI). Nonces are 12 random bytes from `secrets.token_bytes`, and the 16-byte authentication tag is verified in constant time prior to decryption.
 2. **Pure Standard-Library Fallback (Zero-Dependency):** When running from pure source on bare bastion or air-gapped hosts without external wheels, the vault uses an OpenSSL-backed Encrypt-then-MAC construction built exclusively from Python stdlib primitives (`hashlib`, `hmac`, `secrets`):
 
 | Step | Primitive | Parameters |
@@ -164,7 +164,7 @@ python3 --version
 python3 vcfr_web.py
 
 # Or execute a CLI scan directly from source
-python3 vcfr_collector.py --targets 192.0.2.10-192.0.2.20 --user readonly_audit --output-dir ./audit_reports
+python3 vcfr_collector.py --targets 192.0.2.10-20 --username readonly_audit --output-dir ./audit_reports
 ```
 
 ### Zero External Package Dependencies
@@ -186,9 +186,10 @@ import sys, threading, time, urllib.parse, urllib.request, zipfile
 ## 5. Network Egress, Telemetry & Air-Gapped Operation
 
 ### Zero "Phone-Home" Guarantee
-- **No External Communication:** The tool does not transmit telemetry, analytics, health pings, usage metrics, or license status to Broadcom, VMware, or any third party.
+- **No Automatic Public Egress:** The tool does not transmit telemetry, analytics, health pings, usage metrics, or license status. Ordinary scans and HCL loads do not contact public services.
+- **Explicit Opt-In Egress Only:** `--refresh-hcl`, `--bundle-hcl`, and the Web UI HCL refresh action may download the public Broadcom HCL. Dell TechDirect warranty enrichment and HashiCorp Vault / SDDC Manager credential providers make outbound requests only after the operator supplies credentials and explicitly enables or constructs those features.
 - **Self-Contained Evaluation:** All compatibility rules (CPU generation matrices, vSAN ESA certification logic, BIOS security benchmarks) are embedded directly in the local source code (`vcf_hci/compat/` and `vcf_hci/constants.py`).
-- **No Remote Code Execution / No Dynamic Scripts:** Reports are generated as self-contained static HTML files with inline CSS and client-side JavaScript. No external CDNs, fonts, or tracking pixels are referenced.
+- **No Unsolicited Remote Execution:** Reports are generated as self-contained static HTML files with inline CSS and client-side JavaScript. No external CDNs, fonts, or tracking pixels are referenced. Experimental jump-host execution is a separate, explicit Web UI action that deploys an ephemeral stdlib zipapp over pinned-host-key SSH.
 
 ### Air-Gapped / Dark-Site Operation (Isolated OOB Networks)
 To prevent security concerns where an operator device would require simultaneous access to the public internet and an isolated OOB BMC network (dual-homing), the tool provides an offline database bundling workflow:
@@ -196,8 +197,8 @@ To prevent security concerns where an operator device would require simultaneous
 ```
 [ Step 1: Internet-Connected Workstation ]
 $ python3 -m vcf_hci --bundle-hcl
-  └─► Auto-downloads public Broadcom vSAN HCL datasets (all.json)
-  └─► Packages into standalone encrypted/checksummed 'vcf_hcl_bundle_YYYYMMDD.zip'
+  └─► Explicitly downloads the public Broadcom vSAN HCL dataset (all.json)
+  └─► Packages it into standalone 'vcf_hcl_bundle_YYYYMMDD.zip'
 
 [ Step 2: Transfer via Approved Secure File Ingestion (USB / Bastion) ]
 
@@ -232,7 +233,7 @@ When assessment reports must be shared with external Solution Architects or Broa
 - **Per-Execution Random Salt:** A high-entropy 128-bit salt (`os.urandom(16)`) is generated for each obfuscated run.
 - **Relational Consistency:** The same real identifier within a scan batch produces the identical token across all host reports (e.g., two servers connected to the same switch port receive identical masked switch IDs `SW-A3F9B2`), preserving cluster and network switch matrix topology analysis without revealing physical infrastructure details.
 - **Interactive DOM Masking:** HTML reports feature a client-side PII mask toggle allowing live presentations where real hostnames and IPs can be masked or unmasked dynamically in the browser without re-rendering.
-- **Sample Reports Available:** Pre-generated sample reports (`samples/` and offline demo files) are provided so security auditors can review the exact data schema and redaction results before running assessments.
+- **Local Review:** Security auditors can inspect the report generators and create approved synthetic or obfuscated output locally before assessing production targets.
 
 ---
 
@@ -253,11 +254,11 @@ flowchart TD
     BodyCap -- Yes --> ProcessReq[Process Request & Inject CSP / Security Headers]
 ```
 
-1. **Loopback-Only Socket Binding:** Binds strictly to `127.0.0.1` (IPv4 loopback) by default. It does not bind to `0.0.0.0` or external NIC interfaces. Remote access is disabled by default.
+1. **Loopback by default:** Binds to `127.0.0.1` unless the operator explicitly requests a non-loopback listener. That mode is the TLS-only case in item 2. Remote access is off by default.
 2. **One-time launch token.** At startup the server generates a 128-bit token (`secrets.token_hex(16)`) and prints it once (`http://127.0.0.1:7182/?token=...` on loopback). That value is accepted only on `GET /`, and only until the browser presents the session cookie minted from it. A retry of the same URL is accepted for at most 5 seconds, and only when that cookie has not been presented yet, so a lost redirect can finish. It is not stored as the session, it is not accepted as `X-Server-Token`, and it does not authorize scan or credential APIs. Redemption answers `302` to `/` with `Set-Cookie: vcf_session=<new 192-bit token>; Path=/; HttpOnly; SameSite=Strict` and `Cache-Control: no-store`, so the token leaves the address bar. Debug access logs redact `token=`. A missing session is `401` on `GET /` and `403` on every other route.
 
    **Network-exposed listeners are HTTPS-only.** `--allow-remote`, or any `--bind` other than `127.0.0.1`, `::1`, or `localhost`, refuses to start unless `--tls-cert` and `--tls-key` are both set. The socket is wrapped with TLS 1.2+. Startup prints the certificate SHA-256 fingerprint and does not open a browser, so the one-time URL is not consumed on the server host. On that listener the session cookie also carries `Secure`. Loopback HTTP, including an SSH local forward, does not set `Secure` (browsers will not store a Secure cookie on `http://127.0.0.1`). Prefer the SSH forward in `docs/INSTALL.md` over binding the UI to a reachable interface.
-3. **Anti-CSRF & DNS-Rebinding Defense:** Request validation inspects `Host`, `Origin`, and `Referer` headers. Host headers that do not match `127.0.0.1` or `localhost` are rejected with `403 Forbidden`, neutralizing cross-origin attacks from malicious websites visited in the operator's browser.
+3. **Anti-CSRF & DNS-Rebinding Defense:** Request validation inspects `Host`, `Origin`, and `Referer` headers. On the default loopback listener, a host that is not loopback or the bound address is rejected with `403 Forbidden`. `--allow-remote` checks the addressed host instead of limiting the check to loopback.
 4. **Security Response Headers:** UI and docs responses include:
    - `Content-Security-Policy: default-src 'self' 'unsafe-inline' data:; connect-src 'self';`
    - `X-Frame-Options: SAMEORIGIN`
@@ -330,7 +331,7 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 | **Are administrator write privileges required?** | **No.** Standard read-only BMC accounts are used. | [Section 3](#3-principle-of-least-privilege-credentials--access) |
 | **Does the software execute binary code that cannot be inspected?** | **No.** Plain Python 3.9+ source is fully auditable. | `vcfr_web.py`, `vcf_hci/` |
 | **Does the tool introduce external supply-chain dependencies?** | **No.** Zero third-party `pip` dependencies (stdlib only). | `pyproject.toml`, `vcf_hci/` |
-| **Does the tool transmit customer data outside the company?** | **No.** Zero telemetry, zero analytics, zero external network calls. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
+| **Does the tool transmit customer data outside the company?** | **Not by default.** Zero telemetry or analytics; optional HCL refresh/bundling, Dell warranty, and external credential-provider egress are explicit opt-ins. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
 | **Can the tool function in an air-gapped network?** | **Yes.** Supports offline dark-site HCL zip bundles. | `vcf_hci/hcl/bundle_manager.py` |
 | **Can sensitive identifiers be redacted before sharing reports?** | **Yes.** SHA-256 deterministic salted PII hashing engine. | `vcf_hci/obfuscation.py` |
 | **Is the local web UI protected against CSRF and DNS rebinding?** | **Yes.** Loopback by default, one-time launch token exchanged for an `HttpOnly` / `SameSite=Strict` session cookie (`Secure` on HTTPS), strict host headers. Exposed listeners require TLS. | `vcf_hci/web/server.py` |
@@ -351,7 +352,7 @@ To execute the assessment under maximum security controls:
    ```bash
    python3 vcfr_collector.py \
        --targets 192.0.2.10-192.0.2.30 \
-       --user sec_audit_user \
+       --username sec_audit_user \
        --obfuscate \
        --output-dir ./vcf_assessment_results
    ```

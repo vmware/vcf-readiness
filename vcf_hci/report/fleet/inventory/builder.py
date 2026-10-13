@@ -386,6 +386,7 @@ def build_detailed_inventory_html(
       <option value="ESA-M">ESA-M (Medium)</option>
       <option value="ESA-S">ESA-S (Small)</option>
       <option value="ESA-XS">ESA-XS (Edge)</option>
+      <option value="StorageMet">Storage Met</option>
       <option value="Needs 25G">Needs 25G NIC</option>
       <option value="Ready">ESA Ready (Any)</option>
       <option value="Blocked">Blocked</option>
@@ -625,6 +626,8 @@ def build_detailed_inventory_html(
         var dProfile = tr.getAttribute('data-esa-tier') || '';
         if (esa === 'Ready') {{
           if (dProfile !== 'ESA-L' && dProfile !== 'ESA-M' && dProfile !== 'ESA-S' && dProfile !== 'ESA-XS' && dEsa !== 'Ready') ok = false;
+        }} else if (esa === 'StorageMet') {{
+          if (dEsa !== 'StorageMet' && dProfile !== 'Needs 25G' && dProfile.indexOf('Storage') < 0) ok = false;
         }} else if (esa === 'Blocked') {{
           if (dProfile !== 'Blocked' && dEsa !== 'Blocked') ok = false;
         }} else if (esa === 'Insufficient') {{

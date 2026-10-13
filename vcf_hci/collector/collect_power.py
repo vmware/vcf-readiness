@@ -83,7 +83,46 @@ def _safe_num(val, cast=float):
 
 
 class _PowerMixin(_CollectorBase):
-    """Collection methods: PSUs, thermal sensors."""
+    def collect_assembly_inventory(self) -> list:
+        """Bounded FRU inventory from Chassis.Assembly when that link is present.
+
+        At most one Assembly resource plus ``_ASSEMBLY_MEMBER_CAP`` members.
+        A missing link returns an empty list and does not probe other chassis.
+        """
+        chassis_uri = getattr(self, "chassis_uri", None)
+        if not chassis_uri:
+            return []
+        if callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped():
+            return []
+        chassis = self._get(chassis_uri) or {}
+        if not isinstance(chassis, dict) or chassis.get("error"):
+            return []
+        link = chassis.get("Assembly")
+        if isinstance(link, str) and link.strip():
+            link = {"@odata.id": link.strip()}
+        if not isinstance(link, dict) or not link.get("@odata.id"):
+            return []
+        body = self._get(link["@odata.id"]) or {}
+        if not isinstance(body, dict) or body.get("error"):
+            return []
+        rows = body.get("Assemblies") if isinstance(body.get("Assemblies"), list) else []
+        if not rows:
+            fetched = []
+            for member in self._get_members(body):
+                if len(fetched) >= _ASSEMBLY_MEMBER_CAP:
+                    break
+                if not isinstance(member, dict):
+                    continue
+                if member.get("PartNumber") or member.get("SerialNumber") or member.get("Name"):
+                    fetched.append(member)
+                    continue
+                member_uri = member.get("@odata.id")
+                if member_uri and len(member) <= 2:
+                    item = self._get(member_uri) or {}
+                    if isinstance(item, dict) and item and not item.get("error"):
+                        fetched.append(item)
+            rows = fetched
+        return [_assembly_record(item) for item in rows[:_ASSEMBLY_MEMBER_CAP] if isinstance(item, dict)]
 
     def collect_psu_status(self) -> dict:
         """Check power supply unit count, redundancy, capacity, and current draw."""
@@ -157,6 +196,15 @@ class _PowerMixin(_CollectorBase):
                 "wattage": wattage_val if wattage_val is not None else "N/A",
                 "health":  health_str,
                 "state":   state_str,
+                "manufacturer": str(psu.get("Manufacturer") or "").strip(),
+                "part_number": str(psu.get("PartNumber") or "").strip(),
+                "serial_number": str(psu.get("SerialNumber") or "").strip(),
+                "spare_part_number": str(psu.get("SparePartNumber") or "").strip(),
+                "firmware_version": str(psu.get("FirmwareVersion") or "").strip(),
+                "asset_tag": str(psu.get("AssetTag") or "").strip(),
+                "power_supply_type": str(psu.get("PowerSupplyType") or "").strip(),
+                "last_power_output_watts": _safe_num(psu.get("LastPowerOutputWatts"), int),
+                "hot_pluggable": psu.get("HotPluggable") if isinstance(psu.get("HotPluggable"), bool) else None,
             })
 
         # ── System-level power consumption (PowerControl[] or EnvironmentMetrics) ─────
@@ -536,31 +584,74 @@ class _PowerMixin(_CollectorBase):
                 "status_flag": flag,
             })
 
-        # Parse Fans[]
+        # Parse Fans[]. Keep every fetched fan, not only the fault subset.
+        fans = []
         fan_faults = []
         for fan in fans_raw:
             if not isinstance(fan, dict):
                 continue
-            fan_health = (fan.get("Status") or {}).get("Health", "OK")
-            fan_state = (fan.get("Status") or {}).get("State", "Enabled")
+            fan_status = fan.get("Status") if isinstance(fan.get("Status"), dict) else {}
+            raw_health = fan_status.get("Health")
+            fan_health = str(raw_health).strip() if raw_health not in (None, "") else ""
+            fan_state = str(fan_status.get("State") or "").strip()
             raw_rpm = fan.get("Reading") if fan.get("Reading") is not None else fan.get("ReadingRPM")
             if raw_rpm is None:
                 raw_rpm = fan.get("SpeedRPM")
             rpm_num = _safe_num(raw_rpm, int)
             fan_name = fan.get("Name") or fan.get("MemberId", "Fan")
+            record = {
+                "name": fan_name,
+                "reading_rpm": rpm_num if rpm_num is not None else "N/A",
+                "health": fan_health,
+                "state": fan_state,
+                "manufacturer": str(fan.get("Manufacturer") or "").strip(),
+                "model": str(fan.get("Model") or "").strip(),
+                "part_number": str(fan.get("PartNumber") or "").strip(),
+                "serial_number": str(fan.get("SerialNumber") or "").strip(),
+                "spare_part_number": str(fan.get("SparePartNumber") or "").strip(),
+                "physical_context": str(fan.get("PhysicalContext") or "").strip(),
+                "hot_pluggable": fan.get("HotPluggable") if isinstance(fan.get("HotPluggable"), bool) else None,
+            }
+            fans.append(record)
             if fan_state not in ("Enabled", ""):
                 continue
-            if fan_health not in ("OK", "Ok") or (rpm_num is not None and rpm_num == 0):
+            unhealthy = bool(fan_health) and fan_health not in ("OK", "Ok")
+            if unhealthy or (rpm_num is not None and rpm_num == 0):
                 fan_faults.append({
                     "name": fan_name,
-                    "reading_rpm": rpm_num if rpm_num is not None else "N/A",
-                    "health": fan_health,
+                    "reading_rpm": record["reading_rpm"],
+                    "health": fan_health or "Unknown",
                 })
         return {
             "out_of_spec": out_of_spec,
             "overall_status_badge": "<span class='badge danger'>🔴 Thermal Warning</span>" if out_of_spec else "<span class='badge success'>🟢 All Sensors In Spec</span>",
             "key_sensor": key_sensor,
             "sensors": sensors,
+            "fans": fans,
             "fan_faults": fan_faults,
         }
+
+
+_ASSEMBLY_MEMBER_CAP = 16
+
+
+def _assembly_record(item: dict) -> dict:
+    status = item.get("Status") if isinstance(item.get("Status"), dict) else {}
+    location = item.get("Location") if isinstance(item.get("Location"), dict) else {}
+    part_location = location.get("PartLocation") if isinstance(location.get("PartLocation"), dict) else {}
+    health = status.get("Health")
+    return {
+        "member_id": str(item.get("MemberId") or item.get("Id") or "").strip(),
+        "name": str(item.get("Name") or "").strip(),
+        "vendor": str(item.get("Vendor") or item.get("Producer") or "").strip(),
+        "model": str(item.get("Model") or "").strip(),
+        "part_number": str(item.get("PartNumber") or "").strip(),
+        "serial_number": str(item.get("SerialNumber") or "").strip(),
+        "spare_part_number": str(item.get("SparePartNumber") or "").strip(),
+        "sku": str(item.get("SKU") or "").strip(),
+        "production_date": str(item.get("ProductionDate") or "").strip(),
+        "physical_context": str(item.get("PhysicalContext") or part_location.get("ServiceLabel") or "").strip(),
+        "health": str(health).strip() if health not in (None, "") else "",
+        "state": str(status.get("State") or "").strip(),
+    }
 

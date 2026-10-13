@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from vcf_hci.compat.firmware import evaluate_bmc_fw_version
+from vcf_hci.constants import prefer_storage_ctrl_display_name
 from vcf_hci.report.fleet.escape import _xe
 from vcf_hci.report.fleet.inventory.chips import (
     _DASH,
@@ -22,6 +23,7 @@ from vcf_hci.report.inventory_tables import (
     _all_drives,
     _extract_nic_rated_speed,
     _host_ip,
+    _is_boot_ctrl,
     _link_is_up,
     clean_model_code,
     select_cpu_power_entry,
@@ -69,9 +71,13 @@ def _build_drives_table(
             if not str(ip).startswith("192.0.2."):
                 ip = f"192.0.2.{(idx % 250) + 1}"
         for ctrl in data.get("storage_subsystem") or []:
-            ctrl_name = str(ctrl.get("name") or ctrl.get("ctrl_model") or ctrl.get("id") or "")
             ctrl_id = str(ctrl.get("id") or "")
             ctrl_model = str(ctrl.get("ctrl_model") or "")
+            ctrl_name = prefer_storage_ctrl_display_name(
+                name=ctrl.get("name"),
+                ctrl_model=ctrl_model,
+                ctrl_id=ctrl_id,
+            )
             is_perc7xx = bool(
                 _PERC_7XX_PATTERN.search(ctrl_name)
                 or _PERC_7XX_PATTERN.search(ctrl_id)
@@ -81,7 +87,11 @@ def _build_drives_table(
             for d in ctrl.get("drives") or []:
                 if (d.get("category") or "") == "Empty":
                     continue
-                d_ctrl_name = str(d.get("controller_name") or ctrl_name)
+                d_ctrl_name = prefer_storage_ctrl_display_name(
+                    name=d.get("controller_name") or ctrl.get("name"),
+                    ctrl_model=ctrl_model,
+                    ctrl_id=ctrl_id,
+                )
                 ep = d.get("endurance_remaining_pct", "")
                 if ep in (255, "255", "255%"):
                     ep = "N/A"
@@ -91,10 +101,20 @@ def _build_drives_table(
                 behind_tm = bool(d.get("behind_trimode"))
                 behind_sw = bool(d.get("behind_software_raid"))
                 is_sw_ctrl = bool(ctrl.get("is_software_raid"))
+                is_boot = (
+                    cat == "Boot Device"
+                    or bool(d.get("is_boot"))
+                    or bool(ctrl.get("is_boot_ctrl"))
+                    or _is_boot_ctrl(ctrl)
+                )
 
                 # Determine controller type for drive row filtering
-                if not is_sw_ctrl and not behind_sw and (is_perc7xx or "Tri-Mode" in cat or behind_tm or (cat == "Unsupported NVMe RAID")):
+                if is_boot:
+                    ctrl_type = "boot"
+                elif not is_sw_ctrl and not behind_sw and (is_perc7xx or "Tri-Mode" in cat or behind_tm or (cat == "Unsupported NVMe RAID")):
                     ctrl_type = "unsupported"
+                elif cat == "vSAN OSA Only":
+                    ctrl_type = "osa"
                 elif cat == ESA_CATEGORY or proto.upper() in ("NVME", "PCIE"):
                     ctrl_type = "esa"
                 elif "OSA" in cat or "HBA" in ctrl_name.upper():

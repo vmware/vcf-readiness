@@ -223,7 +223,7 @@ return 3          # Standard unpipelined fallback ceiling
 | :--- | :--- | :--- | :--- |
 | **`readiness-full`** (Default) | Exhaustive audit: Phase 1 (BIOS, SEL, Firmware Inventory, PCIe, Licenses) + Phase 2 (Storage, NICs, Memory, DIMM topology, GPUs, HBAs, LLDP, Telemetry). | ~25–60s / host | **Standard for VCF 9.1 Readiness**: produces complete hardware audit and vSAN ESA certification. |
 | **`readiness-lean`** (`--lean` / `--profile readiness-lean`) | High-speed audit: Phase 1 + Phase 2 core storage/NICs/memory, skipping historical telemetry logs, secondary member GETs, and extra sensor walks. | ~15–30s / host | **High-Throughput Fleet Audits**: ideal for large enterprise sweeps where vSAN ESA readiness verdict is required without historical metrics. |
-| **`inventory-lite`** (`--quick` / `--profile inventory-lite`) | Rapid pre-screening: Systems summary, CPU verdict, Power/Thermal rollup, Storage controller rollup, NIC summary (no deep DIMM/PCIe/FW walk). | ~5–10s / host | **Rapid Pre-Qualification**: instantly filters out obsolete CPU architectures and unsupported platforms. |
+| **`inventory-lite`** (`--profile inventory-lite`) | Rapid pre-screening: Systems summary, CPU verdict, Power/Thermal rollup, Storage controller rollup, NIC summary (no deep DIMM/PCIe/FW walk). | Shortest supported profile | **Rapid Pre-Qualification**: filters platforms before a full readiness scan. |
 | **LAN High Concurrency** (`--threads 16-24`) | Outer fleet concurrency up to 24 workers (max 32), with inner BMC workers locked at 3. | High throughput | Recommended for dedicated 1GbE/10GbE management subnets (<80ms RTT). |
 | **VPN / WAN Auto-Throttling** (Auto / `--threads 6-8`) | Latency probe auto-clamps outer concurrency to 6–8 threads when avg RTT > 80ms. | Medium | Prevents connection drops and TCP socket exhaustion over WAN/VPN links. |
 | **Allow Partial Scans** (`--allow-partial`) | Harvests valid subsystems even if non-critical endpoints time out. | Resilient | **Always recommended** for large fleets with mixed or degraded BMC health. |
@@ -299,18 +299,20 @@ The scanner automatically performs a TCP RTT latency probe on candidate target B
 #### Action 4: CLI Fleet Tuning Options for Slow BMC Networks
 When running from the command line on fleets with known sluggish BMCs or high-latency VPN links:
 ```bash
-# Recommended Gentle Scan Profile:
+# Recommended gentle scan profile:
+export REDFISH_PASSWORD='replace-me'
 python vcfr_collector.py \
-  --targets targets.txt \
+  --targets 192.0.2.10,192.0.2.20 \
+  --username readonly \
+  --password-env REDFISH_PASSWORD \
   --threads 4 \
   --host-timeout 600 \
   --allow-partial \
-  --combined \
-  --output ./scan_results
+  --output-dir ./scan_results
 ```
 * Use `--two-pass` to run Pass 1 fast discovery and schedule storage-heavy nodes first via Longest-Job-First (LJF).
-* Use `--lean` to bypass telemetry and SEL logs if only core hardware compatibility (CPU, RAM, NIC, SSD) is required.
-* Use `--quick` for rapid ~5-second pre-assessment CPU family and BIOS qualification.
+* Use `--lean` or `--profile readiness-lean` when the supported faster readiness profile is enough.
+* Use `--profile inventory-lite` for the rapid hardware pre-screen.
 * Use `--force-threads` to override automatic VPN latency thread-capping.
 
 ---

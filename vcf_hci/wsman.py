@@ -6,10 +6,8 @@ WS-Management (WS-Man) over HTTP/HTTPS on ports 16992/16993 (AMT)
 and 623/624 (DASH).
 """
 import base64
-import ipaddress
 import logging
 import re
-import socket
 import ssl
 import time
 import urllib.request
@@ -28,6 +26,12 @@ from vcf_hci.tls_utils import (
 )
 
 logger = logging.getLogger("vcf_assess")
+
+_READ_ONLY_WSMAN_ACTIONS = frozenset({
+    "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate",
+    "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull",
+    "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get",
+})
 
 
 class WsManCollector:
@@ -50,6 +54,7 @@ class WsManCollector:
         verify_ssl: bool = False,
         ca_bundle: Optional[str] = None,
         host_timeout: float = 30.0,
+        server_hostname: Optional[str] = None,
     ):
         self.host = host
         self.protocol = protocol   # "amt" or "dash"
@@ -59,6 +64,7 @@ class WsManCollector:
         self.verify_ssl = verify_ssl
         self.ca_bundle = ca_bundle
         self.host_timeout = host_timeout
+        self.server_hostname = server_hostname
         scheme = "https" if port in (16993, 624) else "http"
         if scheme == "http":
             logger.warning(
@@ -171,6 +177,9 @@ class WsManCollector:
 
     def _post(self, resource_uri: str, action: str,
               body_xml: str = "", selector_set: Optional[dict] = None) -> Optional[ET.Element]:
+        """Transport a read-semantic WS-Man action over SOAP POST."""
+        if action not in _READ_ONLY_WSMAN_ACTIONS:
+            raise ValueError(f"WS-Man action is not permitted by the read-only collector: {action}")
         if self._is_cancelled_or_skipped():
             return None
         envelope = self._build_envelope(action, resource_uri, body_xml, selector_set)
@@ -681,12 +690,9 @@ class WsManCollector:
             sys_data.get("bios_release_date", "N/A"),
         )
 
-        dns_name = None
-        try:
-            ipaddress.ip_address(self.host)
-            dns_name = socket.gethostbyaddr(self.host)[0]
-        except Exception:
-            pass
+        # scan_host resolves and verifies DNS only when explicitly requested.
+        # Collection must not perform an implicit PTR lookup.
+        dns_name = self.server_hostname
 
         system = {
             "ip": self.host,

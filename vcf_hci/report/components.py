@@ -15,8 +15,10 @@ import urllib.parse
 from typing import Optional
 
 from vcf_hci.bcg_links import BCGLinkGenerator
+from vcf_hci.collector.pci_utils import clean_oem_adapter_title
+from vcf_hci.compat.firmware import is_zero_or_null_firmware
 from vcf_hci.compat_engine import check_defective_drive_firmware, evaluate_drive_fw, evaluate_pci_compatibility
-from vcf_hci.constants import KB_TRIMODE, is_generic_name
+from vcf_hci.constants import KB_TRIMODE, is_generic_name, is_unfriendly_nic_name, normalize_component_manufacturer
 from vcf_hci.hcl import evaluate_drive_hcl_tier, lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h, badge  # noqa: F401
@@ -117,8 +119,16 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             or ".FC." in str(pid)
             or "fibre channel" in str(p.get("transceiver_interface") or "").lower()
         )
+        is_unreported = (
+            p.get("link_reported") is False
+            or p.get("speed_source") == "unreported"
+            or link_st in ("Unreported", "Down / Unreported")
+        )
         if link_st != "Up" or spd == 0:
-            badge_html = f"<span class='badge danger'>🔴 Port {pid}: Link Down</span>"
+            if is_unreported and link_st != "Up":
+                badge_html = f"<span class='badge danger' title='BMC Redfish telemetry omitted out-of-band link polling for this port'>🔴 Port {pid}: Down / Unreported</span>"
+            else:
+                badge_html = f"<span class='badge danger'>🔴 Port {pid}: Link Down</span>"
         elif is_port_fc:
             badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps FC</span>"
         elif spd >= 25:
@@ -130,10 +140,14 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if p.get("speed_source"):
             badge_html += f"<br><small>speed source: {_h(str(p.get('speed_source')))}</small>"
 
-        tx_id = p.get("transceiver_identifier") or ""
-        tx_if = p.get("transceiver_interface") or ""
-        tx_vendor = p.get("transceiver_vendor") or ""
-        tx_pn = p.get("transceiver_part_number") or ""
+        def _tx_real(val):
+            s = str(val or "").strip()
+            return s if s and s.casefold() not in ("n/a", "none", "unknown", "null", "—", "-") else ""
+
+        tx_id = _tx_real(p.get("transceiver_identifier"))
+        tx_if = _tx_real(p.get("transceiver_interface"))
+        tx_vendor = _tx_real(p.get("transceiver_vendor"))
+        tx_pn = _tx_real(p.get("transceiver_part_number"))
         tx_parts = []
         if tx_id or tx_if:
             tx_parts.append(f"{tx_id} {tx_if}".strip())
@@ -178,16 +192,26 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
 
         port_badges.append(badge_html)
     fw = nic.get("firmware_version", "N/A")
-    fw_cell = (
-        f"<code style='font-size:.82rem'>{_h(str(fw))}</code>"
-        if fw and fw != "N/A"
-        else "<span style='color:var(--text-muted)'>N/A</span>"
-    )
+    if is_zero_or_null_firmware(fw):
+        fw_cell = (
+            f"<code style='font-size:.82rem'>{_h(str(fw))}</code> <small style='color:var(--text-muted)' title='BMC returned placeholder zeroes; firmware unread via out-of-band query'>(Unreported)</small>"
+            if fw and fw not in ("N/A", "NONE", "UNKNOWN", "NULL", "")
+            else "<span style='color:var(--text-muted)'>N/A</span>"
+        )
+    else:
+        fw_cell = (
+            f"<code style='font-size:.82rem'>{_h(str(fw))}</code>"
+            if fw and fw != "N/A"
+            else "<span style='color:var(--text-muted)'>N/A</span>"
+        )
     display_name = str(nic.get("name") or "").strip()
-    if is_generic_name(display_name):
+    pn_val = str(nic.get("part_number") or "").strip()
+    if is_unfriendly_nic_name(display_name, pn_val):
         cand_m = str(nic.get("model") or "").strip()
-        if cand_m and not is_generic_name(cand_m):
+        if cand_m and not is_unfriendly_nic_name(cand_m, pn_val):
             display_name = cand_m
+        elif pn_val and not is_generic_name(pn_val):
+            display_name = pn_val
 
     bcg_nic, bcg_vsan_nic = BCGLinkGenerator.io_nic_exact(
         display_name or nic.get("name", ""), fw,
@@ -233,7 +257,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if isinstance(matched_entry, list) and matched_entry:
             matched_entry = matched_entry[0]
         matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
-        if is_generic_name(display_name) and matched_m:
+        if is_unfriendly_nic_name(display_name, pn_val) and matched_m:
             display_name = str(matched_m).strip()
         pci_verdict_html = f"<br>{pci_eval['badge']}"
         if pci_eval.get("rdma_badge"):
@@ -258,7 +282,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
     elif hcl_data:
         _unique = lookup_unique_hcl_device(json_hcl=hcl_data, model_name=display_name or nic.get("name", ""))
         if _unique:
-            if is_generic_name(display_name) and _unique.get("model"):
+            if is_unfriendly_nic_name(display_name, pn_val) and _unique.get("model"):
                 display_name = str(_unique["model"]).strip()
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
@@ -375,8 +399,11 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             mfr = str(brand_name).strip()
     if not mfr:
         mfr = "Unknown"
+    mfr = normalize_component_manufacturer(mfr)
     if not display_name:
         display_name = "Unknown"
+    else:
+        display_name = clean_oem_adapter_title(display_name, host_mfg=mfr, adapter_mfg=mfr, part_number=pn_val)
 
     return (
         f"<tr><td><strong>{_h(display_name)}</strong>{pci_badge}{pci_verdict_html}<br>"

@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Tuple
 
 from ..logging_utils import get_nested
 
@@ -57,6 +57,138 @@ else:
     _CollectorBase = object
 
 logger = logging.getLogger("vcf_assess")
+
+_SWITCH_NOTE = (
+    "PCIe switch detected. vSAN can operate through PCIe switches "
+    "(e.g. NVMe-oF JBOFs, U.2 expansion shelves), but the switch "
+    "adds latency and may mask individual drive faults. Verify the "
+    "switch is in the Broadcom HCL."
+)
+
+
+def _raw_pcie_dict(dev: dict) -> dict:
+    raw = dev.get("_raw")
+    return raw if isinstance(raw, dict) else {}
+
+
+def device_is_pcie_switch(dev: dict, name_patterns: Optional[Sequence[str]] = None) -> bool:
+    """True when an already-normalized PCIe device is a switch.
+
+    Name patterns cover known switch silicon. DeviceType and DeviceClass
+    cover standard payloads whose names are slot labels rather than the
+    switch chip, which the slot synthesizer otherwise drops.
+    """
+    if not isinstance(dev, dict):
+        return False
+    raw = _raw_pcie_dict(dev)
+    interface = raw.get("PCIeInterface") if isinstance(raw.get("PCIeInterface"), dict) else {}
+    blob = " ".join(
+        str(part)
+        for part in (
+            dev.get("name"),
+            dev.get("manufacturer"),
+            dev.get("description"),
+            dev.get("device_class"),
+            dev.get("device_type"),
+            raw.get("Name"),
+            raw.get("Model"),
+            raw.get("Manufacturer"),
+            raw.get("Description"),
+            raw.get("DeviceType"),
+            raw.get("DeviceClass"),
+            interface.get("DeviceClass"),
+        )
+        if part
+    ).upper()
+    patterns = name_patterns or (
+        "PLX ", "PEX8", "SWITCHTEC", "PSX", "PAX ", "MICROSEMI", "BROADCOM SWITC",
+    )
+    if any(str(pattern).upper() in blob for pattern in patterns):
+        return True
+    device_type = str(dev.get("device_type") or raw.get("DeviceType") or "").upper().replace(" ", "").replace("_", "")
+    device_class = str(
+        dev.get("device_class") or raw.get("DeviceClass") or interface.get("DeviceClass") or ""
+    ).upper().replace(" ", "").replace("_", "")
+    if device_type in ("SWITCH", "PCIESWITCH") or "SWITCH" in device_class:
+        return True
+    return any(token in blob for token in ("PCIE SWITCH", "PCI SWITCH", "PCI EXPRESS SWITCH"))
+
+
+def switch_record_from_device(dev: dict) -> dict:
+    raw = _raw_pcie_dict(dev)
+    return {
+        "name": dev.get("name") or raw.get("Name") or dev.get("id") or "PCIe Switch",
+        "manufacturer": dev.get("manufacturer") or raw.get("Manufacturer") or "Unknown",
+        "note": _SWITCH_NOTE,
+    }
+
+
+def _capture_path_is_pcie_member(path: str) -> bool:
+    text = str(path or "")
+    if "/PCIeDevices/" not in text and "/PCIeSwitches/" not in text:
+        return False
+    if "/PCIeFunctions" in text:
+        return False
+    tail = text.rstrip("/").rsplit("/", 1)[-1]
+    return tail not in ("PCIeDevices", "PCIeSwitches")
+
+
+def _device_from_captured_payload(payload: dict, path: str) -> dict:
+    status = payload.get("Status") if isinstance(payload.get("Status"), dict) else {}
+    interface = payload.get("PCIeInterface") if isinstance(payload.get("PCIeInterface"), dict) else {}
+    return {
+        "id": str(payload.get("Id") or payload.get("@odata.id") or path),
+        "name": payload.get("Name") or payload.get("Model") or "",
+        "manufacturer": payload.get("Manufacturer") or "",
+        "description": payload.get("Description") or "",
+        "device_class": str(payload.get("DeviceClass") or interface.get("DeviceClass") or "").upper(),
+        "device_type": str(payload.get("DeviceType") or ""),
+        "health": str(status.get("Health") or ""),
+        "part_number": payload.get("PartNumber") or "",
+        "serial_number": payload.get("SerialNumber") or "",
+        "_raw": payload,
+    }
+
+
+def retain_collected_pcie(host_data: dict, name_patterns: Optional[Sequence[str]] = None) -> dict:
+    """Put already-fetched PCIe devices and switches back on the normalized result.
+
+    Collection can fetch these resources and then drop them: the assessment
+    dict omits a timed-out switch scan, and slot synthesis skips bridges.
+    This only copies data already present on the payload.
+    """
+    if not isinstance(host_data, dict):
+        return host_data
+    devices = [dev for dev in (host_data.get("pcie_devices") or []) if isinstance(dev, dict)]
+    seen_ids = {str(dev.get("id") or "") for dev in devices if dev.get("id")}
+    raw = host_data.get("raw_redfish_capture")
+    if isinstance(raw, dict):
+        for path, payload in raw.items():
+            if not isinstance(payload, dict) or payload.get("error"):
+                continue
+            if not _capture_path_is_pcie_member(path):
+                continue
+            dev = _device_from_captured_payload(payload, path)
+            if not dev["id"] or dev["id"] in seen_ids:
+                continue
+            devices.append(dev)
+            seen_ids.add(dev["id"])
+    switches = [item for item in (host_data.get("pcie_switches") or []) if isinstance(item, dict)]
+    seen_names = {str(item.get("name") or "") for item in switches}
+    for dev in devices:
+        if not device_is_pcie_switch(dev, name_patterns):
+            continue
+        record = switch_record_from_device(dev)
+        name = str(record.get("name") or "")
+        if name in seen_names:
+            continue
+        switches.append(record)
+        seen_names.add(name)
+    if devices:
+        host_data["pcie_devices"] = devices
+    if switches:
+        host_data["pcie_switches"] = switches
+    return host_data
 
 
 from vcf_hci.collector.pci_utils import (
@@ -574,21 +706,16 @@ class _GPUMixin(_CollectorBase):
         vSAN can operate through PCIe switches but they should be flagged.
         """
         switches = []
+        seen_names = set()
         for dev in (pcie_cache or []):
-            name = str(dev.get("name") or "").upper()
-            mfr  = str(dev.get("manufacturer") or "").upper()
-            combined = f"{name} {mfr}"
-            if any(p.upper() in combined for p in self._PCIE_SWITCH_NAMES):
-                switches.append({
-                    "name": dev.get("name") or dev.get("id") or "PCIe Switch",
-                    "manufacturer": dev.get("manufacturer") or "Unknown",
-                    "note": (
-                        "PCIe switch detected. vSAN can operate through PCIe switches "
-                        "(e.g. NVMe-oF JBOFs, U.2 expansion shelves), but the switch "
-                        "adds latency and may mask individual drive faults. Verify the "
-                        "switch is in the Broadcom HCL."
-                    ),
-                })
+            if not isinstance(dev, dict) or not device_is_pcie_switch(dev, self._PCIE_SWITCH_NAMES):
+                continue
+            record = switch_record_from_device(dev)
+            name = str(record.get("name") or "")
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            switches.append(record)
         return switches
 
 

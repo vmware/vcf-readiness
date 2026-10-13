@@ -208,6 +208,7 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
 
         _is_healthy = not _fail_p and _dh not in ("Critical", "Failure", "Warning", "Degraded") and not (isinstance(_c_warn, (int, float)) and _c_warn > 0)
 
+        _d_is_boot = bool(_d.get("is_boot") or _d.get("usage_role") == "Boot Drive" or "boot" in str(_d.get("category", "")).lower() or any(k in str(_d.get("model", "")).upper() for k in ["BOSS", "NS204I"]))
         _end = _d.get("endurance_remaining_pct")
         if _end in (255, "255", "255%"):
             _end = None
@@ -221,7 +222,16 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         elif _d.get("is_magnetic"):
             _end_str = "<span style='color:var(--text-muted)'>N/A (HDD)</span>"
         elif _is_healthy:
-            _end_str = "<span class='badge success'>OK</span>"
+            _ctrl_nm = str(_d.get("controller_name") or _d.get("controller_id") or "").upper()
+            _is_raid_ctrl = bool(
+                _d.get("behind_trimode")
+                or _d.get("behind_software_raid")
+                or any(k in _ctrl_nm for k in ["RAID", "MRVL", "MARVELL", "PERC", "SMART ARRAY", "HBA"])
+            )
+            if _is_raid_ctrl or _d_is_boot:
+                _end_str = "<span class='badge success' title='Hardware reports SMART Status: OK (Endurance % virtualized by RAID controller)'>OK (SMART Pass)</span>"
+            else:
+                _end_str = "<span class='badge success' title='Hardware reports SMART Status: OK'>OK (SMART Pass)</span>"
         else:
             _end_str = f"<span style='color:var(--text-muted)'>{_h(str(_end or 'N/A'))}</span>"
 

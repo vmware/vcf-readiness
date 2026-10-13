@@ -319,9 +319,6 @@ def cross_reference_drive(
         if vendor_hint and vendor_hint in cm_up:
             score += 15
 
-        if any("ESA" in str(t).upper() for t in tiers_list):
-            score += 5
-
         return score
 
     best_match = None
@@ -493,25 +490,7 @@ def evaluate_drive_hcl_tier(
             cat = "vSAN ESA/OSA NVMe"
             hcl_html = f"<br><small style='color:var(--success);font-weight:600;'>{m_info}</small>"
             vsan_ok = True
-        # 3. OSA-Only Certified (All Flash Caching, All Flash Capacity, Hybrid Caching/Capacity)
-        elif any(k in m_info_low for k in ["all flash", "caching", "capacity", "hybrid", "osa"]) or ("esa" in m_info_low and (not is_nvme or cap_gb < 1400)):
-            if is_nvme and cap_gb < 1400 and "esa" in m_info_low:
-                badge = "<span class='badge warning'>🟡 vSAN OSA Only (< 1.6TB NVMe — ESA requires ≥1.6TB)</span>"
-            else:
-                badge = "<span class='badge warning'>🟡 vSAN OSA Only (Not ESA Certified)</span>" if is_nvme else "<span class='badge warning'>🟡 vSAN OSA Only</span>"
-            cat = "vSAN OSA Only"
-            hcl_html = f"<br><small style='color:var(--warning-text, #ca8a04);font-weight:600;'>{m_info}</small>"
-            vsan_ok = True
-        # 4. NVMe Certified on HCL (General / Certified status)
-        elif is_nvme and ("esa" in m_info_low or "certified" in m_info_low) and not any(k in m_info_low for k in ["unverified", "unsupported"]):
-            if cap_gb > 0 and cap_gb < 1400:
-                badge = "<span class='badge warning'>🟡 vSAN OSA Only (< 1.6TB NVMe — ESA requires ≥1.6TB)</span>"
-                cat = "vSAN OSA Only"
-            else:
-                badge = "<span class='badge success'>🟢 ESA Compatible</span>"
-                cat = "vSAN ESA/OSA NVMe"
-            hcl_html = f"<br><small style='color:var(--success);font-weight:600;'>{m_info}</small>"
-            vsan_ok = True
+        # 3. OSA-Only or Any Other Certification (All Flash Caching, All Flash Capacity, Hybrid, etc.)
         else:
             if is_nvme:
                 if cap_gb > 0 and cap_gb < 1400 and "esa" in m_info_low:
