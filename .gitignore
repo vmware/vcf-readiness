@@ -2,6 +2,8 @@
 reports/*.html
 *.html
 !docs/infographic.html
+!curated_fleet_top25/*.html
+!curated_fleet_top25/reports/*.html
 vcf_assess_debug.log
 all.json
 __pycache__/
