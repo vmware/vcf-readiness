@@ -79,6 +79,9 @@ DELL_SECURITY_ATTRIBUTE_ALLOWLIST: Set[str] = {
     "virtualconsole.1.encryptenable",
     "virtualconsole.1.plugintype",
     "virtualconsole.1.webredirect",
+    "virtualmedia.1.encryptenable",
+    "virtualmedia.1.enable",
+    "virtualmedia.1.attached",
     "vncserver.1.enable",
     "vncserver.1.port",
     "vncserver.1.sslencryptionbitlength",
@@ -131,6 +134,7 @@ _SAFE_USER_ATTR_FIELDS: Set[str] = {
 _SAFE_SEKM_ATTR_FIELDS: Set[str] = {
     "enable",
     "sekmlicense",
+    "sekmstatus",
     "status",
     "certstatus",
     "keymanagementtype",

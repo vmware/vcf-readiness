@@ -693,7 +693,7 @@ class DiscoveryMixin(_CollectorBase):
         pn = str(raw_pn or "").strip()
 
         pn_fallback = ""
-        for key in ["Name", "Description", "Model"]:
+        for key in ["Name", "Model", "Description"]:
             val = str(raw_obj.get(key, "") or "").strip()
             if not val or is_generic_name(val):
                 continue

@@ -1063,6 +1063,8 @@ class _NetworkMixin(_CollectorBase):
                                 continue
                             else:
                                 p_name = str(parent_dev.get("Name") or parent_dev.get("name") or "").strip() or f"PCIe Device {parent_adapter_id}"
+                                if is_generic_name(p_name):
+                                    p_name = f"PCIe Network Adapter {parent_adapter_id}"
                                 p_pci = {
                                     "vendor_id": parent_dev.get("vendor_id", ""),
                                     "device_id": parent_dev.get("device_id", ""),
@@ -1078,7 +1080,14 @@ class _NetworkMixin(_CollectorBase):
                                 if not p_pci["pci_quad"]:
                                     p_pci = match_firmware_inventory_pci(p_name, get_fn=self._get)
 
-                                vid = str(p_pci.get("vendor_id") or "").lower()
+                                vid = str(p_pci.get("vendor_id") or "").lower().replace("0x", "")
+                                p_pair = str(p_pci.get("pci_pair") or "").lower()
+                                # Filter out non-network controllers (e.g. Matrox VGA 102b:0522, ASPEED 1a03:2000)
+                                if vid in ("102b", "1a03") or p_pair in ("102b:0522", "1a03:2000"):
+                                    logger.debug("Skipping non-network parent device %s (%s, VID=%s)", parent_adapter_id, p_name, vid)
+                                    seen_ids.add(uid)
+                                    continue
+
                                 if vid in ("8086", "0x8086") or "intel" in p_name.lower():
                                     p_mfg = "Intel"
                                 elif vid in ("14e4", "0x14e4") or "broadcom" in p_name.lower():
@@ -1145,6 +1154,11 @@ class _NetworkMixin(_CollectorBase):
                             oem_name = hpe_det.get("Name") or hpe_det.get("Model") or ""
                         if oem_name and not is_generic_name(oem_name):
                             resolved_name = oem_name
+
+                    if is_generic_name(resolved_name):
+                        alt_model = str(adapter.get("Model") or adapter.get("PartNumber") or "").strip()
+                        if alt_model and not is_generic_name(alt_model):
+                            resolved_name = alt_model
 
                     # Exclude pure Fibre Channel controllers (handled by collect_fc_hbas)
                     cna_check = classify_cna_adapter(
@@ -1591,6 +1605,20 @@ class _NetworkMixin(_CollectorBase):
                                 if v and not pci_info.get(k):
                                     pci_info[k] = v
 
+                    # Filter out non-network controllers (e.g. Matrox VGA 102b:0522, ASPEED 1a03:2000)
+                    vid_norm = str(pci_info.get("vendor_id") or "").lower().replace("0x", "")
+                    pair_norm = str(pci_info.get("pci_pair") or "").lower()
+                    mfg_raw = str(adapter.get("Manufacturer") or "").lower()
+                    if (
+                        vid_norm in ("102b", "1a03")
+                        or pair_norm in ("102b:0522", "1a03:2000")
+                        or mfg_raw in ("matrox", "aspeed")
+                        or "matrox" in resolved_name.lower()
+                        or "aspeed" in resolved_name.lower()
+                    ):
+                        logger.debug("Skipping non-network controller %s (%s, VID=%s, pair=%s)", uid, resolved_name, vid_norm, pair_norm)
+                        continue
+
                     if is_generic_name(resolved_name):
                         quad = pci_info.get("pci_quad")
                         pair = pci_info.get("pci_pair")
@@ -1616,6 +1644,15 @@ class _NetworkMixin(_CollectorBase):
                                             manufacturer = h_dev["brand_name"]
                             except Exception:
                                 pass
+
+                    if is_generic_name(resolved_name):
+                        mfg_hint = infer_nic_manufacturer(manufacturer, pci_info, resolved_name)
+                        resolved_name = (
+                            str(adapter.get("Model") or "").strip()
+                            or (f"{mfg_hint} Network Adapter" if mfg_hint and mfg_hint not in ("Unknown", "N/A") else f"Network Adapter {uid}")
+                        )
+                        if is_generic_name(resolved_name):
+                            resolved_name = f"Network Adapter {uid}"
 
                     # Suppress orphaned generic EthernetInterfaces when physical NICs are already present
                     is_generic_or_partition = (

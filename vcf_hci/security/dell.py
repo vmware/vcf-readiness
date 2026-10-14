@@ -1489,6 +1489,14 @@ def evaluate_c24_snmp_dell(attrs: Dict[str, Any], standard: Dict[str, Any]) -> D
                 reason_code=ReasonCode.OEM_REDFISH_PASS,
                 evidence=ev,
             )
+        return control_finding(
+            control_id="C24",
+            status="fail",
+            expected="Disabled or SNMPv3 AuthPriv",
+            observed=f"SNMP enabled ({proto or 'non-v3 protocol'})",
+            reason_code=ReasonCode.OEM_REDFISH_FAIL,
+            evidence=ev,
+        )
 
     net_proto = standard.get("network_protocol") or {}
     snmp_data = net_proto.get("SNMP") or {}
@@ -1662,6 +1670,10 @@ def evaluate_c29_session_auth_dell(standard: Dict[str, Any]) -> Dict[str, Any]:
 def evaluate_c30_sekm(attrs: Dict[str, Any]) -> Dict[str, Any]:
     """C30: Secure Enterprise Key Manager (SEKM)."""
     raw_en = get_dell_attribute(attrs, "sekm.1.enable")
+    prop_name = "SEKM.1.Enable"
+    if raw_en is None:
+        raw_en = get_dell_attribute(attrs, "sekm.1.sekmstatus")
+        prop_name = "SEKM.1.SEKMStatus"
     if raw_en is None:
         return control_finding(
             control_id="C30",
@@ -1676,7 +1688,7 @@ def evaluate_c30_sekm(attrs: Dict[str, Any]) -> Dict[str, Any]:
     ev = [evidence_item(
         transport="oem_redfish",
         uri=DELL_MGR_ATTRS_URI,
-        property="SEKM.1.Enable",
+        property=prop_name,
         raw_value=raw_en,
         normalized_value=enabled,
     )]
@@ -1727,12 +1739,21 @@ def evaluate_c31_group_manager(attrs: Dict[str, Any]) -> Dict[str, Any]:
     """C31: Group Manager enablement."""
     raw_val = get_dell_attribute(attrs, "groupmanager.1.status")
     if raw_val is None:
+        if not attrs:
+            return control_finding(
+                control_id="C31",
+                status="unknown_not_exposed",
+                expected="Disabled when unused",
+                observed=None,
+                reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+                evidence=[],
+            )
         return control_finding(
             control_id="C31",
-            status="unknown_not_exposed",
+            status="not_applicable",
             expected="Disabled when unused",
-            observed=None,
-            reason_code=ReasonCode.PROPERTY_NOT_EXPOSED,
+            observed="Not present (Group Manager deprecated on modern platforms)",
+            reason_code=ReasonCode.NOT_APPLICABLE,
             evidence=[],
         )
 
@@ -1768,12 +1789,12 @@ def evaluate_c31_group_manager(attrs: Dict[str, Any]) -> Dict[str, Any]:
 def evaluate_c32_group_manager_passcode(attrs: Dict[str, Any]) -> Dict[str, Any]:
     """C32: Group Manager network and passcode."""
     gm_en = is_enabled(get_dell_attribute(attrs, "groupmanager.1.status"))
-    if gm_en is False:
+    if gm_en is False or (gm_en is None and attrs):
         return control_finding(
             control_id="C32",
             status="not_applicable",
             expected="Dedicated management network and rotated passcode",
-            observed="Disabled (Group Manager not in scope)",
+            observed="Not present or disabled (Group Manager not in scope)",
             reason_code=ReasonCode.NOT_APPLICABLE,
             evidence=[],
         )
@@ -1895,6 +1916,52 @@ def evaluate_c34_virtual_console_web_redirect(attrs: Dict[str, Any]) -> Dict[str
 
 def evaluate_c35_virtual_media_encryption(attrs: Dict[str, Any]) -> Dict[str, Any]:
     """C35: Virtual-media encryption."""
+    raw_en = get_dell_attribute(attrs, "virtualmedia.1.encryptenable")
+    raw_vm_en = get_dell_attribute(attrs, "virtualmedia.1.enable")
+
+    if raw_vm_en is not None and is_enabled(raw_vm_en) is False:
+        return control_finding(
+            control_id="C35",
+            status="pass",
+            expected="Virtual-media encryption enabled or virtual media disabled",
+            observed="Virtual media disabled",
+            reason_code=ReasonCode.OEM_REDFISH_PASS,
+            evidence=[evidence_item(
+                transport="oem_redfish",
+                uri=DELL_MGR_ATTRS_URI,
+                property="VirtualMedia.1.Enable",
+                raw_value=raw_vm_en,
+                normalized_value=False,
+            )],
+        )
+
+    if raw_en is not None:
+        enabled = is_enabled(raw_en)
+        ev = [evidence_item(
+            transport="oem_redfish",
+            uri=DELL_MGR_ATTRS_URI,
+            property="VirtualMedia.1.EncryptEnable",
+            raw_value=raw_en,
+            normalized_value=enabled,
+        )]
+        if enabled is True:
+            return control_finding(
+                control_id="C35",
+                status="pass",
+                expected="Virtual-media encryption enabled",
+                observed="Enabled",
+                reason_code=ReasonCode.OEM_REDFISH_PASS,
+                evidence=ev,
+            )
+        return control_finding(
+            control_id="C35",
+            status="fail",
+            expected="Virtual-media encryption enabled",
+            observed="Disabled",
+            reason_code=ReasonCode.OEM_REDFISH_FAIL,
+            evidence=ev,
+        )
+
     return control_finding(
         control_id="C35",
         status="unknown_not_exposed",

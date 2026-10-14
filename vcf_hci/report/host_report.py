@@ -411,11 +411,11 @@ def generate_host_html_report(
 
     <div id="tab-health" class="tab-pane">
         {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=power" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Power & Thermals in Redfish Explorer">🧭 Inspect Power &amp; Thermal in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
-        {_bmc_health_section}
         {_jobq_health_section}
         {thermal_section_html}
         {_psu_health_section}
         {_smart_health_section}
+        {_bmc_health_section}
     </div>
 
     <div id="tab-security" class="tab-pane">

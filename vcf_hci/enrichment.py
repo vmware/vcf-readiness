@@ -890,7 +890,9 @@ def _enrich_single_host(
                 if not isinstance(d, dict):
                     continue
                 slot_str = str(d.get("slot") or "").strip().upper()
-                m_dell = re.search(r"\bDIMM\s+([A-D])\s*(\d+)\b", slot_str)
+                m_dell = None
+                if not re.search(r"(?:PROC|CPU|SOCKET)[._\s-]*[1-4]|(?:^|[._\s-])P[1-4][._\s-]", slot_str):
+                    m_dell = re.search(r"^(?:DIMM(?:[._\s-]*SOCKET)?[._\s-]*)?([A-D])(\d+)$", slot_str) or re.search(r"\bDIMM(?:[._\s-]*SOCKET)?[._\s-]+([A-D])(\d+)\b", slot_str)
                 m_dimm_num = re.search(r"\bDIMM\s*(\d+)\b", slot_str)
                 if m_dell:
                     s_idx = ord(m_dell.group(1)) - ord('A') + 1

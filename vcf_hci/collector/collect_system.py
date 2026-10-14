@@ -1556,11 +1556,11 @@ class _SystemMixin(_CollectorBase):
                                 if m_ch:
                                     parsed_chan = m_ch.group(1)
                 else:
-                    # P3: Dell iDRAC — "DIMM A1", "DIMM B4" — space-separated, no CPU prefix.
+                    # P3: Dell iDRAC — "DIMM A1", "DIMM B4", "DIMM.Socket.A1", "A1", "B8" — no CPU prefix.
                     #   Socket letter: A=1, B=2, C=3, D=4.
                     #   Slot number maps sequentially across channels within that socket.
                     #   Guard: only fire when there is no preceding CPU/P qualifier.
-                    m_dell = re.search(r"\bDIMM\s+([A-D])\s*(\d+)\b", loc)
+                    m_dell = re.search(r"^(?:DIMM(?:[._\s-]*SOCKET)?[._\s-]*)?([A-D])(\d+)$", loc) or re.search(r"\bDIMM(?:[._\s-]*SOCKET)?[._\s-]+([A-D])(\d+)\b", loc)
                     if m_dell:
                         parsed_sock = ord(m_dell.group(1)) - ord('A') + 1
                         slot_num = int(m_dell.group(2))

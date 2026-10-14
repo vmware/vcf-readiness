@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.9.2"
+TOOL_VERSION = "9.9.3"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -254,15 +254,28 @@ def is_generic_name(name: Optional[str]) -> bool:
     sl = s.lower()
     if sl in GENERIC_NAME_BLOCKLIST or "tomanager" in sl:
         return True
-    if re.match(r"^network\s+adapter(?:\s+[0-9]+)?$", sl):
+    # Redfish schema boilerplate descriptions
+    if "contains references linking" in sl or "functionality available to the containing system" in sl:
         return True
-    if re.match(r"^network\s+device(?:\s+[0-9]+)?$", sl):
+    if "capable of connecting to a computer network" in sl or "capable of connecting to a network" in sl:
         return True
-    if re.match(r"^network\s+interface(?:\s+[0-9]+)?$", sl):
+    if "implements the ieee 802.3 standard" in sl:
         return True
-    if re.match(r"^ethernet\s+adapter(?:\s+[0-9]+)?$", sl):
+    if re.search(r"^(?:a|an|the)\s+network(?:interface|adapter|port|devicefunction)\b.*(?:represents|contains|defines)\b", sl):
         return True
-    if re.match(r"^ethernet\s+interface(?:\s+[0-9]+)?$", sl):
+    if re.search(r"^(?:a|an|the)\s+ethernetinterface\b.*(?:represents|contains|defines)\b", sl):
+        return True
+    if re.search(r"\b(?:schema\s+)?represents\s+(?:the\s+)?(?:physical\s+)?network\b", sl):
+        return True
+    if re.match(r"^network\s*adapter(?:\s*[0-9]+)?$", sl):
+        return True
+    if re.match(r"^network\s*device(?:\s*[0-9]+)?$", sl):
+        return True
+    if re.match(r"^network\s*interface(?:\s*[0-9]+)?$", sl):
+        return True
+    if re.match(r"^ethernet\s*adapter(?:\s*[0-9]+)?$", sl):
+        return True
+    if re.match(r"^ethernet\s*interface(?:\s*[0-9]+)?$", sl):
         return True
     if re.match(r"^nic\s*[0-9]+$", sl):
         return True
