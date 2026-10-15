@@ -2,8 +2,8 @@
 reports/*.html
 *.html
 !docs/infographic.html
-!curated_fleet_top25/*.html
-!curated_fleet_top25/reports/*.html
+# Curated library fleets (never commit)
+curated_fleet*
 vcf_assess_debug.log
 all.json
 __pycache__/

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="VCF-R">
+  <title>VCF-R wordmark</title>
+  <desc>Horizontal wordmark for light backgrounds. VCF in slate, -R in action blue.</desc>
+  <text
+    x="0" y="52"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="56" font-weight="700" letter-spacing="0.04em">
+    <tspan fill="#25333D">VCF</tspan><tspan fill="#0072A3">-R</tspan>
+  </text>
+</svg>

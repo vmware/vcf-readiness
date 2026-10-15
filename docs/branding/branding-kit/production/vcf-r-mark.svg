@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="VCF-R mark">
+  <title>VCF-R mark</title>
+  <desc>Icon-only readiness mark (badge without wordmark).</desc>
+  <rect width="64" height="64" rx="12" ry="12" fill="#0072A3"/>
+  <path d="M18 33 L28 43 L48 19" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

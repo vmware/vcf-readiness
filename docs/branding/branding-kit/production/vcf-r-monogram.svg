@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="VCF-R">
+  <title>VCF-R monogram</title>
+  <desc>Square app-icon monogram with stacked VCF and R.</desc>
+  <rect width="128" height="128" rx="24" ry="24" fill="#0072A3"/>
+  <rect x="24" y="58" width="80" height="4" rx="2" fill="#717074"/>
+  <text x="64" y="48" text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="28" font-weight="700" letter-spacing="0.08em" fill="#FFFFFF">VCF</text>
+  <text x="64" y="98" text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="36" font-weight="700" fill="#FFFFFF">R</text>
+</svg>

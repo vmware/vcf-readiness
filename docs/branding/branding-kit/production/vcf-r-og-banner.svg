@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-label="VCF-R - VCF Readiness Assessment">
+  <title>VCF-R Open Graph / social banner</title>
+  <desc>1280�640 social / GitHub OG image. Flat, no gradients.</desc>
+  <rect width="1280" height="640" fill="#1B2A32"/>
+  <!-- Accents -->
+  <rect x="0" y="0" width="16" height="640" fill="#0072A3"/>
+  <rect x="0" y="624" width="1280" height="16" fill="#0072A3"/>
+
+  <rect x="96" y="200" width="96" height="96" rx="20" ry="20" fill="#0072A3"/>
+  <path d="M126 248 L146 268 L178 224" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text
+    x="224" y="268"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="96" font-weight="700" letter-spacing="0.03em" fill="#FFFFFF">VCF-R</text>
+
+  <text
+    x="96" y="380"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="36" font-weight="500" letter-spacing="0.02em" fill="#C5D5DE">VCF Readiness Assessment</text>
+
+  <text
+    x="96" y="440"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="24" font-weight="400" fill="#8A9AA5">Assess legacy servers for VMware Cloud Foundation 9.1</text>
+
+  <text
+    x="96" y="560"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="20" font-weight="500" letter-spacing="0.06em" fill="#717074">OPEN SOURCE  �  ZERO DEPENDENCIES</text>
+</svg>

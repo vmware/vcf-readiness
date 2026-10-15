@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 32" role="img" aria-label="VCF-R">
+  <title>VCF-R nav lockup</title>
+  <desc>Compact lockup for the dark web UI nav bar (48px tall chrome).</desc>
+  <rect x="0" y="2" width="28" height="28" rx="6" ry="6" fill="#0072A3"/>
+  <path d="M8 16 L13 21 L22 10" fill="none" stroke="#FFFFFF" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <text
+    x="36" y="23"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="18" font-weight="700" letter-spacing="0.03em" fill="#E2EAF0">VCF-R</text>
+</svg>

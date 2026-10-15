@@ -4,9 +4,35 @@
   <img src="docs/branding/branding-kit/production/vcf-r-readme-header.svg" alt="VCF-R - VCF Readiness Assessment" width="720">
 </p>
 
-VCF Readiness is a source-available Python tool that reads hardware inventory from server management controllers and produces local VCF 9.1 and vSAN readiness reports.
+> Zero-dependency Python tool for VMware Sales Engineers, Solution Architects, and IT teams to assess server hardware for VMware Cloud Foundation 9.1 and vSAN Express Storage Architecture (ESA) repurposing.
 
-The recommended path is to run the source in this repository. It requires no runtime packages beyond Python's standard library.
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
+[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
+
+---
+
+<p align="center">
+  <a href="#-visual-report-showcase">
+    <img src="docs/assets/vcf_readiness_showcase.gif" alt="VCF Readiness Assessment Tool Rotating Feature Showcase" width="100%">
+  </a>
+  <br>
+  <em>Automated enterprise fleet telemetry, memory topology visualizer, ToR fabric mapping, vSAN ESA HCL validation &amp; 84-point BMC security audit.</em>
+</p>
+
+---
+
+## 🎬 Video Walkthroughs & Demos
+
+Watch short step-by-step video guides to get up and running, launch on macOS, and interpret generated assessment reports.
+
+> 📺 **[Watch Full YouTube Playlist (3 Videos) →](https://www.youtube.com/playlist?list=PLIyQp4kTfTYU)**
+
+| [Scanner Quick Start (1:19)](https://www.youtube.com/watch?v=nfKTH5aG76s) | [Report Overview (8:20)](https://www.youtube.com/watch?v=tQkxyRHZu4M) | [Launch for Mac from Python (0:55)](https://www.youtube.com/watch?v=L5_IyTcHiMo) |
+|:---:|:---:|:---:|
+| [![Scanner Quick Start](docs/assets/screenshots/video-scanner-quickstart.jpg)](https://www.youtube.com/watch?v=nfKTH5aG76s) | [![Report Overview](docs/assets/screenshots/video-report-overview.jpg)](https://www.youtube.com/watch?v=tQkxyRHZu4M) | [![Launch for Mac from Python](docs/assets/screenshots/video-mac-launch.jpg)](https://www.youtube.com/watch?v=L5_IyTcHiMo) |
+| Target entry, credentials, TLS certificates, and initiating a fleet assessment | Detailed walkthrough of fleet summary badges, tabs, BIOS drift, and host sub-reports | Terminal launch with Python standard library on macOS workstations |
+
+---
 
 ## Before you start
 
@@ -112,6 +138,109 @@ Previously saved summaries can be rendered without contacting BMCs:
 python3 vcfr_collector.py --from-summary ./VCF-Scans/Scan_example
 ```
 
+---
+
+## 📊 Visual Report Showcase
+
+Every assessment run generates rich, standalone HTML deliverables (an aggregated **Fleet Summary** and individual **Host Reports**) with zero runtime external asset dependencies.
+
+> 🎥 **Video Tour:** Watch the [**Report Overview Video (8:20) →**](https://www.youtube.com/watch?v=tQkxyRHZu4M) for a guided walkthrough of the fleet summary, status badges, BIOS drift scorecard, and per-host sub-reports.
+
+### 1. Fleet Dashboard & Resource Headroom
+Aggregates compute vCPU, RAM, and direct-attached NVMe storage across your entire server inventory, modeling resource headroom against VCF 9.1 management domain sizing profiles.
+
+![Fleet Health and Management Headroom Tiles](docs/images/01-fleet-health-tiles.png)
+
+Fleet-wide power redundancy tracking, chassis power cap warnings, vSAN readiness distribution, and aggregate kilowatt telemetry:
+
+![Fleet Power, vSAN Distribution, and Alarms](docs/images/02-fleet-power-sel-tor.png)
+
+- **Detailed Telemetry:** [Fleet Metric Health Tiles](docs/assets/screenshots/fleet-metric-tiles.png)
+
+---
+
+### 2. Interactive Per-Host Assessment Matrix
+Sort, search, and filter servers by OEM vendor, CPU support tier, TPM 2.0 status, and vSAN ESA readiness with direct links into individual host sub-reports.
+
+![Per-Host Assessment Table](docs/images/03-per-host-table.png)
+
+- **Detailed Telemetry:** [Multi-Host Fleet Status Grid](docs/assets/screenshots/fleet-multi-host-capture.png)
+
+---
+
+### 3. Executive Hardware Scorecards & Subsystem Audits
+Color-coded executive summary scorecards highlighting CPU compatibility, BIOS currency, TPM 2.0 status, and vSAN driver/firmware alignment against the Broadcom Compatibility Guide (BCG).
+
+![Executive Host Summary Scorecards](docs/images/08-host-scorecards.png)
+
+- **Detailed Telemetry:** [Single-Host Assessment Tiles](docs/assets/screenshots/single-host-server-tiles.png) • [Sub-Category Health Breakdown](docs/assets/screenshots/sub-category-system-overview.png)
+
+---
+
+### 4. Physical Motherboard DIMM Slot & Channel Layout
+Visualizer mapping installed DIMM modules to physical CPU sockets and memory channels, detecting unbalanced memory interleaving, unpopulated channels, and memory operating below peak rated speeds.
+
+![Motherboard DIMM Slot and Channel Visualizer](docs/images/04-dimm-slot-visualizer.png)
+
+- **Detailed Telemetry:** [Motherboard Channel Topology](docs/assets/screenshots/memory-channel-topology.png)
+
+---
+
+### 5. Storage Subsystem & vSAN ESA Qualification
+Evaluates storage controllers, RAID pass-through modes, and NVMe SSDs. Performs exact PCI Quad matching (`VID:DID:SVID:SSID`) against the Broadcom vSAN HCL dataset, calculates SMART drive wear/endurance remaining %, and generates one-click BCG search links.
+
+![Storage Subsystem and vSAN ESA Qualification](docs/images/05-storage-vsan-esa.png)
+
+- **Detailed Telemetry:** [vSAN ESA Drive Compliance](docs/assets/screenshots/vsan-esa-drive-compliance.png) • [Drive SMART Telemetry](docs/assets/screenshots/nvme-smart-health-telemetry.png) • [PCIe Lane Inventory](docs/assets/screenshots/pcie-lane-inventory.png)
+
+---
+
+### 6. Network Interfaces & Top-of-Rack (ToR) Switch Fabric
+Identifies network adapters and port speeds (verifying ≥25 GbE ESA requirements), queries LLDP and Cisco CDP neighbor data to discover connected Top-of-Rack switches, and correlates leaf switch pairs to highlight single-homed hosts and cabling miswires.
+
+![NIC Inventory and Dedicated BMC Management Port](docs/images/06-nic-tor-mapping.png)
+
+![Top-of-Rack Switch Fabric and Topology Matrix](docs/images/10-tor-switch-fabric.png)
+
+- **Detailed Telemetry:** [NIC Optics & LLDP Detection](docs/assets/screenshots/nic-optics-lldp-detection.png) • [LLDP / CDP Switch Neighbors](docs/assets/screenshots/lldp-cdp-switch-neighbors.png)
+
+---
+
+### 7. System Event Log (SEL / IML) & Diagnostic Decoders
+Extracts the latest Warning and Critical hardware alarms from the server's event log, integrating direct links to Dell EEMS diagnostic guides and HPE IML documentation.
+
+![System Assessment Summary and Event Log](docs/images/09-system-assessment-sel.png)
+
+- **Detailed Telemetry:** [System Event Log Monitoring](docs/assets/screenshots/system-event-log-monitoring.png)
+
+---
+
+### 8. 84-Control BMC Hardware Security Audit & Golden BIOS Baseline
+Out-of-band security compliance audit evaluating 84 canonical controls aligned with the **CISA & NSA Joint BMC Hardening Guide**, **VMware Cloud Foundation Security Configuration Guide (SCG 9.1)**, and **NIST SP 800-193**. Evaluates BIOS performance drift against Broadcom VCF 9.1 Golden Baselines.
+
+![BMC Hardware Security Audit Findings](docs/images/07-bmc-security-audit.png)
+
+- **Detailed Telemetry:** [BMC Hardware Security Audit](docs/assets/screenshots/bmc-hardware-security-audit.png) • [Hardware Security Baseline](docs/assets/screenshots/hardware-security-baseline.png) • [BIOS Golden Baseline Drift](docs/assets/screenshots/bios-golden-baseline-drift.png) • [BIOS Performance Settings](docs/assets/screenshots/bios-performance-settings.png)
+
+> 📖 **Comprehensive Reference Guide:** For an exhaustive tab-by-tab and field-by-field reference explaining every metric, evaluation rule, official VMware KB, and the 84-control BMC security audit, see the [**User Guide & Reference Manual (docs/USER_GUIDE_REFERENCE.md)**](docs/USER_GUIDE_REFERENCE.md).
+
+---
+
+## 🔍 Multi-Vendor BMC Platform Support
+
+| BMC Platform | Architecture & Adapters | Assessment Depth |
+|:-------------|:------------------------|:-----------------|
+| **Dell iDRAC** | `DellCollector` (iDRAC7/8/9/10) | Full OEM telemetry (SKU, BIOS date, NVMe SMART wear, EEMS alerts, license) |
+| **HPE iLO** | `HPECollector` (iLO 4/5/6) | Full OEM hooks (SmartStorage, system usage, IML event logs, license) |
+| **Supermicro BMC** | `SupermicroCollector` | SimpleStorage, drive inventory, DCMS license detection |
+| **Cisco IMC** | `CiscoCollector` (CIMC) | `/Managers/CIMC`, physical drive metrics, Cisco CDP neighbor discovery |
+| **Lenovo XCC** | `LenovoCollector` (XCC/XCC2) | Drive metrics, LicenseService tiers, ThinkSystem inventory |
+| **Quanta / QCT** | `QuantaCollector` | Dynamic root discovery, RackScale drive OEM inventory |
+| **GIGABYTE BMC** | `GigabyteCollector` | Self-roots, `Oem.GBT` slot detection, SimpleStorage |
+| **Generic Redfish** | `GenericCollector` | Universal DMTF Redfish fallback for standard platforms |
+
+---
+
 ## Security and network behavior
 
 ### Strict read-only collection
@@ -205,5 +334,32 @@ The local dataset may be absent or stale. Import an approved offline bundle with
 - [Architecture](ARCHITECTURE.md)
 - [Security architecture](docs/SECURITY_ARCHITECTURE.md)
 - [Credential vault](docs/CREDENTIAL_VAULT.md)
+- [User Guide & Reference](docs/USER_GUIDE_REFERENCE.md)
+- [Customer Infographic](docs/INFOGRAPHIC.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE.md)
+
+---
+
+## 🔗 References & Credits
+
+### Broadcom & VMware References
+- **[KB 428874](https://knowledge.broadcom.com/external/article/428874)** — vSphere/VCF 9.x CPU Deprecated Mode Support Policy
+- **[Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/)** — Live hardware search matrix
+- **[vSAN HCL JSON](https://vvs.broadcom.com/service/vsan/all.json)** — Live vSAN drive certification dataset
+
+### Switch Buffer & Silicon Research
+- **[Michael Buraglio's Packet Buffer Reference](https://port-buffers.forwardingplane.net/)** ([GitHub: buraglio/port-buffers](https://github.com/buraglio/port-buffers))
+- **[Jim Warner's UCSC Packet Buffer Research](https://people.ucsc.edu/~warner/buffer-wuz.html)** ([ASIC Buffer History](https://people.ucsc.edu/~warner/Bufs/buf-hist.html))
+
+### Project Acknowledgements
+- **Phong Le** — For answering 40,000 hardware HCL questions.
+- **Onur Yuzseven & Brock Peterson** — For the vCommunity plugins and VMware Aria/VCF Operations guidance.
+- **Spiceworks Community** — For community hardware discussions and insights on server repurposing.
+- Built with [Clarity Design System](https://clarity.design/) design tokens (VMware/Broadcom, Apache-2.0 license).
+
+---
+
+## License
+
+CA, Inc. License — see [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE). For third-party components included in standalone distributions, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

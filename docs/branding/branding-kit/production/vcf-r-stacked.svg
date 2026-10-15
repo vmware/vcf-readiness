@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 160" role="img" aria-label="VCF-R">
+  <title>VCF-R stacked lockup</title>
+  <desc>Stacked mark over wordmark for square or portrait placements.</desc>
+  <rect x="68" y="8" width="64" height="64" rx="12" ry="12" fill="#0072A3"/>
+  <path d="M88 40 L98 50 L114 28" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text
+    x="100" y="120"
+    text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="40" font-weight="700" letter-spacing="0.04em" fill="#25333D">VCF-R</text>
+  <text
+    x="100" y="148"
+    text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="12" font-weight="500" letter-spacing="0.04em" fill="#717074">READINESS</text>
+</svg>
