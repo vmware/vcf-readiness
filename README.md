@@ -8,6 +8,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
+[![Download v9.9.4](https://img.shields.io/badge/Download-v9.9.4-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.9.4)
 
 ---
 
@@ -31,6 +32,34 @@ Watch short step-by-step video guides to get up and running, launch on macOS, an
 |:---:|:---:|:---:|
 | [![Scanner Quick Start](docs/assets/screenshots/video-scanner-quickstart.jpg)](https://www.youtube.com/watch?v=nfKTH5aG76s) | [![Report Overview](docs/assets/screenshots/video-report-overview.jpg)](https://www.youtube.com/watch?v=tQkxyRHZu4M) | [![Launch for Mac from Python](docs/assets/screenshots/video-mac-launch.jpg)](https://www.youtube.com/watch?v=L5_IyTcHiMo) |
 | Target entry, credentials, TLS certificates, and initiating a fleet assessment | Detailed walkthrough of fleet summary badges, tabs, BIOS drift, and host sub-reports | Terminal launch with Python standard library on macOS workstations |
+
+---
+
+## 💾 Download & Installation
+
+The recommended and verified installation runs directly from source using the Python 3.9+ standard library (zero external dependencies).
+
+<p align="center">
+  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.9.4/Distribution-VCF-Readiness.zip">
+    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.9.4_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
+  </a>
+</p>
+<p align="center">
+  <em>Includes complete source code, web UI, CLI scanner, and offline HCL database. No <code>pip install</code> required.</em>
+</p>
+
+<details>
+<summary><strong>Alternative: Pre-compiled standalone binaries (unsigned developer builds)</strong></summary>
+
+If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.9.4 page](https://github.com/vmware/vcf-readiness/releases/tag/9.9.4):
+
+- **Windows:** `VCF-Readiness-Web-v9.9.4-win.zip` (double-click executable; may show Windows SmartScreen notice).
+- **macOS:** `VCF-Readiness-Web-v9.9.4-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
+
+*Note: These are unsigned community convenience builds. To avoid operating system security prompts, running directly from source with Python 3.9+ is strongly recommended.*
+
+For other release options, view [all release tags](https://github.com/vmware/vcf-readiness/releases).
+</details>
 
 ---
 
