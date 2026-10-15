@@ -1,0 +1,205 @@
+Host / IP,Hostname,Adapter Name,Part Number,Port ID,MAC Address,Link Status,Speed Gbps,Firmware Version,PCI Quad,CNA / NPAR,LLDP Switch Name,LLDP Switch Port,LLDP Chassis ID,LLDP Mgmt IP,Transceiver Type,Transceiver Media,Transceiver Vendor,Transceiver Part Number
+Host-1,Host-1,Adapter Card MLOM,73-16181-08,1,,Up,40,N/A,,CNA,,,,,Chassis Fabric Backplane,Internal KR/CR Fabric,Cisco,73-16181-08
+Host-2,Host-2,Network Device View,N/A,NIC.Integrated.1-1,02:84:34:DB:1F:B8,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-2,Host-2,Network Device View,N/A,NIC.Integrated.1-2,02:D6:0A:52:DC:FA,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-2,Host-2,Network Device View,N/A,NIC.Integrated.1-3,02:0E:E3:F1:7F:CD,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-2,Host-2,Network Device View,N/A,NIC.Integrated.1-4,02:8D:84:13:7E:C0,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-3,Host-3,Network Device View,N/A,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-3,Host-3,Network Device View,N/A,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-3,Host-3,Network Device View,N/A,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-3,Host-3,Network Device View,N/A,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-4,Host-4,Network Device View,N/A,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-4,Host-4,Network Device View,N/A,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-4,Host-4,Network Device View,N/A,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-4,Host-4,Network Device View,N/A,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Up,0,N/A,,CNA (VIC Virtual),,,,,N/A,N/A,N/A,N/A
+Host-5,Host-5,UCS VIC 1497,73-19237-03,Port-1,02:B5:7E:E9:29:3B,Down,100,5.3(2.49),1137:0042:1137:024b,CNA (VIC Virtual),,,,,QSFP,QSFP-40/100-SRBD,CISCO-FOIT,SFBR-89BDDZ-CS4
+Host-5,Host-5,UCS VIC 1497,73-19237-03,Port-2,02:84:34:DB:1F:B8,Down,100,5.3(2.49),1137:0042:1137:024b,CNA (VIC Virtual),,,,,QSFP,QSFP-40/100-SRBD,CISCO-FOIT,SFBR-89BDDZ-CS4
+Host-5,Host-5,Intel X550-T2 Dual Port 10Gb 10GBaseT converged NIC,N/A,3.1,02:02:1E:E4:D2:A1,Down,10,N/A,8086:1563:1137:01a2,Standard,,,,,N/A,N/A,N/A,N/A
+Host-5,Host-5,Intel X550-T2 Dual Port 10Gb 10GBaseT converged NIC,N/A,3.2,02:27:11:DF:AF:D8,Down,10,N/A,8086:1563:1137:01a2,Standard,,,,,N/A,N/A,N/A,N/A
+Host-5,Host-5,Intel X550-T2 Dual Port 10Gb 10GBaseT converged NIC,N/A,1.1,02:F3:4C:A0:A8:5C,Down,10,N/A,8086:1563:1137:01a2,Standard,,,,,N/A,N/A,N/A,N/A
+Host-5,Host-5,Intel X550-T2 Dual Port 10Gb 10GBaseT converged NIC,N/A,1.2,02:47:22:E4:67:AE,Down,10,N/A,8086:1563:1137:01a2,Standard,,,,,N/A,N/A,N/A,N/A
+Host-5,Host-5,Intel X550 LOM,N/A,L.1,02:D4:1E:6B:8C:0B,Down,10,N/A,8086:1563:1137:01a4,Standard,,,,,N/A,N/A,N/A,N/A
+Host-5,Host-5,Intel X550 LOM,N/A,L.2,02:E8:8D:53:36:58,Down,10,N/A,8086:1563:1137:01a4,Standard,,,,,N/A,N/A,N/A,N/A
+Host-6,Host-6,UCS VIC 15238,73-102674-02,Port-1,02:B5:7E:E9:29:3B,Up,40,5.3(5.92),1137:0042:1137:02e8,CNA (VIC Virtual),,,,,QSFP,QSFP-40G-SR-BD,CISCO-AVAGO,AFBR-79EBPZ-CS2
+Host-6,Host-6,UCS VIC 15238,73-102674-02,Port-2,02:84:34:DB:1F:B8,Up,40,5.3(5.92),1137:0042:1137:02e8,CNA (VIC Virtual),,,,,QSFP,QSFP-40G-SR-BD,CISCO-AVAGO,AFBR-79EBPZ-CS2
+Host-6,Host-6,Intel X550 LOM,N/A,L.1,02:02:1E:E4:D2:A1,Down,10,0x80001800-1.836.0,8086:1563:1137:02b3,Standard,,,,,N/A,N/A,N/A,N/A
+Host-6,Host-6,Intel X550 LOM,N/A,L.2,02:27:11:DF:AF:D8,Down,10,0x80001800-1.836.0,8086:1563:1137:02b3,Standard,,,,,N/A,N/A,N/A,N/A
+Host-7,Host-7,Supermicro Network Adapter,AOC-ATG-b2TM-NI22,1,02:B5:7E:E9:29:3B,Down,25,234.1.124.0,14e4:16d8:15d9:1c88,Standard,,,,,N/A,N/A,N/A,N/A
+Host-7,Host-7,Supermicro Network Adapter,AOC-ATG-b2TM-NI22,2,02:84:34:DB:1F:B8,Down,25,234.1.124.0,14e4:16d8:15d9:1c88,Standard,,,,,N/A,N/A,N/A,N/A
+Host-7,Host-7,Mellanox Network Adapter,MCX631102AS-ADAT,1,02:D6:0A:52:DC:FA,Down,25,26.43.3608,15b3:101f:15b3:0012,Standard,,,,,N/A,N/A,N/A,N/A
+Host-7,Host-7,Mellanox Network Adapter,MCX631102AS-ADAT,2,02:0E:E3:F1:7F:CD,Down,25,26.43.3608,15b3:101f:15b3:0012,Standard,,,,,N/A,N/A,N/A,N/A
+Host-7,Host-7,Mellanox Network Adapter,MCX631102AS-ADAT,1,02:8D:84:13:7E:C0,Down,25,0000,15b3:101f:15b3:0012,Standard,,,,,N/A,N/A,N/A,N/A
+Host-7,Host-7,Mellanox Network Adapter,MCX631102AS-ADAT,2,02:C5:D3:8B:D6:D5,Down,25,0000,15b3:101f:15b3:0012,Standard,,,,,N/A,N/A,N/A,N/A
+Host-8,Host-8,BRCM 2P 25G SFP rNDC,06WMMV,NIC.Integrated.1-1,02:D6:0A:52:DC:FA,Up,25,23.21.13.39,14e4:16d7:14e4:4140,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-Q28-4SFP28
+Host-8,Host-8,BRCM 2P 25G SFP rNDC,06WMMV,NIC.Integrated.1-2,02:0E:E3:F1:7F:CD,Up,25,23.21.13.39,14e4:16d7:14e4:4140,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-Q28-4SFP28
+Host-8,Host-8,BRCM 25GbE 2P 57414S Adptr,024GFD,NIC.Slot.2-1,02:B5:7E:E9:29:3B,Up,25,23.21.13.39,14e4:16d7:14e4:4141,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,Q284SFP28-25G3M
+Host-8,Host-8,BRCM 25GbE 2P 57414S Adptr,024GFD,NIC.Slot.2-2,02:84:34:DB:1F:B8,Up,25,23.21.13.39,14e4:16d7:14e4:4141,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-Q28-4SFP28
+Host-9,Host-9,Intel(R) 2P X550/2P I350-t NDC,0CD2VM,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Down,10,23.0.8,8086:1563:1028:1fa8,Standard,,,,,N/A,N/A,N/A,N/A
+Host-9,Host-9,Intel(R) 2P X550/2P I350-t NDC,0CD2VM,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Down,10,23.0.8,8086:1563:1028:1fa8,Standard,,,,,N/A,N/A,N/A,N/A
+Host-9,Host-9,Intel(R) 2P X550/2P I350-t NDC,0CD2VM,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Up,1,23.0.8,8086:1563:1028:1fa8,Standard,,,,,N/A,N/A,N/A,N/A
+Host-9,Host-9,Intel(R) 2P X550/2P I350-t NDC,0CD2VM,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Up,1,23.0.8,8086:1563:1028:1fa8,Standard,,,,,N/A,N/A,N/A,N/A
+Host-9,Host-9,MLNX 25GbE 2P ConnectX5 Adpt,0TDNNT,NIC.Slot.7-1,02:8D:84:13:7E:C0,Up,25,16.35.30.06,15b3:1017:15b3:0091,Standard,,,,,SFP/SFP+/SFP28,NotSupported,FS,SFP-25G-PC03
+Host-9,Host-9,MLNX 25GbE 2P ConnectX5 Adpt,0TDNNT,NIC.Slot.7-2,02:C5:D3:8B:D6:D5,Up,25,16.35.30.06,15b3:1017:15b3:0091,Standard,,,,,SFP/SFP+/SFP28,NotSupported,FS,SFP-25G-PC03
+Host-10,Host-10,MLNX 25GbE 2P ConnectX4LX RNDC,0R887V,NIC.Integrated.1-1,02:D6:0A:52:DC:FA,Up,25,14.32.21.02,15b3:1015:15b3:0025,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-10,Host-10,MLNX 25GbE 2P ConnectX4LX RNDC,0R887V,NIC.Integrated.1-2,02:0E:E3:F1:7F:CD,Up,25,14.32.21.02,15b3:1015:15b3:0025,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-Q28-4SFP28
+Host-10,Host-10,MLNX 25GbE 2P ConnectX4LX Adpt,020NJD,NIC.Slot.2-1,02:B5:7E:E9:29:3B,Down,25,14.32.21.02,15b3:1015:15b3:0016,Standard,,,,,N/A,N/A,N/A,N/A
+Host-10,Host-10,MLNX 25GbE 2P ConnectX4LX Adpt,020NJD,NIC.Slot.2-2,02:84:34:DB:1F:B8,Down,25,14.32.21.02,15b3:1015:15b3:0016,Standard,,,,,N/A,N/A,N/A,N/A
+Host-11,Host-11,BRCM 2P 1G BT + 2P 10G BT rNDC,01224N,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,10,23.22.4,14e4:165f:14e4:4160,Standard,,,,,N/A,N/A,N/A,N/A
+Host-11,Host-11,BRCM 2P 1G BT + 2P 10G BT rNDC,01224N,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,10,23.22.4,14e4:165f:14e4:4160,Standard,,,,,N/A,N/A,N/A,N/A
+Host-11,Host-11,BRCM 2P 1G BT + 2P 10G BT rNDC,01224N,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Up,1,23.22.4,14e4:165f:14e4:4160,Standard,,,,,N/A,N/A,N/A,N/A
+Host-11,Host-11,BRCM 2P 1G BT + 2P 10G BT rNDC,01224N,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Up,1,23.22.4,14e4:165f:14e4:4160,Standard,,,,,N/A,N/A,N/A,N/A
+Host-11,Host-11,Broadcom NetXtreme E-Series Quad-port 25Gb SFP28 PCIe Ethern,N/A,NIC.Slot.2-1,,Down,25,0,,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,9X8JP
+Host-11,Host-11,Broadcom NetXtreme E-Series Quad-port 25Gb SFP28 PCIe Ethern,N/A,NIC.Slot.2-2,,Down,25,0,,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,9X8JP
+Host-11,Host-11,Broadcom NetXtreme E-Series Quad-port 25Gb SFP28 PCIe Ethern,N/A,NIC.Slot.2-3,,Down,25,0,,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,9X8JP
+Host-11,Host-11,Broadcom NetXtreme E-Series Quad-port 25Gb SFP28 PCIe Ethern,N/A,NIC.Slot.2-4,,Down,25,0,,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,9X8JP
+Host-12,Host-12,Intel(R) 2P X710/2P I350 rNDC,06VDPG,NIC.Integrated.1-1,02:D6:0A:52:DC:FA,Down,10,22.5.7,8086:1572:1028:1f99,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL,L56SF018-SD-R
+Host-12,Host-12,Intel(R) 2P X710/2P I350 rNDC,06VDPG,NIC.Integrated.1-2,02:0E:E3:F1:7F:CD,Down,1,22.5.7,8086:1572:1028:1f99,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,Intel(R) 2P X710/2P I350 rNDC,06VDPG,NIC.Integrated.1-3,02:8D:84:13:7E:C0,Down,1,22.5.7,8086:1572:1028:1f99,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,Intel(R) 2P X710/2P I350 rNDC,06VDPG,NIC.Integrated.1-4,02:C5:D3:8B:D6:D5,Down,1,22.5.7,8086:1572:1028:1f99,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,Intel(R) 10G 2P X550 Adapter,04V7G2,NIC.Slot.1-1,02:EE:1F:12:9C:AD,Down,10,22.5.7,8086:1563:8086:001d,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,Intel(R) 10G 2P X550 Adapter,04V7G2,NIC.Slot.1-2,02:67:6F:F5:64:A3,Down,10,22.5.7,8086:1563:8086:001d,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,BRCM 25GbE 2P 57414S Adptr,0CX94X,NIC.Slot.2-1,02:B5:7E:E9:29:3B,Down,25,23.21.13.28,14e4:16d7:14e4:4141,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,BRCM 25GbE 2P 57414S Adptr,0CX94X,NIC.Slot.2-2,02:84:34:DB:1F:B8,Down,25,23.21.13.28,14e4:16d7:14e4:4141,Standard,,,,,N/A,N/A,N/A,N/A
+Host-12,Host-12,MLNX 100GbE 2P ConnectX-4 Adpt,00272F,NIC.Slot.8-1,,Down,100,12.28.45.12,,Standard,,,,,QSFP28OrLater,DirectAttachCopper,DELL,3CC35
+Host-12,Host-12,MLNX 100GbE 2P ConnectX-4 Adpt,00272F,NIC.Slot.8-2,,Down,100,12.28.45.12,,Standard,,,,,QSFP28OrLater,DirectAttachCopper,Mellanox,MCP1600-C003
+Host-13,Host-13,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:D6:0A:52:DC:FA,Down,1,22.91.5,14e4:165f:1028:08ff,Standard,,,,,N/A,N/A,N/A,N/A
+Host-13,Host-13,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:0E:E3:F1:7F:CD,Down,1,22.91.5,14e4:165f:1028:08ff,Standard,,,,,N/A,N/A,N/A,N/A
+Host-13,Host-13,MLNX 25GbE 2P ConnectX5 OCP3 NIC,04TRD3,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,25,16.35.30.06,15b3:1017:15b3:0097,Standard,,,,,SFP/SFP+/SFP28,NotSupported,ADDON,DAC-SFP-25G-3M
+Host-13,Host-13,MLNX 25GbE 2P ConnectX5 OCP3 NIC,04TRD3,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,25,16.35.30.06,15b3:1017:15b3:0097,Standard,,,,,SFP/SFP+/SFP28,NotSupported,ADDON,DAC-SFP-25G-3M
+Host-14,Host-14,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:D6:0A:52:DC:FA,Down,1,22.91.5,14e4:165f:1028:08ff,Standard,,,,,N/A,N/A,N/A,N/A
+Host-14,Host-14,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:0E:E3:F1:7F:CD,Down,1,22.91.5,14e4:165f:1028:08ff,Standard,,,,,N/A,N/A,N/A,N/A
+Host-14,Host-14,BRCM 2P 25G SFP 57414S OCP NIC,0KHCTP,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,25,22.92.07.50,14e4:16d7:14e4:4145,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-14,Host-14,BRCM 2P 25G SFP 57414S OCP NIC,0KHCTP,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,25,22.92.07.50,14e4:16d7:14e4:4145,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-14,Host-14,MLNX 100GbE 2P ConnectX6 Adpt,0F6FXM,NIC.Slot.6-1,02:8D:84:13:7E:C0,Up,100,22.31.20.06,15b3:101d:15b3:0058,Standard,,,,,QSFP28OrLater,DirectAttachCopper,Dell,3CC35
+Host-14,Host-14,MLNX 100GbE 2P ConnectX6 Adpt,0F6FXM,NIC.Slot.6-2,02:C5:D3:8B:D6:D5,Up,100,22.31.20.06,15b3:101d:15b3:0058,Standard,,,,,QSFP28OrLater,OpticalFiber,ADDON,407-BBVO-AO
+Host-15,Host-15,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:8D:84:13:7E:C0,Up,1,22.91.5,14e4:165f:1028:08ff,Standard,,,,,N/A,N/A,N/A,N/A
+Host-15,Host-15,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:C5:D3:8B:D6:D5,Down,1,22.91.5,14e4:165f:1028:08ff,Standard,,,,,N/A,N/A,N/A,N/A
+Host-15,Host-15,BRCM 4P 25G SFP 57504S OCP NIC,0JTK7F,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,25,21.85.21.91,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-15,Host-15,BRCM 4P 25G SFP 57504S OCP NIC,0JTK7F,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,25,21.85.21.91,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-15,Host-15,BRCM 4P 25G SFP 57504S OCP NIC,0JTK7F,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Down,25,21.85.21.91,14e4:1751:14e4:5045,Standard,,,,,N/A,N/A,N/A,N/A
+Host-15,Host-15,BRCM 4P 25G SFP 57504S OCP NIC,0JTK7F,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Down,25,21.85.21.91,14e4:1751:14e4:5045,Standard,,,,,N/A,N/A,N/A,N/A
+Host-15,Host-15,BRCM 2P 100G QSFP 57508 Adptr,061RP9,NIC.Slot.1-1,02:EE:1F:12:9C:AD,Up,100,22.92.07.50,14e4:1750:14e4:d124,Standard,,,,,QSFP28OrLater,DirectAttachCopper,FS,QSFP-100G-PC03
+Host-15,Host-15,BRCM 2P 100G QSFP 57508 Adptr,061RP9,NIC.Slot.1-2,02:67:6F:F5:64:A3,Up,100,22.92.07.50,14e4:1750:14e4:d124,Standard,,,,,QSFP28OrLater,DirectAttachCopper,FS,QSFP-100G-PC03
+Host-16,Host-16,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:D6:0A:52:DC:FA,Up,1,22.91.5,14e4:165f:1028:08fd,Standard,,,,,N/A,N/A,N/A,N/A
+Host-16,Host-16,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:0E:E3:F1:7F:CD,Up,1,22.91.5,14e4:165f:1028:08fd,Standard,,,,,N/A,N/A,N/A,N/A
+Host-16,Host-16,Broadcom Adv. Dual 25Gb Ethernet,N/A,NIC.Mezzanine.1-1,02:B5:7E:E9:29:3B,Up,25,23.21.13.28,14e4:16d7:14e4:1407,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,D0R73
+Host-16,Host-16,Broadcom Adv. Dual 25Gb Ethernet,N/A,NIC.Mezzanine.1-2,02:84:34:DB:1F:B8,Up,25,23.21.13.28,14e4:16d7:14e4:1407,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,D0R73
+Host-16,Host-16,Mellanox Network Adapter,MCX623105AC-VDAT,NIC.Slot.2-1,02:8D:84:13:7E:C0,Down,200,22.50.10.02,15b3:101d:15b3:0047,Standard,,,,,N/A,N/A,N/A,N/A
+Host-16,Host-16,Mellanox Network Adapter,MCX623105AC-VDAT,NIC.Slot.3-1,02:C5:D3:8B:D6:D5,Down,200,22.50.10.02,15b3:101d:15b3:0047,Standard,,,,,N/A,N/A,N/A,N/A
+Host-17,Host-17,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:EE:1F:12:9C:AD,Up,1,22.91.5,14e4:165f:1028:0a6b,Standard,,,,,N/A,N/A,N/A,N/A
+Host-17,Host-17,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:67:6F:F5:64:A3,Up,1,22.91.5,14e4:165f:1028:0a6b,Standard,,,,,N/A,N/A,N/A,N/A
+Host-17,Host-17,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,10,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-17,Host-17,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,10,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-17,Host-17,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Up,10,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-17,Host-17,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Up,10,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-17,Host-17,NVIDIA Mellanox BlueField-3 DPU,900-9D3B6-00CV-AA0,NIC.Slot.2-1,02:F3:4C:A0:A8:5C,Down,200,32.49.1014,15b3:a2dc:15b3:0009,Standard,,,,,N/A,N/A,N/A,N/A
+Host-17,Host-17,NVIDIA Mellanox BlueField-3 DPU,900-9D3B6-00CV-AA0,NIC.Slot.2-2,02:F3:4C:A0:A8:5C,Down,200,32.49.1014,15b3:a2dc:15b3:0009,Standard,,,,,N/A,N/A,N/A,N/A
+Host-17,Host-17,NVIDIA 25GbE 2P ConnectX6 Lx Adpt,0R5WK9,NIC.Slot.5-1,02:8D:84:13:7E:C0,Up,25,26.44.10.36,15b3:101f:15b3:0020,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,DELL,W4GPP
+Host-17,Host-17,NVIDIA 25GbE 2P ConnectX6 Lx Adpt,0R5WK9,NIC.Slot.5-2,02:C5:D3:8B:D6:D5,Up,25,26.44.10.36,15b3:101f:15b3:0020,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,DELL,W4GPP
+Host-17,Host-17,NVIDIA Mellanox ConnectX-7 400GE 1P NIC,MCX75310AAC-NEAT,NIC.Slot.7-1,02:02:1E:E4:D2:A1,Down,400,28.50.1002,15b3:1021:15b3:0128,Standard,,,,,N/A,N/A,N/A,N/A
+Host-18,Host-18,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:8D:84:13:7E:C0,Down,1,23.81.6,14e4:165f:1028:0a6b,Standard,,,,,N/A,N/A,N/A,N/A
+Host-18,Host-18,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:C5:D3:8B:D6:D5,Down,1,23.81.6,14e4:165f:1028:0a6b,Standard,,,,,N/A,N/A,N/A,N/A
+Host-18,Host-18,BRCM 4P 25G SFP 57504S OCP NIC,0X1KR4,NIC.Integrated.1-1,02:B5:7E:E9:29:3B,Up,10,39.11.58.00,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,PROLINE,X4AOCBL7-PRO
+Host-18,Host-18,BRCM 4P 25G SFP 57504S OCP NIC,0X1KR4,NIC.Integrated.1-2,02:84:34:DB:1F:B8,Up,10,39.11.58.00,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,PROLINE,X4AOCBL7-PRO
+Host-18,Host-18,BRCM 4P 25G SFP 57504S OCP NIC,0X1KR4,NIC.Integrated.1-3,02:D6:0A:52:DC:FA,Up,10,39.11.58.00,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,PROLINE,X4AOCBL7-PRO
+Host-18,Host-18,BRCM 4P 25G SFP 57504S OCP NIC,0X1KR4,NIC.Integrated.1-4,02:0E:E3:F1:7F:CD,Up,10,39.11.58.00,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,PROLINE,X4AOCBL7-PRO
+Host-19,Host-19,HPE Eth 10/25Gb 2p 631FLR-SFP28 Adptr,817709-B21,1,,Up,25,226.1.107008,14e4:16d7:1590:0211,NPAR,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Eth 10/25Gb 2p 631FLR-SFP28 Adptr,817709-B21,2,,Up,25,226.1.107008,14e4:16d7:1590:0211,NPAR,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,MLNX 100GbE 2P ConnectX6 Adpt,0F6FXM,1,02:B5:7E:E9:29:3B,Up,100,22.39.10.02,15b3:101d:15b3:0058,Standard,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,MLNX 100GbE 2P ConnectX6 Adpt,0F6FXM,2,02:C5:D3:8B:D6:D5,Up,100,22.39.10.02,15b3:101d:15b3:0058,Standard,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Ethernet 1Gb 4-port 331i Adapter - NIC,N/A,1,02:EE:1F:12:9C:AD,Down,1,20.14.62,14e4:1657:103c:22be,Standard,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Ethernet 1Gb 4-port 331i Adapter - NIC,N/A,2,02:67:6F:F5:64:A3,Down,1,20.14.62,14e4:1657:103c:22be,Standard,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Ethernet 1Gb 4-port 331i Adapter - NIC,N/A,3,02:02:1E:E4:D2:A1,Down,1,20.14.62,14e4:1657:103c:22be,Standard,,,,,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Ethernet 1Gb 4-port 331i Adapter - NIC,N/A,4,02:27:11:DF:AF:D8,Down,1,20.14.62,14e4:1657:103c:22be,Standard,,,,,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Eth 10/25Gb 2p 631FLR-SFP28 Adptr,840133-001,1,02:84:34:DB:1F:B8,Up,25,226.1.107008,14e4:16d7:1590:0211,Standard,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-19,Host-19,HPE Eth 10/25Gb 2p 631FLR-SFP28 Adptr,840133-001,2,02:D6:0A:52:DC:FA,Up,25,226.1.107008,14e4:16d7:1590:0211,Standard,,port-59D468,,192.0.2.190,N/A,N/A,N/A,N/A
+Host-20,Host-20,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,,Up,1,23.31.0,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-20,Host-20,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,,Down,1,23.31.0,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-20,Host-20,MLNX 25GbE 2P ConnectX5 OCP3 NIC,04TRD3,NIC.Integrated.1-1,02:0E:E3:F1:7F:CD,Up,25,16.27.61.20,15b3:1017:15b3:0097,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-20,Host-20,MLNX 25GbE 2P ConnectX5 OCP3 NIC,04TRD3,NIC.Integrated.1-2,02:8D:84:13:7E:C0,Up,25,16.27.61.20,15b3:1017:15b3:0097,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-20,Host-20,BRCM 2P 100G QSFP 57508 Adptr,061RP9,NIC.Slot.2-1,02:84:34:DB:1F:B8,Down,100,23.31.18.10,14e4:1750:14e4:d124,Standard,,,,,N/A,N/A,N/A,N/A
+Host-20,Host-20,BRCM 2P 100G QSFP 57508 Adptr,061RP9,NIC.Slot.2-2,02:D6:0A:52:DC:FA,Up,100,23.31.18.10,14e4:1750:14e4:d124,Standard,,,,,QSFP28OrLater,OpticalFiber,DELL EMC,14NV5
+Host-21,Host-21,ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter,4XC7A08294,1,02:B5:7E:E9:29:3B,Up,25,4.90,8086:159b:8086:4002,Standard,,,,,N/A,N/A,N/A,N/A
+Host-21,Host-21,ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter,4XC7A08294,2,02:84:34:DB:1F:B8,Up,25,4.90,8086:159b:8086:4002,Standard,,,,,N/A,N/A,N/A,N/A
+Host-22,Host-22,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.5-1,02:84:34:DB:1F:B8,Up,25,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-Q28-4SFP28
+Host-22,Host-22,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.5-2,02:D6:0A:52:DC:FA,Up,25,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,FS,SFP-25G-PC03
+Host-22,Host-22,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.5-3,02:0E:E3:F1:7F:CD,Down,25,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,N/A,N/A,N/A,N/A
+Host-22,Host-22,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.5-4,02:8D:84:13:7E:C0,Down,25,23.21.19.60,14e4:1751:14e4:5045,Standard,,,,,N/A,N/A,N/A,N/A
+Host-22,Host-22,Broadcom BCM57608 2x100G PCIe Ethernet NIC,BCM957608-P2100GQF20,NIC.Slot.4-1,02:C5:D3:8B:D6:D5,Up,100,232.1.141.5,14e4:1760:14e4:9126,Standard,,,,,N/A,N/A,N/A,N/A
+Host-22,Host-22,Broadcom BCM57608 2x100G PCIe Ethernet NIC,BCM957608-P2100GQF20,NIC.Slot.4-2,02:EE:1F:12:9C:AD,Up,100,232.1.141.5,14e4:1760:14e4:9126,Standard,,,,,N/A,N/A,N/A,N/A
+Host-23,Host-23,NVIDIA Mellanox ConnectX-6 Dx 100GE 2P NIC,MCX623106AS-CDAT,NIC.Slot.5-1,02:B5:7E:E9:29:3B,Up,100,22.43.20.26,15b3:101d:15b3:0042,Standard,,,,,N/A,N/A,N/A,N/A
+Host-23,Host-23,NVIDIA Mellanox ConnectX-6 Dx 100GE 2P NIC,MCX623106AS-CDAT,NIC.Slot.5-2,02:84:34:DB:1F:B8,Up,100,22.43.20.26,15b3:101d:15b3:0042,Standard,,,,,N/A,N/A,N/A,N/A
+Host-23,Host-23,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-1,02:D6:0A:52:DC:FA,Up,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-23,Host-23,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-2,02:0E:E3:F1:7F:CD,Up,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,ADDON,DAC-SFP-25G-3M
+Host-23,Host-23,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-3,02:8D:84:13:7E:C0,Down,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,N/A,N/A,N/A,N/A
+Host-23,Host-23,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-4,02:C5:D3:8B:D6:D5,Down,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,N/A,N/A,N/A,N/A
+Host-24,Host-24,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.1-1,02:EE:1F:12:9C:AD,Up,1,22.61.8,14e4:165f:1028:0a6b,Standard,,,,,N/A,N/A,N/A,N/A
+Host-24,Host-24,Broadcom NetXtreme Gigabit Ethernet,N/A,NIC.Embedded.2-1,02:67:6F:F5:64:A3,Down,1,22.61.8,14e4:165f:1028:0a6b,Standard,,,,,N/A,N/A,N/A,N/A
+Host-24,Host-24,NVIDIA ConnectX6 LX 2P OCP3 NIC,0DN78C,NIC.Integrated.1-1,02:8D:84:13:7E:C0,Up,25,26.44.10.36,15b3:101f:15b3:0019,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-24,Host-24,NVIDIA ConnectX6 LX 2P OCP3 NIC,0DN78C,NIC.Integrated.1-2,02:C5:D3:8B:D6:D5,Up,25,26.44.10.36,15b3:101f:15b3:0019,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-24,Host-24,Intel(R) 25GbE 2P E810-XXV Adptr,0CD16M,NIC.Slot.2-1,02:D6:0A:52:DC:FA,Up,25,25.0.4,8086:159b:8086:0002,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-24,Host-24,Intel(R) 25GbE 2P E810-XXV Adptr,0CD16M,NIC.Slot.2-2,02:0E:E3:F1:7F:CD,Up,25,25.0.4,8086:159b:8086:0002,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,DELL EMC,VXFJY
+Host-24,Host-24,Intel(R) 25GbE 2P E810-XXV Adptr,0CD16M,NIC.Slot.7-1,02:B5:7E:E9:29:3B,Up,10,24.0.5,8086:159b:8086:0002,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,FINISAR CORP.,FTLX8571D3BCL-FC
+Host-24,Host-24,Intel(R) 25GbE 2P E810-XXV Adptr,0CD16M,NIC.Slot.7-2,02:84:34:DB:1F:B8,Up,10,24.0.5,8086:159b:8086:0002,Standard,,,,,SFP/SFP+/SFP28,OpticalFiber,Intel Corp,FTLX8571D3BCV-IT
+Host-25,Host-25,BRCM 2P 100G QSFP 57508 Adptr,0FPM6F,NIC.Slot.2-1,02:B5:7E:E9:29:3B,Up,100,23.31.18.10,14e4:1750:14e4:d124,Standard,,,,,QSFP28OrLater,OpticalFiber,ADDON,407-BBVO-AO
+Host-25,Host-25,BRCM 2P 100G QSFP 57508 Adptr,0FPM6F,NIC.Slot.2-2,02:84:34:DB:1F:B8,Up,100,23.31.18.10,14e4:1750:14e4:d124,Standard,,,,,QSFP28OrLater,DirectAttachCopper,Dell,3CC35
+Host-25,Host-25,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-1,02:D6:0A:52:DC:FA,Up,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,FS,SFP-25G-PC03
+Host-25,Host-25,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-2,02:0E:E3:F1:7F:CD,Up,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,FS,SFP-25G-PC03
+Host-25,Host-25,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-3,02:8D:84:13:7E:C0,Up,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,FS,SFP-25G-PC03
+Host-25,Host-25,BRCM 4P 25G SFP 57504S OCP NIC,03Y64D,NIC.Slot.10-4,02:C5:D3:8B:D6:D5,Up,25,23.31.18.10,14e4:1751:14e4:5045,Standard,,,,,SFP/SFP+/SFP28,DirectAttachCopper,FS,SFP-25G-PC03
+Host-26,Host-26,Ethernet 10/25Gb 2-port SFP28 MCX562A-ACAI OCP3 Adapter,P10110-001,0,,Up,10,16.35.1012,5555:4119:5555:0082,Standard,,,,,N/A,N/A,N/A,N/A
+Host-26,Host-26,Ethernet 10/25Gb 2-port SFP28 MCX562A-ACAI OCP3 Adapter,P10110-001,1,,Up,10,16.35.1012,5555:4119:5555:0082,Standard,,,,,N/A,N/A,N/A,N/A
+Host-26,Host-26,BRCM 2P 100G QSFP 57508 Adptr,061RP9A01,1,02:F3:4C:A0:A8:5C,Up,100,22.71.11.13,14e4:1750:14e4:d124,Standard,,,,,N/A,N/A,N/A,N/A
+Host-26,Host-26,BRCM 2P 100G QSFP 57508 Adptr,061RP9A01,2,02:47:22:E4:67:AE,Down,100,22.71.11.13,14e4:1750:14e4:d124,Standard,,,,,N/A,N/A,N/A,N/A
+Host-26,Host-26,Ethernet 10/25Gb 2-port SFP28 MCX562A-ACAI OCP3 Adapter,P12619-001,1,02:B5:7E:E9:29:3B,Up,25,16.35.1012,5555:4119:5555:0082,Standard,,,,,N/A,N/A,N/A,N/A
+Host-26,Host-26,Ethernet 10/25Gb 2-port SFP28 MCX562A-ACAI OCP3 Adapter,P12619-001,2,02:D4:1E:6B:8C:0B,Up,25,16.35.1012,5555:4119:5555:0082,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Broadcom 57414 10/25GbE SFP28 2-port OCP Ethernet Adapter,SN37B00936,1,,Up,10,232.1.132.8,14e4:16d7:17aa:4140,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Broadcom 57414 10/25GbE SFP28 2-port OCP Ethernet Adapter,SN37B00936,2,,Up,10,232.1.132.8,14e4:16d7:17aa:4140,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Broadcom 5719 1GbE RJ45 4-port OCP Ethernet Adapter,SN37A28309,1,,Up,1,230.0.3.1,14e4:1657:17aa:4104,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Broadcom 5719 1GbE RJ45 4-port OCP Ethernet Adapter,SN37A28309,2,,Up,1,230.0.3.1,14e4:1657:17aa:4104,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Broadcom 5719 1GbE RJ45 4-port OCP Ethernet Adapter,SN37A28309,3,,Up,1,230.0.3.1,14e4:1657:17aa:4104,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Broadcom 5719 1GbE RJ45 4-port OCP Ethernet Adapter,SN37A28309,4,,Up,1,230.0.3.1,14e4:1657:17aa:4104,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,"NVIDIA ConnectX-7 HHHL Adapter Card, 25/50GbE, Quad-Port SFP56, PCIe 4.0 x16, Crypto Disabled, Secure Boot Enabled",MCX713104AS-ADAT,1,,Up,25,28.49.1014,15b3:1021:15b3:0030,NPAR,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,"NVIDIA ConnectX-7 HHHL Adapter Card, 25/50GbE, Quad-Port SFP56, PCIe 4.0 x16, Crypto Disabled, Secure Boot Enabled",MCX713104AS-ADAT,2,,Up,25,28.49.1014,15b3:1021:15b3:0030,NPAR,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,"NVIDIA ConnectX-7 HHHL Adapter Card, 25/50GbE, Quad-Port SFP56, PCIe 4.0 x16, Crypto Disabled, Secure Boot Enabled",MCX713104AS-ADAT,3,,Up,25,28.49.1014,15b3:1021:15b3:0030,NPAR,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,"NVIDIA ConnectX-7 HHHL Adapter Card, 25/50GbE, Quad-Port SFP56, PCIe 4.0 x16, Crypto Disabled, Secure Boot Enabled",MCX713104AS-ADAT,4,,Up,25,28.49.1014,15b3:1021:15b3:0030,NPAR,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 1,N/A,1,,Up,10,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 1,N/A,2,,Up,10,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 2,N/A,1,,Up,1,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 2,N/A,2,,Up,1,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 2,N/A,3,,Up,1,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 2,N/A,4,,Up,1,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 4,N/A,1,,Up,25,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 4,N/A,2,,Up,25,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 4,N/A,3,,Up,25,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 4,N/A,4,,Up,25,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 5,N/A,1,,Up,32,N/A,,NPAR,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,Network Interfaces 5,N/A,2,,Up,32,N/A,,NPAR,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC1,02:B5:7E:E9:29:3B,Up,10.24,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC2,02:02:1E:E4:D2:A1,Up,10.24,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC3,02:01:14:8B:1C:24,Up,1.02,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC4,02:03:FD:C5:D7:DD,Up,1.02,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC5,02:31:7B:F2:DE:44,Up,1.02,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC6,02:32:66:88:DA:B2,Up,1.02,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC11,02:62:A0:1E:30:B3,Up,32.77,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-27,Host-27,External Ethernet Interface,N/A,NIC12,02:BF:32:AA:B5:E7,Up,32.77,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-28,Host-28,Network Adapter 397,N/A,397,02:84:34:DB:1F:B8,Up,0,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-28,Host-28,Network Adapter 398,N/A,398,02:B5:7E:E9:29:3B,Up,0,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Intel X722 LOM (onboard),N/A,1,02:7D:BC:A4:22:E5,Up,10,1.3616.0,8086:37d3:17aa:4021,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Intel X722 LOM (onboard),N/A,2,02:51:CE:0A:3F:C7,Up,10,1.3616.0,8086:37d3:17aa:4021,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Intel X722 LOM (onboard),N/A,3,02:07:F8:86:5A:BB,Up,10,1.3616.0,8086:37d3:17aa:4021,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Intel X722 LOM (onboard),N/A,4,02:34:E2:42:35:5C,Down,10,1.3616.0,8086:37d3:17aa:4021,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Intel Ethernet Server Adapter I350-F1,SN30L21969,1,02:72:20:75:79:B0,Down,1,1.3450.0,8086:1522:8086:0005,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Slot 3,N/A,0,,Down,0,N/A,8086:159b:8086:0003,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Network Adapter 1,N/A,1,02:7D:BC:A4:22:E5,Up,10,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Network Adapter 1,N/A,2,02:51:CE:0A:3F:C7,Up,10,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Network Adapter 1,N/A,3,02:07:F8:86:5A:BB,Up,10,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Network Adapter 1,N/A,4,02:34:E2:42:35:5C,Down,10,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Network Adapter 2,N/A,1,02:72:20:75:79:B0,Down,0,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Network Adapter 3,N/A,0,,Down,0,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,External Ethernet Interface,N/A,NIC5,02:84:34:DB:1F:B8,Down,0,N/A,,Standard,,,,,N/A,N/A,N/A,N/A
+Host-29,Host-29,Slot 3,N/A,NIC6,,NoLink,0,N/A,8086:159b:8086:0003,Standard,,,,,N/A,N/A,N/A,N/A
+Host-30,Host-30,Mellanox Technologies ConnectX-6 Lx EN (2-Port 25GbE SFP28),N/A,DevType7_Slot17_Instance0_PORT0,02:B5:7E:E9:29:3B,Up,25,26.47.10.26,15b3:101f:15b3:0001,Standard,,,,,N/A,N/A,N/A,N/A
+Host-30,Host-30,Mellanox Technologies ConnectX-6 Lx EN (2-Port 25GbE SFP28),N/A,DevType7_Slot17_Instance1_PORT1,02:84:34:DB:1F:B8,Up,25,26.47.10.26,15b3:101f:15b3:0001,Standard,,,,,N/A,N/A,N/A,N/A
+Host-30,Host-30,Intel Corporation Intel(R) Ethernet Controller 10G X550T,N/A,DevType7_Slot0_Instance2_PORT0,02:D6:0A:52:DC:FA,LinkDown,10,1.1276.0,8086:1563:1849:1563,Standard,,,,,N/A,N/A,N/A,N/A
+Host-30,Host-30,Intel Corporation Intel(R) Ethernet Controller 10G X550T,N/A,DevType7_Slot0_Instance3_PORT1,02:0E:E3:F1:7F:CD,LinkDown,10,nil,8086:1563:1849:1563,Standard,,,,,N/A,N/A,N/A,N/A

@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redfish Explorer — ThinkSystem SR630 V2 (Host-21)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --sidebar-bg: #131d31;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #22c55e;
+      --success-bg: rgba(34, 197, 94, 0.15);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.15);
+      --purple: #a855f7;
+      --purple-bg: rgba(168, 85, 247, 0.15);
+      --code-bg: #090d16;
+      --radius: 8px;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Navigation Header */
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-icon {
+      font-size: 1.5rem;
+      background: rgba(56, 189, 248, 0.15);
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .host-info h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .host-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 12px;
+      margin-top: 2px;
+    }
+    .host-meta code {
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      cursor: pointer;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: #64748b;
+      color: #fff;
+    }
+    .btn-primary {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    /* Main Workspace Layout */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Left Sidebar */
+    .sidebar {
+      width: 380px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar-controls {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .sidebar-search {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .sidebar-search:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+    .nav-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(0,0,0,0.15);
+    }
+    .nav-tab {
+      flex: 1;
+      padding: 10px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-align: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .nav-tab:hover { color: #fff; }
+    .nav-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: rgba(56, 189, 248, 0.05);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    /* Fixtures List */
+    .fixture-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .fixture-item:hover {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.05);
+      transform: translateX(2px);
+    }
+    .fixture-item.active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.12);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .fixture-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: #fff;
+    }
+    .fixture-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .fixture-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.06);
+      color: var(--accent);
+      margin-top: 4px;
+    }
+
+    /* URI Tree Nodes */
+    .tree-node {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      margin-bottom: 2px;
+    }
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tree-item:hover {
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+    }
+    .tree-item.active {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .tree-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      user-select: none;
+    }
+    .tree-children {
+      padding-left: 14px;
+      border-left: 1px solid rgba(255,255,255,0.08);
+      margin-left: 6px;
+    }
+
+    /* Main Content Area */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0b1120;
+    }
+
+    /* Top Endpoint Banner */
+    .endpoint-banner {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .endpoint-uri {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      word-break: break-all;
+    }
+    .method-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .status-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-muted);
+    }
+
+    /* Body Scroll Area */
+    .content-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* VCF Operations 9.1 Monitoring Card */
+    .vcf-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .vcf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .vcf-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .vcf-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .vcf-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-top: 10px;
+    }
+    .vcf-table th {
+      text-align: left;
+      padding: 8px 10px;
+      background: rgba(0,0,0,0.2);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .vcf-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      vertical-align: top;
+    }
+    .metric-key {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .json-path-cell {
+      font-family: var(--font-mono);
+      color: #cbd5e1;
+    }
+    .vendor-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Raw JSON Section */
+    .json-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 400px;
+      overflow: hidden;
+    }
+    .json-header {
+      padding: 10px 16px;
+      background: rgba(0, 0, 0, 0.25);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .json-path-bar {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      background: var(--code-bg);
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.08);
+      max-width: 450px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .json-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-sub {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      color: #fff;
+      font-size: 0.8rem;
+      outline: none;
+      width: 180px;
+    }
+    .search-sub:focus {
+      border-color: var(--accent);
+    }
+
+    .json-body {
+      padding: 16px 20px;
+      background: var(--code-bg);
+      overflow: auto;
+      flex: 1;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      line-height: 1.6;
+      white-space: pre;
+    }
+
+    /* JSON Syntax Tokens */
+    .json-key { color: #7dd3fc; font-weight: 600; cursor: pointer; }
+    .json-key:hover { text-decoration: underline; color: #38bdf8; }
+    .json-string { color: #86efac; }
+    .json-number { color: #f472b6; }
+    .json-boolean { color: #fde047; font-weight: 600; }
+    .json-null { color: #94a3b8; font-style: italic; }
+    .json-bracket { color: #94a3b8; }
+    .json-highlight { background: #ca8a04; color: #000; font-weight: 700; border-radius: 2px; }
+
+    /* Quick Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #2563eb;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.2s ease;
+      pointer-events: none;
+      z-index: 1000;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand-group">
+      <div class="brand-icon">🧭</div>
+      <div class="host-info">
+        <h1>
+          <span>ThinkSystem SR630 V2</span>
+          <span style="font-size:0.75rem; font-weight:500; background:rgba(56,189,248,0.15); color:var(--accent); border:1px solid rgba(56,189,248,0.3); padding:2px 8px; border-radius:12px;">Redfish Telemetry Explorer</span>
+        </h1>
+        <div class="host-meta">
+          <span>Target IP: <code>Host-21</code></span>
+          <span>Host: <code>Host-21</code></span>
+          <span>Serial: <code>RNPL-0021</code></span>
+          <span>Total Endpoints: <strong>134</strong></span>
+        </div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <a href="OBFUSCATED_Host-21.html" class="btn btn-primary" target="_blank">📄 View Normal Report &rarr;</a>
+      <a href="../00_OBFUSCATED_fleet_combined.html" class="btn">📚 Library Catalog</a>
+    </div>
+  </header>
+
+  <!-- Workspace -->
+  <div class="workspace">
+    <!-- Left Navigation Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-controls">
+        <input type="text" id="sidebarSearch" class="sidebar-search" placeholder="🔍 Search fixtures or URI paths...">
+      </div>
+      <div class="nav-tabs">
+        <button type="button" class="nav-tab active" data-action="switch-side-tab" data-tab="tab-fixtures">🧩 Fixtures (10)</button>
+        <button type="button" class="nav-tab" data-action="switch-side-tab" data-tab="tab-tree">🌳 Redfish Tree (134)</button>
+      </div>
+
+      <div class="sidebar-content" id="sidebarContent">
+        <!-- Tab 1: Fixtures -->
+        <div id="tab-fixtures" class="sidebar-pane">
+          <div id="fixturesList">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+
+        <!-- Tab 2: Tree -->
+        <div id="tab-tree" class="sidebar-pane" style="display:none;">
+          <div id="treeList">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Workspace Content -->
+    <div class="main-content">
+      <!-- Endpoint Header Bar -->
+      <div class="endpoint-banner">
+        <div>
+          <div class="endpoint-uri">
+            <span class="method-badge">GET</span>
+            <span id="bannerUri">/redfish/v1/Systems/1/Bios</span>
+          </div>
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;" id="bannerOdataType">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span class="status-badge" id="bannerStatus">200 OK</span>
+          <button type="button" class="btn" data-action="copy-uri" title="Copy Endpoint URI to Clipboard">📋 Copy URI</button>
+        </div>
+      </div>
+
+      <!-- Scrollable Inspector Area -->
+      <div class="content-scroll">
+        <!-- VCF Operations 9.1 Monitoring Overlay -->
+        <div class="vcf-card" id="vcfOpsCard">
+          <div class="vcf-header">
+            <div>
+              <div class="vcf-title">
+                <span>⚡ VCF Operations 9.1 Redfish Monitoring Overlay</span>
+                <span class="fixture-badge" id="vcfResourceKindBadge">PhysicalServer</span>
+              </div>
+              <div class="vcf-sub" id="vcfResourceKindDesc">
+                Monitored bare-metal resource representation in VMware Cloud Foundation Operations.
+              </div>
+            </div>
+            <button type="button" class="btn" data-action="copy-all-keys" style="font-size:0.75rem; padding:4px 10px;">📋 Copy Metric Keys</button>
+          </div>
+          <div id="vcfMetricsContainer">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+
+        <!-- Interactive Raw JSON Inspector -->
+        <div class="json-section">
+          <div class="json-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.8rem; font-weight:700; color:#fff;">Raw Redfish JSON:</span>
+              <div class="json-path-bar" id="currentJsonPath" title="Click any key in JSON below to copy its path">$</div>
+            </div>
+            <div class="json-actions">
+              <input type="text" id="jsonFilterInput" class="search-sub" placeholder="Filter keys/values...">
+              <button type="button" class="btn" data-action="copy-path" style="font-size:0.75rem; padding:4px 10px;" title="Copy Selected JSONPath">📋 Copy Path</button>
+              <button type="button" class="btn" data-action="copy-json" style="font-size:0.75rem; padding:4px 10px;" title="Copy Full JSON Payload">📋 Copy JSON</button>
+            </div>
+          </div>
+          <div class="json-body" id="jsonViewer">
+            <!-- Formatted JSON populated by JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">Copied to clipboard</div>
+
+  <!-- Embedded Zero-Dependency Data Payload -->
+  <script id="explorerData" type="application/json">
+{"host": {"vendor": "Lenovo", "model": "ThinkSystem SR630 V2", "anon_ip": "Host-21", "anon_hostname": "Host-21", "fictitious_serial": "RNPL-0021", "total_endpoints": 134, "report_path": "OBFUSCATED_Host-21.html", "library_path": "../00_OBFUSCATED_fleet_combined.html"}, "fixtures": [{"id": "fix-system", "category": "System & Chassis", "icon": "\ud83d\udda5\ufe0f", "title": "Lenovo ThinkSystem SR630 V2", "subtitle": "BIOS TEE142M-2.41 \u00b7 Serial: RNPL-0021", "resource_kind": "PhysicalServer", "primary_uri": "/redfish/v1/Systems/1/Bios", "uris": ["/redfish/v1/Systems/1/Bios", "redfish/v1/Systems/1/Bios", "/Systems/1/Bios", "/redfish/v1/Systems/1/Memory", "redfish/v1/Systems/1/Memory", "/Systems/1/Memory", "/redfish/v1/Systems/1/Processors/1", "redfish/v1/Systems/1/Processors/1", "/Systems/1/Processors/1", "/redfish/v1/Systems/1/Processors/2", "redfish/v1/Systems/1/Processors/2", "/Systems/1/Processors/2", "/redfish/v1/Systems/1/Processors", "redfish/v1/Systems/1/Processors", "/Systems/1/Processors", "/redfish/v1/Systems/1/SecureBoot", "redfish/v1/Systems/1/SecureBoot", "/Systems/1/SecureBoot", "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "/redfish/v1/Systems/1/Storage/RAID_Slot1", "redfish/v1/Systems/1/Storage/RAID_Slot1", "/Systems/1/Storage/RAID_Slot1", "/redfish/v1/Systems/1/Storage", "redfish/v1/Systems/1/Storage", "/Systems/1/Storage", "/redfish/v1/Systems/1", "redfish/v1/Systems/1", "/Systems/1", "/redfish/v1/Systems", "redfish/v1/Systems", "/Systems", "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "redfish/v1/Chassis/1/NetworkAdapters/OCP", "/Chassis/1/NetworkAdapters/OCP", "/redfish/v1/Chassis/1/NetworkAdapters", "redfish/v1/Chassis/1/NetworkAdapters", "/Chassis/1/NetworkAdapters", "/redfish/v1/Chassis/1/Power", "redfish/v1/Chassis/1/Power", "/Chassis/1/Power", "/redfish/v1/Chassis/1/Thermal", "redfish/v1/Chassis/1/Thermal", "/Chassis/1/Thermal", "/redfish/v1/Chassis/1", "redfish/v1/Chassis/1", "/Chassis/1", "/redfish/v1/Chassis", "redfish/v1/Chassis", "/Chassis"], "summary": {"Vendor": "Lenovo", "Model": "ThinkSystem SR630 V2", "Serial / Tag": "RNPL-0021", "BIOS Version": "TEE142M-2.41", "Boot Mode": "Legacy", "TPM Status": "<span class='badge success'>\ud83d\udfe2 Enabled (TPM 2.0 Active FW 7.2.1)</span>"}}, {"id": "fix-cpu", "category": "Compute (CPU)", "icon": "\ud83e\udde0", "title": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "subtitle": "2 Socket(s) \u00b7 56 Total Cores", "resource_kind": "Processor", "primary_uri": "/redfish/v1/Systems/1/Processors/1", "uris": ["/redfish/v1/Systems/1/Processors/1", "redfish/v1/Systems/1/Processors/1", "/Systems/1/Processors/1", "Systems/1/Processors/1", "/redfish/v1/Systems/1/Processors/2", "redfish/v1/Systems/1/Processors/2", "/Systems/1/Processors/2", "Systems/1/Processors/2", "/redfish/v1/Systems/1/Processors", "redfish/v1/Systems/1/Processors", "/Systems/1/Processors", "Systems/1/Processors"], "summary": {"Processor Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "Sockets": 2, "Total Cores": 56, "Architecture": "Intel Ice Lake-SP 3rd Gen (8 Channel DDR4)", "VCF 9.1 Compatibility": "\ud83d\udfe2 Fully Supported"}}, {"id": "fix-memory", "category": "Memory (RAM)", "icon": "\ud83d\udcbe", "title": "512 GB Total Memory", "subtitle": "0 DIMMs installed \u00b7 N/A MHz", "resource_kind": "PhysicalServer", "primary_uri": "/redfish/v1/Systems/1/Memory", "uris": ["/redfish/v1/Systems/1/Memory", "redfish/v1/Systems/1/Memory", "/Systems/1/Memory", "Systems/1/Memory"], "summary": {"Total Capacity": "512 GB", "Installed DIMMs": 0, "Speed": "N/A MHz", "Operating Voltage": "1.2V", "Interleaving Mode": "Standard"}}, {"id": "fix-storage", "category": "Storage Subsystem", "icon": "\ud83d\uddc4\ufe0f", "title": "10 Drives (2 NVMe SSDs)", "subtitle": "1 Controller(s): ThinkSystem RAID 930-8i", "resource_kind": "StorageController", "primary_uri": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "uris": ["/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "/redfish/v1/Systems/1/Storage/RAID_Slot1", "redfish/v1/Systems/1/Storage/RAID_Slot1", "/Systems/1/Storage/RAID_Slot1", "Systems/1/Storage/RAID_Slot1", "/redfish/v1/Systems/1/Storage", "redfish/v1/Systems/1/Storage", "/Systems/1/Storage", "Systems/1/Storage"], "summary": {"Total Drives": 10, "Direct-Attached NVMe": 2, "Storage Controllers": 1, "vSAN ESA Status": "Evaluated", "Intel VMD State": "Disabled (Pass-through)"}}, {"id": "fix-network", "category": "Network Adapters", "icon": "\ud83c\udf10", "title": "1 Network Adapter(s)", "subtitle": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter", "resource_kind": "NetworkAdapter", "primary_uri": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "uris": ["/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "Chassis/1/NetworkAdapters/OCP/NetworkPorts", "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "redfish/v1/Chassis/1/NetworkAdapters/OCP", "/Chassis/1/NetworkAdapters/OCP", "Chassis/1/NetworkAdapters/OCP", "/redfish/v1/Chassis/1/NetworkAdapters", "redfish/v1/Chassis/1/NetworkAdapters", "/Chassis/1/NetworkAdapters", "Chassis/1/NetworkAdapters"], "summary": {"Installed NICs": 1, "Max Link Speed": "N/A GbE", "vSAN 25GbE Compliance": "Below 25GbE Minimum"}}, {"id": "fix-power", "category": "Power & PSUs", "icon": "\u26a1", "title": "2 Power Supply Units", "subtitle": "Draw: 287 W \u00b7 Redundancy: OK", "resource_kind": "PowerSupplyUnit", "primary_uri": "/redfish/v1/Chassis/1/Power", "uris": ["/redfish/v1/Chassis/1/Power", "redfish/v1/Chassis/1/Power", "/Chassis/1/Power", "Chassis/1/Power"], "summary": {"Installed PSUs": 2, "Instantaneous Draw": "287 W", "Peak Consumption": "N/A W", "Redundancy Status": "Fully Redundant"}}, {"id": "fix-thermal", "category": "Thermal & Cooling", "icon": "\ud83c\udf21\ufe0f", "title": "Thermal Sensors & Fans", "subtitle": "1 Sensors \u00b7 State: Normal", "resource_kind": "PhysicalServer", "primary_uri": "/redfish/v1/Chassis/1/Thermal", "uris": ["/redfish/v1/Chassis/1/Thermal", "redfish/v1/Chassis/1/Thermal", "/Chassis/1/Thermal", "Chassis/1/Thermal"], "summary": {"Sensors Count": 1, "Max Recorded Temp": "N/A \u00b0C", "Cooling Status": "Healthy / In-Spec"}}, {"id": "fix-bios", "category": "BIOS & Boot Options", "icon": "\u2699\ufe0f", "title": "BIOS TEE142M-2.41", "subtitle": "Target: UEFI Boot", "resource_kind": "PhysicalServer", "primary_uri": "/redfish/v1/Systems/1/Bios", "uris": ["/redfish/v1/Systems/1/Bios", "redfish/v1/Systems/1/Bios", "/Systems/1/Bios", "Systems/1/Bios"], "summary": {"BIOS Version": "TEE142M-2.41", "Release Date": "2023-04-18", "Persistent Boot Device": "None", "Secure Boot": "Enabled"}}, {"id": "fix-sel", "category": "System Event Log (SEL)", "icon": "\ud83d\udea8", "title": "System Event Log (0 alarms)", "subtitle": "0 Critical Events", "resource_kind": "PhysicalServer", "primary_uri": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "uris": ["/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "redfish/v1/Managers/1/LogServices/Sel/Entries/1", "/Managers/1/LogServices/Sel/Entries/1", "Managers/1/LogServices/Sel/Entries/1", "/redfish/v1/Managers/1/LogServices/Sel/Entries", "redfish/v1/Managers/1/LogServices/Sel/Entries", "/Managers/1/LogServices/Sel/Entries", "Managers/1/LogServices/Sel/Entries"], "summary": {"Recorded Alarms": 0, "Critical Severity": 0, "Warning Severity": 0}}, {"id": "fix-bmc", "category": "BMC & Management Controller", "icon": "\ud83d\udee1\ufe0f", "title": "Lenovo Management Controller", "subtitle": "Firmware: N/A", "resource_kind": "PhysicalServer", "primary_uri": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "uris": ["/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "redfish/v1/Managers/1/LogServices/Sel/Entries/1", "/Managers/1/LogServices/Sel/Entries/1", "/redfish/v1/Managers/1/LogServices/Sel/Entries", "redfish/v1/Managers/1/LogServices/Sel/Entries", "/Managers/1/LogServices/Sel/Entries", "/redfish/v1/Managers/1", "redfish/v1/Managers/1", "/Managers/1", "/redfish/v1/Managers", "redfish/v1/Managers", "/Managers", "/redfish/v1/LicenseService/Licenses/XCC_Advanced", "redfish/v1/LicenseService/Licenses/XCC_Advanced", "/LicenseService/Licenses/XCC_Advanced", "/redfish/v1/LicenseService/Licenses", "redfish/v1/LicenseService/Licenses", "/LicenseService/Licenses", "/redfish/v1/LicenseService", "redfish/v1/LicenseService", "/LicenseService"], "summary": {"BMC Firmware": "N/A", "Security Posture": "Evaluated", "IPMI Over LAN": "Disabled (Secure)"}}], "tree": {"Chassis": {"_uri": "/Chassis", "_is_leaf": true, "_children": {"1": {"_uri": "/Chassis/1", "_is_leaf": true, "_children": {"NetworkAdapters": {"_uri": "/Chassis/1/NetworkAdapters", "_is_leaf": true, "_children": {"OCP": {"_uri": "/Chassis/1/NetworkAdapters/OCP", "_is_leaf": true, "_children": {"NetworkPorts": {"_uri": "/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "_is_leaf": true, "_children": {"1": {"_uri": "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "_is_leaf": true, "_children": {}}, "2": {"_uri": "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "_is_leaf": true, "_children": {}}}}}}}}, "Power": {"_uri": "/Chassis/1/Power", "_is_leaf": true, "_children": {}}, "Thermal": {"_uri": "/Chassis/1/Thermal", "_is_leaf": true, "_children": {}}}}}}, "LicenseService": {"_uri": "/LicenseService", "_is_leaf": true, "_children": {"Licenses": {"_uri": "/LicenseService/Licenses", "_is_leaf": true, "_children": {"XCC_Advanced": {"_uri": "/LicenseService/Licenses/XCC_Advanced", "_is_leaf": true, "_children": {}}}}}}, "Managers": {"_uri": "/Managers", "_is_leaf": true, "_children": {"1": {"_uri": "/Managers/1", "_is_leaf": true, "_children": {"LogServices": {"_uri": "/Managers/1/LogServices", "_is_leaf": false, "_children": {"Sel": {"_uri": "/Managers/1/LogServices/Sel", "_is_leaf": false, "_children": {"Entries": {"_uri": "/Managers/1/LogServices/Sel/Entries", "_is_leaf": true, "_children": {"1": {"_uri": "/Managers/1/LogServices/Sel/Entries/1", "_is_leaf": true, "_children": {}}}}}}}}}}}}, "Systems": {"_uri": "/Systems", "_is_leaf": true, "_children": {"1": {"_uri": "/Systems/1", "_is_leaf": true, "_children": {"Bios": {"_uri": "/Systems/1/Bios", "_is_leaf": true, "_children": {}}, "Memory": {"_uri": "/Systems/1/Memory", "_is_leaf": true, "_children": {}}, "Processors": {"_uri": "/Systems/1/Processors", "_is_leaf": true, "_children": {"1": {"_uri": "/Systems/1/Processors/1", "_is_leaf": true, "_children": {}}, "2": {"_uri": "/Systems/1/Processors/2", "_is_leaf": true, "_children": {}}}}, "SecureBoot": {"_uri": "/Systems/1/SecureBoot", "_is_leaf": true, "_children": {}}, "Storage": {"_uri": "/Systems/1/Storage", "_is_leaf": true, "_children": {"RAID_Slot1": {"_uri": "/Systems/1/Storage/RAID_Slot1", "_is_leaf": true, "_children": {"Drives": {"_uri": "/Systems/1/Storage/RAID_Slot1/Drives", "_is_leaf": false, "_children": {"Disk.0": {"_uri": "/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "_is_leaf": true, "_children": {}}, "Disk.1": {"_uri": "/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "_is_leaf": true, "_children": {}}}}}}}}}}}}, "UpdateService": {"_uri": "/UpdateService", "_is_leaf": true, "_children": {"FirmwareInventory": {"_uri": "/UpdateService/FirmwareInventory", "_is_leaf": true, "_children": {"BMC": {"_uri": "/UpdateService/FirmwareInventory/BMC", "_is_leaf": true, "_children": {}}, "UEFI": {"_uri": "/UpdateService/FirmwareInventory/UEFI", "_is_leaf": true, "_children": {}}}}}}, "redfish": {"_uri": "/redfish", "_is_leaf": false, "_children": {"v1": {"_uri": "/redfish/v1", "_is_leaf": true, "_children": {"Chassis": {"_uri": "/redfish/v1/Chassis", "_is_leaf": true, "_children": {"1": {"_uri": "/redfish/v1/Chassis/1", "_is_leaf": true, "_children": {"NetworkAdapters": {"_uri": "/redfish/v1/Chassis/1/NetworkAdapters", "_is_leaf": true, "_children": {"OCP": {"_uri": "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "_is_leaf": true, "_children": {"NetworkPorts": {"_uri": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "_is_leaf": true, "_children": {"1": {"_uri": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "_is_leaf": true, "_children": {}}, "2": {"_uri": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "_is_leaf": true, "_children": {}}}}}}}}, "Power": {"_uri": "/redfish/v1/Chassis/1/Power", "_is_leaf": true, "_children": {}}, "Thermal": {"_uri": "/redfish/v1/Chassis/1/Thermal", "_is_leaf": true, "_children": {}}}}}}, "LicenseService": {"_uri": "/redfish/v1/LicenseService", "_is_leaf": true, "_children": {"Licenses": {"_uri": "/redfish/v1/LicenseService/Licenses", "_is_leaf": true, "_children": {"XCC_Advanced": {"_uri": "/redfish/v1/LicenseService/Licenses/XCC_Advanced", "_is_leaf": true, "_children": {}}}}}}, "Managers": {"_uri": "/redfish/v1/Managers", "_is_leaf": true, "_children": {"1": {"_uri": "/redfish/v1/Managers/1", "_is_leaf": true, "_children": {"LogServices": {"_uri": "/redfish/v1/Managers/1/LogServices", "_is_leaf": false, "_children": {"Sel": {"_uri": "/redfish/v1/Managers/1/LogServices/Sel", "_is_leaf": false, "_children": {"Entries": {"_uri": "/redfish/v1/Managers/1/LogServices/Sel/Entries", "_is_leaf": true, "_children": {"1": {"_uri": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "_is_leaf": true, "_children": {}}}}}}}}}}}}, "Systems": {"_uri": "/redfish/v1/Systems", "_is_leaf": true, "_children": {"1": {"_uri": "/redfish/v1/Systems/1", "_is_leaf": true, "_children": {"Bios": {"_uri": "/redfish/v1/Systems/1/Bios", "_is_leaf": true, "_children": {}}, "Memory": {"_uri": "/redfish/v1/Systems/1/Memory", "_is_leaf": true, "_children": {}}, "Processors": {"_uri": "/redfish/v1/Systems/1/Processors", "_is_leaf": true, "_children": {"1": {"_uri": "/redfish/v1/Systems/1/Processors/1", "_is_leaf": true, "_children": {}}, "2": {"_uri": "/redfish/v1/Systems/1/Processors/2", "_is_leaf": true, "_children": {}}}}, "SecureBoot": {"_uri": "/redfish/v1/Systems/1/SecureBoot", "_is_leaf": true, "_children": {}}, "Storage": {"_uri": "/redfish/v1/Systems/1/Storage", "_is_leaf": true, "_children": {"RAID_Slot1": {"_uri": "/redfish/v1/Systems/1/Storage/RAID_Slot1", "_is_leaf": true, "_children": {"Drives": {"_uri": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives", "_is_leaf": false, "_children": {"Disk.0": {"_uri": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "_is_leaf": true, "_children": {}}, "Disk.1": {"_uri": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "_is_leaf": true, "_children": {}}}}}}}}}}}}, "UpdateService": {"_uri": "/redfish/v1/UpdateService", "_is_leaf": true, "_children": {"FirmwareInventory": {"_uri": "/redfish/v1/UpdateService/FirmwareInventory", "_is_leaf": true, "_children": {"BMC": {"_uri": "/redfish/v1/UpdateService/FirmwareInventory/BMC", "_is_leaf": true, "_children": {}}, "UEFI": {"_uri": "/redfish/v1/UpdateService/FirmwareInventory/UEFI", "_is_leaf": true, "_children": {}}}}}}}}}}}, "vcf_ops": {"resource_kinds": {"PhysicalServer": {"name": "PhysicalServer (Server Chassis)", "description": "Top-level physical host in VCF Operations inventory tree. Correlated with ESXi HostSystem via UUID/Serial.", "metrics": [{"key": "summary|readiness_score", "name": "VCF 9.1 Readiness Score", "unit": "%", "json_path": "Computed rule engine score based on CPU, RAM, Storage, and BIOS compliance.", "vendor_note": "Evaluated against VMware Cloud Foundation 9.1 Hardware Requirements Specification."}, {"key": "telemetry|power_consumed_watts", "name": "Server Power Consumption", "unit": "W", "json_path": "$.PowerControl[0].PowerConsumedWatts or $.PowerControl[0].AverageConsumedWatts", "vendor_note": "Dell iDRAC exposes via /Chassis/.../Power (PowerControl array); HPE iLO provides via /Chassis/.../Power/FastPowerMetric or AverageConsumedWatts."}, {"key": "telemetry|thermal_max_celsius", "name": "Max Chassis Temperature", "unit": "\u00b0C", "json_path": "$.Temperatures[?(@.Status.State=='Enabled')].ReadingCelsius", "vendor_note": "Traversed across all enabled temperature sensors in /Chassis/.../Thermal."}, {"key": "security|tpm_enabled", "name": "TPM 2.0 Security State", "unit": "string", "json_path": "$.TrustedModules[?(@.InterfaceTypeSelection=='TPM2_0')].Status.State", "vendor_note": "Must be 'Enabled' or 'EnabledAndActivated' for VCF 9.1 ESXi host attestation."}]}, "Processor": {"name": "Processor (CPU Socket)", "description": "Represents each physical processor socket installed in the chassis.", "metrics": [{"key": "hardware|cores", "name": "Physical Core Count", "unit": "cores", "json_path": "$.TotalCores", "vendor_note": "Standard DMTF Redfish Processor.v1 schema property."}, {"key": "hardware|threads", "name": "Logical Thread Count", "unit": "threads", "json_path": "$.TotalThreads", "vendor_note": "Standard DMTF Redfish Processor.v1 schema property."}, {"key": "hardware|frequency_mhz", "name": "Base Clock Frequency", "unit": "MHz", "json_path": "$.MaxSpeedMHz", "vendor_note": "Rated base / maximum clock frequency of the processor."}, {"key": "compat|vcf9_support_tier", "name": "VCF 9.1 Compatibility Tier", "unit": "string", "json_path": "Derived from Processor.Model and Processor.ProcessorId.EffectiveFamily", "vendor_note": "Categorized as Fully Supported (Cascade/Ice/Sapphire/Emerald Lake, EPYC 7/8/9xxx), Deprecated/Override Required (Skylake-SP KB 428874), or Unsupported."}]}, "StorageController": {"name": "StorageController (HBA / RAID)", "description": "Storage adapters controlling local drive media.", "metrics": [{"key": "hardware|mode", "name": "Controller Mode (HBA vs RAID)", "unit": "string", "json_path": "$.SupportedControllerModes or $.Oem.Dell.DellController.ControllerFirmwareVersion", "vendor_note": "vSAN ESA mandates native HBA / pass-through mode (RAID mode is strictly unsupported)."}, {"key": "hardware|firmware_version", "name": "Controller Firmware Version", "unit": "string", "json_path": "$.FirmwareVersion", "vendor_note": "Cross-referenced against VMware vSAN Hardware Compatibility List (HCL) minimum firmware baseline."}]}, "PhysicalDrive": {"name": "PhysicalDrive (NVMe / SAS / SATA SSD)", "description": "Physical storage drive installed in drive bay slots.", "metrics": [{"key": "wear|life_remaining_pct", "name": "Drive Wear Life Remaining", "unit": "%", "json_path": "$.PredictedMediaLifeLeftPercent or $.Oem.*.DriveLifeRemainingPercentage", "vendor_note": "Dell iDRAC exposes endurance via Oem.Dell.DellPhysicalDisk.PredictedMediaLifeLeftPercent; HPE iLO provides Oem.Hpe.DriveLifeRemainingPercentage; generic Redfish v1.11+ uses PredictedMediaLifeLeftPercent."}, {"key": "hardware|capacity_gb", "name": "Drive Capacity", "unit": "GB", "json_path": "$.CapacityBytes / 1073741824", "vendor_note": "DMTF Redfish Drive.v1 standard capacity field."}, {"key": "hardware|protocol", "name": "Bus Protocol", "unit": "string", "json_path": "$.Protocol (NVMe, SAS, SATA)", "vendor_note": "vSAN ESA requires direct-attached NVMe (PCIe/NVMe protocol)."}, {"key": "telemetry|temperature_celsius", "name": "Drive Operating Temperature", "unit": "\u00b0C", "json_path": "$.Oem.Dell.DellPhysicalDisk.Temperature or $.Oem.Hpe.CurrentTemperatureCelsius", "vendor_note": "Real-time SMART thermal telemetry from drive controller."}]}, "NetworkAdapter": {"name": "NetworkAdapter (Physical NIC)", "description": "Physical PCIe or integrated mezzanine network interface controller.", "metrics": [{"key": "hardware|speed_gbps", "name": "Maximum Port Speed", "unit": "Gbps", "json_path": "$.NetworkPorts[...].CurrentLinkSpeedMbps / 1000 or $.SpeedMbps / 1000", "vendor_note": "vSAN ESA requires \u226525 GbE port speed. OSA requires \u226510 GbE."}, {"key": "hardware|firmware_version", "name": "NIC Firmware Version", "unit": "string", "json_path": "$.Controllers[0].FirmwarePackageVersion or $.FirmwareVersion", "vendor_note": "Matched against VMware ESXi 9.1 async driver and firmware baselines."}, {"key": "hardware|link_status", "name": "Port Link Status", "unit": "string", "json_path": "$.NetworkPorts[...].LinkStatus (Up, Down, NoLink)", "vendor_note": "Real-time physical transceiver link connectivity."}]}, "PowerSupplyUnit": {"name": "PowerSupplyUnit (PSU)", "description": "Individual power supply unit installed in the chassis.", "metrics": [{"key": "hardware|capacity_watts", "name": "Rated Power Capacity", "unit": "W", "json_path": "$.PowerCapacityWatts", "vendor_note": "Standard Redfish Power.v1 schema property."}, {"key": "telemetry|power_output_watts", "name": "Real-time Power Output", "unit": "W", "json_path": "$.LastPowerOutputWatts", "vendor_note": "Real-time instantaneous power supply delivery."}, {"key": "hardware|input_voltage", "name": "Input Line Voltage", "unit": "V", "json_path": "$.LineInputVoltage", "vendor_note": "AC or DC input supply voltage reading."}]}}}, "endpoints": {"/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "1", "Name": "Port 1", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:B5:7E:E9:29:3B"], "Status": {"Health": "OK", "State": "Enabled"}}, "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "1", "Name": "Port 1", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:B5:7E:E9:29:3B"], "Status": {"Health": "OK", "State": "Enabled"}}, "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "1", "Name": "Port 1", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:B5:7E:E9:29:3B"], "Status": {"Health": "OK", "State": "Enabled"}}, "Chassis/1/NetworkAdapters/OCP/NetworkPorts/1": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "1", "Name": "Port 1", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:B5:7E:E9:29:3B"], "Status": {"Health": "OK", "State": "Enabled"}}, "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "2", "Name": "Port 2", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:84:34:DB:1F:B8"], "Status": {"Health": "OK", "State": "Enabled"}}, "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "2", "Name": "Port 2", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:84:34:DB:1F:B8"], "Status": {"Health": "OK", "State": "Enabled"}}, "/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "2", "Name": "Port 2", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:84:34:DB:1F:B8"], "Status": {"Health": "OK", "State": "Enabled"}}, "Chassis/1/NetworkAdapters/OCP/NetworkPorts/2": {"@odata.context": "/redfish/v1/#NetworkPort.NetworkPort", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2", "@odata.type": "#NetworkPort.v1_4_0.NetworkPort", "Id": "2", "Name": "Port 2", "LinkStatus": "Up", "CurrentLinkSpeedMbps": 25000, "MaxSpeedMbps": 25000, "AssociatedNetworkAddresses": ["02:84:34:DB:1F:B8"], "Status": {"Health": "OK", "State": "Enabled"}}, "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts": {"@odata.context": "/redfish/v1/#NetworkPortCollection.NetworkPortCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "@odata.type": "#NetworkPortCollection.NetworkPortCollection", "Name": "NetworkPortCollection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1"}, {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2"}]}, "redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts": {"@odata.context": "/redfish/v1/#NetworkPortCollection.NetworkPortCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "@odata.type": "#NetworkPortCollection.NetworkPortCollection", "Name": "NetworkPortCollection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1"}, {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2"}]}, "/Chassis/1/NetworkAdapters/OCP/NetworkPorts": {"@odata.context": "/redfish/v1/#NetworkPortCollection.NetworkPortCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "@odata.type": "#NetworkPortCollection.NetworkPortCollection", "Name": "NetworkPortCollection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1"}, {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2"}]}, "Chassis/1/NetworkAdapters/OCP/NetworkPorts": {"@odata.context": "/redfish/v1/#NetworkPortCollection.NetworkPortCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts", "@odata.type": "#NetworkPortCollection.NetworkPortCollection", "Name": "NetworkPortCollection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/1"}, {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts/2"}]}, "/redfish/v1/Chassis/1/NetworkAdapters/OCP": {"@odata.context": "/redfish/v1/#NetworkAdapter.NetworkAdapter", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "@odata.type": "#NetworkAdapter.v1_5_0.NetworkAdapter", "Id": "OCP", "Name": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Description": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Manufacturer": "Lenovo", "Model": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter", "PartNumber": "4XC7A08294", "SerialNumber": "SN-F91643", "Status": {"Health": "OK", "State": "Enabled"}, "Controllers": [{"FirmwarePackageVersion": "4.90", "PCIeInterface": {"PCIeVendorId": "0x8086", "PCIeDeviceId": "0x159b", "PCIeSubsystemVendorId": "0x8086", "PCIeSubsystemId": "0x4002"}}], "NetworkPorts": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts"}}, "redfish/v1/Chassis/1/NetworkAdapters/OCP": {"@odata.context": "/redfish/v1/#NetworkAdapter.NetworkAdapter", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "@odata.type": "#NetworkAdapter.v1_5_0.NetworkAdapter", "Id": "OCP", "Name": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Description": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Manufacturer": "Lenovo", "Model": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter", "PartNumber": "4XC7A08294", "SerialNumber": "SN-F91643", "Status": {"Health": "OK", "State": "Enabled"}, "Controllers": [{"FirmwarePackageVersion": "4.90", "PCIeInterface": {"PCIeVendorId": "0x8086", "PCIeDeviceId": "0x159b", "PCIeSubsystemVendorId": "0x8086", "PCIeSubsystemId": "0x4002"}}], "NetworkPorts": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts"}}, "/Chassis/1/NetworkAdapters/OCP": {"@odata.context": "/redfish/v1/#NetworkAdapter.NetworkAdapter", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "@odata.type": "#NetworkAdapter.v1_5_0.NetworkAdapter", "Id": "OCP", "Name": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Description": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Manufacturer": "Lenovo", "Model": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter", "PartNumber": "4XC7A08294", "SerialNumber": "SN-F91643", "Status": {"Health": "OK", "State": "Enabled"}, "Controllers": [{"FirmwarePackageVersion": "4.90", "PCIeInterface": {"PCIeVendorId": "0x8086", "PCIeDeviceId": "0x159b", "PCIeSubsystemVendorId": "0x8086", "PCIeSubsystemId": "0x4002"}}], "NetworkPorts": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts"}}, "Chassis/1/NetworkAdapters/OCP": {"@odata.context": "/redfish/v1/#NetworkAdapter.NetworkAdapter", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP", "@odata.type": "#NetworkAdapter.v1_5_0.NetworkAdapter", "Id": "OCP", "Name": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Description": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter (4XC7A08294)", "Manufacturer": "Lenovo", "Model": "ThinkSystem Intel E810-DA2 10/25GbE SFP28 2-Port OCP Ethernet Adapter", "PartNumber": "4XC7A08294", "SerialNumber": "SN-F91643", "Status": {"Health": "OK", "State": "Enabled"}, "Controllers": [{"FirmwarePackageVersion": "4.90", "PCIeInterface": {"PCIeVendorId": "0x8086", "PCIeDeviceId": "0x159b", "PCIeSubsystemVendorId": "0x8086", "PCIeSubsystemId": "0x4002"}}], "NetworkPorts": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP/NetworkPorts"}}, "/redfish/v1/Chassis/1/NetworkAdapters": {"@odata.context": "/redfish/v1/#NetworkAdapterCollection.NetworkAdapterCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters", "@odata.type": "#NetworkAdapterCollection.NetworkAdapterCollection", "Name": "NetworkAdapterCollection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP"}]}, "redfish/v1/Chassis/1/NetworkAdapters": {"@odata.context": "/redfish/v1/#NetworkAdapterCollection.NetworkAdapterCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters", "@odata.type": "#NetworkAdapterCollection.NetworkAdapterCollection", "Name": "NetworkAdapterCollection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP"}]}, "/Chassis/1/NetworkAdapters": {"@odata.context": "/redfish/v1/#NetworkAdapterCollection.NetworkAdapterCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters", "@odata.type": "#NetworkAdapterCollection.NetworkAdapterCollection", "Name": "NetworkAdapterCollection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP"}]}, "Chassis/1/NetworkAdapters": {"@odata.context": "/redfish/v1/#NetworkAdapterCollection.NetworkAdapterCollection", "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters", "@odata.type": "#NetworkAdapterCollection.NetworkAdapterCollection", "Name": "NetworkAdapterCollection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/OCP"}]}, "/redfish/v1/Chassis/1/Power": {"@odata.context": "/redfish/v1/$metadata#Power.Power", "@odata.id": "/redfish/v1/Chassis/1/Power", "@odata.type": "#Power.v1_5_0.Power", "Id": "Power", "Name": "Power", "PowerControl@odata.count": 1, "PowerControl": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerControl/0", "MemberId": "0", "Name": "Server Power Control", "PowerConsumedWatts": 287, "PowerCapacityWatts": 1800, "PowerLimit": {"LimitInWatts": null, "LimitException": "NoAction"}, "PowerMetrics": {"IntervalInMin": 1, "MaxConsumedWatts": 320, "MinConsumedWatts": 250, "AverageConsumedWatts": 290}}], "PowerSupplies@odata.count": 2, "PowerSupplies": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/0", "MemberId": "0", "Name": "PSU 1", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}, {"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/1", "MemberId": "1", "Name": "PSU 2", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}]}, "redfish/v1/Chassis/1/Power": {"@odata.context": "/redfish/v1/$metadata#Power.Power", "@odata.id": "/redfish/v1/Chassis/1/Power", "@odata.type": "#Power.v1_5_0.Power", "Id": "Power", "Name": "Power", "PowerControl@odata.count": 1, "PowerControl": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerControl/0", "MemberId": "0", "Name": "Server Power Control", "PowerConsumedWatts": 287, "PowerCapacityWatts": 1800, "PowerLimit": {"LimitInWatts": null, "LimitException": "NoAction"}, "PowerMetrics": {"IntervalInMin": 1, "MaxConsumedWatts": 320, "MinConsumedWatts": 250, "AverageConsumedWatts": 290}}], "PowerSupplies@odata.count": 2, "PowerSupplies": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/0", "MemberId": "0", "Name": "PSU 1", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}, {"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/1", "MemberId": "1", "Name": "PSU 2", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}]}, "/Chassis/1/Power": {"@odata.context": "/redfish/v1/$metadata#Power.Power", "@odata.id": "/redfish/v1/Chassis/1/Power", "@odata.type": "#Power.v1_5_0.Power", "Id": "Power", "Name": "Power", "PowerControl@odata.count": 1, "PowerControl": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerControl/0", "MemberId": "0", "Name": "Server Power Control", "PowerConsumedWatts": 287, "PowerCapacityWatts": 1800, "PowerLimit": {"LimitInWatts": null, "LimitException": "NoAction"}, "PowerMetrics": {"IntervalInMin": 1, "MaxConsumedWatts": 320, "MinConsumedWatts": 250, "AverageConsumedWatts": 290}}], "PowerSupplies@odata.count": 2, "PowerSupplies": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/0", "MemberId": "0", "Name": "PSU 1", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}, {"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/1", "MemberId": "1", "Name": "PSU 2", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}]}, "Chassis/1/Power": {"@odata.context": "/redfish/v1/$metadata#Power.Power", "@odata.id": "/redfish/v1/Chassis/1/Power", "@odata.type": "#Power.v1_5_0.Power", "Id": "Power", "Name": "Power", "PowerControl@odata.count": 1, "PowerControl": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerControl/0", "MemberId": "0", "Name": "Server Power Control", "PowerConsumedWatts": 287, "PowerCapacityWatts": 1800, "PowerLimit": {"LimitInWatts": null, "LimitException": "NoAction"}, "PowerMetrics": {"IntervalInMin": 1, "MaxConsumedWatts": 320, "MinConsumedWatts": 250, "AverageConsumedWatts": 290}}], "PowerSupplies@odata.count": 2, "PowerSupplies": [{"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/0", "MemberId": "0", "Name": "PSU 1", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}, {"@odata.id": "/redfish/v1/Chassis/1/Power#/PowerSupplies/1", "MemberId": "1", "Name": "PSU 2", "PowerCapacityWatts": 900, "Status": {"Health": "OK", "State": "Enabled"}}]}, "/redfish/v1/Chassis/1/Thermal": {"@odata.context": "/redfish/v1/$metadata#Thermal.Thermal", "@odata.id": "/redfish/v1/Chassis/1/Thermal", "@odata.type": "#Thermal.v1_4_0.Thermal", "Id": "Thermal", "Name": "Thermal", "Temperatures@odata.count": 1, "Temperatures": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Temperatures/0", "MemberId": "0", "Name": "Ambient Temp", "SensorNumber": 49, "ReadingCelsius": 23, "UpperThresholdNonCritical": 43, "UpperThresholdCritical": 47, "UpperThresholdFatal": 50, "Status": {"Health": "OK", "State": "Enabled"}}], "Fans@odata.count": 1, "Fans": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/0", "MemberId": "0", "Name": "Fan 1 Tach", "FanName": "Fan 1 Tach", "SensorNumber": 65, "Reading": 6840, "ReadingUnits": "RPM", "Status": {"Health": "OK", "State": "Enabled"}}]}, "redfish/v1/Chassis/1/Thermal": {"@odata.context": "/redfish/v1/$metadata#Thermal.Thermal", "@odata.id": "/redfish/v1/Chassis/1/Thermal", "@odata.type": "#Thermal.v1_4_0.Thermal", "Id": "Thermal", "Name": "Thermal", "Temperatures@odata.count": 1, "Temperatures": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Temperatures/0", "MemberId": "0", "Name": "Ambient Temp", "SensorNumber": 49, "ReadingCelsius": 23, "UpperThresholdNonCritical": 43, "UpperThresholdCritical": 47, "UpperThresholdFatal": 50, "Status": {"Health": "OK", "State": "Enabled"}}], "Fans@odata.count": 1, "Fans": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/0", "MemberId": "0", "Name": "Fan 1 Tach", "FanName": "Fan 1 Tach", "SensorNumber": 65, "Reading": 6840, "ReadingUnits": "RPM", "Status": {"Health": "OK", "State": "Enabled"}}]}, "/Chassis/1/Thermal": {"@odata.context": "/redfish/v1/$metadata#Thermal.Thermal", "@odata.id": "/redfish/v1/Chassis/1/Thermal", "@odata.type": "#Thermal.v1_4_0.Thermal", "Id": "Thermal", "Name": "Thermal", "Temperatures@odata.count": 1, "Temperatures": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Temperatures/0", "MemberId": "0", "Name": "Ambient Temp", "SensorNumber": 49, "ReadingCelsius": 23, "UpperThresholdNonCritical": 43, "UpperThresholdCritical": 47, "UpperThresholdFatal": 50, "Status": {"Health": "OK", "State": "Enabled"}}], "Fans@odata.count": 1, "Fans": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/0", "MemberId": "0", "Name": "Fan 1 Tach", "FanName": "Fan 1 Tach", "SensorNumber": 65, "Reading": 6840, "ReadingUnits": "RPM", "Status": {"Health": "OK", "State": "Enabled"}}]}, "Chassis/1/Thermal": {"@odata.context": "/redfish/v1/$metadata#Thermal.Thermal", "@odata.id": "/redfish/v1/Chassis/1/Thermal", "@odata.type": "#Thermal.v1_4_0.Thermal", "Id": "Thermal", "Name": "Thermal", "Temperatures@odata.count": 1, "Temperatures": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Temperatures/0", "MemberId": "0", "Name": "Ambient Temp", "SensorNumber": 49, "ReadingCelsius": 23, "UpperThresholdNonCritical": 43, "UpperThresholdCritical": 47, "UpperThresholdFatal": 50, "Status": {"Health": "OK", "State": "Enabled"}}], "Fans@odata.count": 1, "Fans": [{"@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/0", "MemberId": "0", "Name": "Fan 1 Tach", "FanName": "Fan 1 Tach", "SensorNumber": 65, "Reading": 6840, "ReadingUnits": "RPM", "Status": {"Health": "OK", "State": "Enabled"}}]}, "/redfish/v1/Chassis/1": {"@odata.context": "/redfish/v1/$metadata#Chassis.Chassis", "@odata.id": "/redfish/v1/Chassis/1", "@odata.type": "#Chassis.v1_11_0.Chassis", "Id": "1", "Name": "Chassis", "ChassisType": "RackMount", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR650", "PowerState": "On", "Status": {"Health": "OK", "State": "Enabled"}, "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"}, "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"}, "LogServices": {"@odata.id": "/redfish/v1/Chassis/1/LogServices"}, "NetworkAdapters": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters"}}, "redfish/v1/Chassis/1": {"@odata.context": "/redfish/v1/$metadata#Chassis.Chassis", "@odata.id": "/redfish/v1/Chassis/1", "@odata.type": "#Chassis.v1_11_0.Chassis", "Id": "1", "Name": "Chassis", "ChassisType": "RackMount", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR650", "PowerState": "On", "Status": {"Health": "OK", "State": "Enabled"}, "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"}, "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"}, "LogServices": {"@odata.id": "/redfish/v1/Chassis/1/LogServices"}, "NetworkAdapters": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters"}}, "/Chassis/1": {"@odata.context": "/redfish/v1/$metadata#Chassis.Chassis", "@odata.id": "/redfish/v1/Chassis/1", "@odata.type": "#Chassis.v1_11_0.Chassis", "Id": "1", "Name": "Chassis", "ChassisType": "RackMount", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR650", "PowerState": "On", "Status": {"Health": "OK", "State": "Enabled"}, "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"}, "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"}, "LogServices": {"@odata.id": "/redfish/v1/Chassis/1/LogServices"}, "NetworkAdapters": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters"}}, "Chassis/1": {"@odata.context": "/redfish/v1/$metadata#Chassis.Chassis", "@odata.id": "/redfish/v1/Chassis/1", "@odata.type": "#Chassis.v1_11_0.Chassis", "Id": "1", "Name": "Chassis", "ChassisType": "RackMount", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR650", "PowerState": "On", "Status": {"Health": "OK", "State": "Enabled"}, "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"}, "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"}, "LogServices": {"@odata.id": "/redfish/v1/Chassis/1/LogServices"}, "NetworkAdapters": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters"}}, "/redfish/v1/Chassis": {"@odata.id": "/redfish/v1/Chassis", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "redfish/v1/Chassis": {"@odata.id": "/redfish/v1/Chassis", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "/Chassis": {"@odata.id": "/redfish/v1/Chassis", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "Chassis": {"@odata.id": "/redfish/v1/Chassis", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "/redfish/v1/LicenseService/Licenses/XCC_Advanced": {"@odata.context": "/redfish/v1/$metadata#License.License", "@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced", "@odata.type": "#License.v1_1_0.License", "Id": "XCC_Advanced", "Name": "XClarity Controller Advanced", "EntitlementId": "XCC_Advanced", "LicenseType": "Production", "Removable": true, "Status": {"State": "Enabled", "Health": "OK"}}, "redfish/v1/LicenseService/Licenses/XCC_Advanced": {"@odata.context": "/redfish/v1/$metadata#License.License", "@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced", "@odata.type": "#License.v1_1_0.License", "Id": "XCC_Advanced", "Name": "XClarity Controller Advanced", "EntitlementId": "XCC_Advanced", "LicenseType": "Production", "Removable": true, "Status": {"State": "Enabled", "Health": "OK"}}, "/LicenseService/Licenses/XCC_Advanced": {"@odata.context": "/redfish/v1/$metadata#License.License", "@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced", "@odata.type": "#License.v1_1_0.License", "Id": "XCC_Advanced", "Name": "XClarity Controller Advanced", "EntitlementId": "XCC_Advanced", "LicenseType": "Production", "Removable": true, "Status": {"State": "Enabled", "Health": "OK"}}, "LicenseService/Licenses/XCC_Advanced": {"@odata.context": "/redfish/v1/$metadata#License.License", "@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced", "@odata.type": "#License.v1_1_0.License", "Id": "XCC_Advanced", "Name": "XClarity Controller Advanced", "EntitlementId": "XCC_Advanced", "LicenseType": "Production", "Removable": true, "Status": {"State": "Enabled", "Health": "OK"}}, "/redfish/v1/LicenseService/Licenses": {"@odata.context": "/redfish/v1/$metadata#LicenseCollection.LicenseCollection", "@odata.id": "/redfish/v1/LicenseService/Licenses", "@odata.type": "#LicenseCollection.LicenseCollection", "Name": "License Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced"}]}, "redfish/v1/LicenseService/Licenses": {"@odata.context": "/redfish/v1/$metadata#LicenseCollection.LicenseCollection", "@odata.id": "/redfish/v1/LicenseService/Licenses", "@odata.type": "#LicenseCollection.LicenseCollection", "Name": "License Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced"}]}, "/LicenseService/Licenses": {"@odata.context": "/redfish/v1/$metadata#LicenseCollection.LicenseCollection", "@odata.id": "/redfish/v1/LicenseService/Licenses", "@odata.type": "#LicenseCollection.LicenseCollection", "Name": "License Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced"}]}, "LicenseService/Licenses": {"@odata.context": "/redfish/v1/$metadata#LicenseCollection.LicenseCollection", "@odata.id": "/redfish/v1/LicenseService/Licenses", "@odata.type": "#LicenseCollection.LicenseCollection", "Name": "License Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/LicenseService/Licenses/XCC_Advanced"}]}, "/redfish/v1/LicenseService": {"@odata.id": "/redfish/v1/LicenseService", "Licenses": {"@odata.id": "/redfish/v1/LicenseService/Licenses"}}, "redfish/v1/LicenseService": {"@odata.id": "/redfish/v1/LicenseService", "Licenses": {"@odata.id": "/redfish/v1/LicenseService/Licenses"}}, "/LicenseService": {"@odata.id": "/redfish/v1/LicenseService", "Licenses": {"@odata.id": "/redfish/v1/LicenseService/Licenses"}}, "LicenseService": {"@odata.id": "/redfish/v1/LicenseService", "Licenses": {"@odata.id": "/redfish/v1/LicenseService/Licenses"}}, "/redfish/v1/Managers/1/LogServices/Sel/Entries/1": {"@odata.context": "/redfish/v1/$metadata#LogEntry.LogEntry", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "@odata.type": "#LogEntry.v1_8_0.LogEntry", "Id": "1", "Name": "Log Entry 1", "Created": "2024-05-01T12:00:00Z", "EntryType": "SEL", "Severity": "OK", "Message": "System boot completed.", "SensorNumber": 0}, "redfish/v1/Managers/1/LogServices/Sel/Entries/1": {"@odata.context": "/redfish/v1/$metadata#LogEntry.LogEntry", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "@odata.type": "#LogEntry.v1_8_0.LogEntry", "Id": "1", "Name": "Log Entry 1", "Created": "2024-05-01T12:00:00Z", "EntryType": "SEL", "Severity": "OK", "Message": "System boot completed.", "SensorNumber": 0}, "/Managers/1/LogServices/Sel/Entries/1": {"@odata.context": "/redfish/v1/$metadata#LogEntry.LogEntry", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "@odata.type": "#LogEntry.v1_8_0.LogEntry", "Id": "1", "Name": "Log Entry 1", "Created": "2024-05-01T12:00:00Z", "EntryType": "SEL", "Severity": "OK", "Message": "System boot completed.", "SensorNumber": 0}, "Managers/1/LogServices/Sel/Entries/1": {"@odata.context": "/redfish/v1/$metadata#LogEntry.LogEntry", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1", "@odata.type": "#LogEntry.v1_8_0.LogEntry", "Id": "1", "Name": "Log Entry 1", "Created": "2024-05-01T12:00:00Z", "EntryType": "SEL", "Severity": "OK", "Message": "System boot completed.", "SensorNumber": 0}, "/redfish/v1/Managers/1/LogServices/Sel/Entries": {"@odata.context": "/redfish/v1/$metadata#LogEntryCollection.LogEntryCollection", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries", "@odata.type": "#LogEntryCollection.LogEntryCollection", "Name": "Log Entry Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1"}]}, "redfish/v1/Managers/1/LogServices/Sel/Entries": {"@odata.context": "/redfish/v1/$metadata#LogEntryCollection.LogEntryCollection", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries", "@odata.type": "#LogEntryCollection.LogEntryCollection", "Name": "Log Entry Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1"}]}, "/Managers/1/LogServices/Sel/Entries": {"@odata.context": "/redfish/v1/$metadata#LogEntryCollection.LogEntryCollection", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries", "@odata.type": "#LogEntryCollection.LogEntryCollection", "Name": "Log Entry Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1"}]}, "Managers/1/LogServices/Sel/Entries": {"@odata.context": "/redfish/v1/$metadata#LogEntryCollection.LogEntryCollection", "@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries", "@odata.type": "#LogEntryCollection.LogEntryCollection", "Name": "Log Entry Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1/LogServices/Sel/Entries/1"}]}, "/redfish/v1/Managers/1": {"@odata.context": "/redfish/v1/$metadata#Manager.Manager", "@odata.id": "/redfish/v1/Managers/1", "@odata.type": "#Manager.v1_9_0.Manager", "Id": "1", "Name": "Manager", "ManagerType": "BMC", "FirmwareVersion": "TEE142M-2.41", "Status": {"Health": "OK", "State": "Enabled"}, "VirtualMedia": {"@odata.id": "/redfish/v1/Managers/1/VirtualMedia"}, "LogServices": {"@odata.id": "/redfish/v1/Managers/1/LogServices"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces"}, "HostInterfaces": {"@odata.id": "/redfish/v1/Managers/1/HostInterfaces"}, "SerialInterfaces": {"@odata.id": "/redfish/v1/Managers/1/SerialInterfaces"}, "NetworkProtocol": {"@odata.id": "/redfish/v1/Managers/1/NetworkProtocol"}, "Actions": {"#Manager.Reset": {"target": "/redfish/v1/Managers/1/Actions/Manager.Reset", "ResetType@Redfish.AllowableValues": ["GracefulRestart", "ForceRestart"]}, "#Manager.ResetToDefaults": {"target": "/redfish/v1/Managers/1/Actions/Manager.ResetToDefaults", "ResetType@Redfish.AllowableValues": ["ResetAll"]}}, "Model": "Lenovo XClarity Controller"}, "redfish/v1/Managers/1": {"@odata.context": "/redfish/v1/$metadata#Manager.Manager", "@odata.id": "/redfish/v1/Managers/1", "@odata.type": "#Manager.v1_9_0.Manager", "Id": "1", "Name": "Manager", "ManagerType": "BMC", "FirmwareVersion": "TEE142M-2.41", "Status": {"Health": "OK", "State": "Enabled"}, "VirtualMedia": {"@odata.id": "/redfish/v1/Managers/1/VirtualMedia"}, "LogServices": {"@odata.id": "/redfish/v1/Managers/1/LogServices"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces"}, "HostInterfaces": {"@odata.id": "/redfish/v1/Managers/1/HostInterfaces"}, "SerialInterfaces": {"@odata.id": "/redfish/v1/Managers/1/SerialInterfaces"}, "NetworkProtocol": {"@odata.id": "/redfish/v1/Managers/1/NetworkProtocol"}, "Actions": {"#Manager.Reset": {"target": "/redfish/v1/Managers/1/Actions/Manager.Reset", "ResetType@Redfish.AllowableValues": ["GracefulRestart", "ForceRestart"]}, "#Manager.ResetToDefaults": {"target": "/redfish/v1/Managers/1/Actions/Manager.ResetToDefaults", "ResetType@Redfish.AllowableValues": ["ResetAll"]}}, "Model": "Lenovo XClarity Controller"}, "/Managers/1": {"@odata.context": "/redfish/v1/$metadata#Manager.Manager", "@odata.id": "/redfish/v1/Managers/1", "@odata.type": "#Manager.v1_9_0.Manager", "Id": "1", "Name": "Manager", "ManagerType": "BMC", "FirmwareVersion": "TEE142M-2.41", "Status": {"Health": "OK", "State": "Enabled"}, "VirtualMedia": {"@odata.id": "/redfish/v1/Managers/1/VirtualMedia"}, "LogServices": {"@odata.id": "/redfish/v1/Managers/1/LogServices"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces"}, "HostInterfaces": {"@odata.id": "/redfish/v1/Managers/1/HostInterfaces"}, "SerialInterfaces": {"@odata.id": "/redfish/v1/Managers/1/SerialInterfaces"}, "NetworkProtocol": {"@odata.id": "/redfish/v1/Managers/1/NetworkProtocol"}, "Actions": {"#Manager.Reset": {"target": "/redfish/v1/Managers/1/Actions/Manager.Reset", "ResetType@Redfish.AllowableValues": ["GracefulRestart", "ForceRestart"]}, "#Manager.ResetToDefaults": {"target": "/redfish/v1/Managers/1/Actions/Manager.ResetToDefaults", "ResetType@Redfish.AllowableValues": ["ResetAll"]}}, "Model": "Lenovo XClarity Controller"}, "Managers/1": {"@odata.context": "/redfish/v1/$metadata#Manager.Manager", "@odata.id": "/redfish/v1/Managers/1", "@odata.type": "#Manager.v1_9_0.Manager", "Id": "1", "Name": "Manager", "ManagerType": "BMC", "FirmwareVersion": "TEE142M-2.41", "Status": {"Health": "OK", "State": "Enabled"}, "VirtualMedia": {"@odata.id": "/redfish/v1/Managers/1/VirtualMedia"}, "LogServices": {"@odata.id": "/redfish/v1/Managers/1/LogServices"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces"}, "HostInterfaces": {"@odata.id": "/redfish/v1/Managers/1/HostInterfaces"}, "SerialInterfaces": {"@odata.id": "/redfish/v1/Managers/1/SerialInterfaces"}, "NetworkProtocol": {"@odata.id": "/redfish/v1/Managers/1/NetworkProtocol"}, "Actions": {"#Manager.Reset": {"target": "/redfish/v1/Managers/1/Actions/Manager.Reset", "ResetType@Redfish.AllowableValues": ["GracefulRestart", "ForceRestart"]}, "#Manager.ResetToDefaults": {"target": "/redfish/v1/Managers/1/Actions/Manager.ResetToDefaults", "ResetType@Redfish.AllowableValues": ["ResetAll"]}}, "Model": "Lenovo XClarity Controller"}, "/redfish/v1/Managers": {"@odata.id": "/redfish/v1/Managers", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1"}]}, "redfish/v1/Managers": {"@odata.id": "/redfish/v1/Managers", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1"}]}, "/Managers": {"@odata.id": "/redfish/v1/Managers", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1"}]}, "Managers": {"@odata.id": "/redfish/v1/Managers", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Managers/1"}]}, "/redfish/v1/Systems/1/Bios": {"@odata.context": "/redfish/v1/$metadata#Bios.Bios", "@odata.id": "/redfish/v1/Systems/1/Bios", "@odata.type": "#Bios.v1_2_0.Bios", "@odata.etag": "\"6c40cc24cc1762f085cb94\"", "Id": "Bios", "Name": "Bios", "Description": "System Bios", "AttributeRegistry": "BiosAttributeRegistry.1.0.0", "@Redfish.Settings": {"SettingsObject": {"@odata.id": "/redfish/v1/Systems/1/Bios/Pending"}, "SupportedApplyTimes": ["OnReset"], "@odata.type": "#Settings.v1_3_3.Settings"}, "Attributes": {"BootModes_SystemBootMode": "UEFIMode", "Processors_HyperThreading": "Enabled", "Memory_MemorySpeed": "MaximumPerformance", "OperatingModes_ChooseOperatingMode": "Efficiency_FavorPerformance", "SecureBootConfiguration_SecureBootSetting": "Disabled", "DevicesandIOPorts_IntelVMDTechnology": "Disabled"}, "Actions": {"#Bios.ResetBios": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ResetBios"}, "#Bios.ChangePassword": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ChangePassword"}}}, "redfish/v1/Systems/1/Bios": {"@odata.context": "/redfish/v1/$metadata#Bios.Bios", "@odata.id": "/redfish/v1/Systems/1/Bios", "@odata.type": "#Bios.v1_2_0.Bios", "@odata.etag": "\"6c40cc24cc1762f085cb94\"", "Id": "Bios", "Name": "Bios", "Description": "System Bios", "AttributeRegistry": "BiosAttributeRegistry.1.0.0", "@Redfish.Settings": {"SettingsObject": {"@odata.id": "/redfish/v1/Systems/1/Bios/Pending"}, "SupportedApplyTimes": ["OnReset"], "@odata.type": "#Settings.v1_3_3.Settings"}, "Attributes": {"BootModes_SystemBootMode": "UEFIMode", "Processors_HyperThreading": "Enabled", "Memory_MemorySpeed": "MaximumPerformance", "OperatingModes_ChooseOperatingMode": "Efficiency_FavorPerformance", "SecureBootConfiguration_SecureBootSetting": "Disabled", "DevicesandIOPorts_IntelVMDTechnology": "Disabled"}, "Actions": {"#Bios.ResetBios": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ResetBios"}, "#Bios.ChangePassword": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ChangePassword"}}}, "/Systems/1/Bios": {"@odata.context": "/redfish/v1/$metadata#Bios.Bios", "@odata.id": "/redfish/v1/Systems/1/Bios", "@odata.type": "#Bios.v1_2_0.Bios", "@odata.etag": "\"6c40cc24cc1762f085cb94\"", "Id": "Bios", "Name": "Bios", "Description": "System Bios", "AttributeRegistry": "BiosAttributeRegistry.1.0.0", "@Redfish.Settings": {"SettingsObject": {"@odata.id": "/redfish/v1/Systems/1/Bios/Pending"}, "SupportedApplyTimes": ["OnReset"], "@odata.type": "#Settings.v1_3_3.Settings"}, "Attributes": {"BootModes_SystemBootMode": "UEFIMode", "Processors_HyperThreading": "Enabled", "Memory_MemorySpeed": "MaximumPerformance", "OperatingModes_ChooseOperatingMode": "Efficiency_FavorPerformance", "SecureBootConfiguration_SecureBootSetting": "Disabled", "DevicesandIOPorts_IntelVMDTechnology": "Disabled"}, "Actions": {"#Bios.ResetBios": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ResetBios"}, "#Bios.ChangePassword": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ChangePassword"}}}, "Systems/1/Bios": {"@odata.context": "/redfish/v1/$metadata#Bios.Bios", "@odata.id": "/redfish/v1/Systems/1/Bios", "@odata.type": "#Bios.v1_2_0.Bios", "@odata.etag": "\"6c40cc24cc1762f085cb94\"", "Id": "Bios", "Name": "Bios", "Description": "System Bios", "AttributeRegistry": "BiosAttributeRegistry.1.0.0", "@Redfish.Settings": {"SettingsObject": {"@odata.id": "/redfish/v1/Systems/1/Bios/Pending"}, "SupportedApplyTimes": ["OnReset"], "@odata.type": "#Settings.v1_3_3.Settings"}, "Attributes": {"BootModes_SystemBootMode": "UEFIMode", "Processors_HyperThreading": "Enabled", "Memory_MemorySpeed": "MaximumPerformance", "OperatingModes_ChooseOperatingMode": "Efficiency_FavorPerformance", "SecureBootConfiguration_SecureBootSetting": "Disabled", "DevicesandIOPorts_IntelVMDTechnology": "Disabled"}, "Actions": {"#Bios.ResetBios": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ResetBios"}, "#Bios.ChangePassword": {"target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ChangePassword"}}}, "/redfish/v1/Systems/1/Memory": {"@odata.context": "/redfish/v1/$metadata#MemoryCollection.MemoryCollection", "@odata.id": "/redfish/v1/Systems/1/Memory", "@odata.type": "#MemoryCollection.MemoryCollection", "Name": "Memory Module Collection", "Members@odata.count": 16, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Memory/DIMM1"}]}, "redfish/v1/Systems/1/Memory": {"@odata.context": "/redfish/v1/$metadata#MemoryCollection.MemoryCollection", "@odata.id": "/redfish/v1/Systems/1/Memory", "@odata.type": "#MemoryCollection.MemoryCollection", "Name": "Memory Module Collection", "Members@odata.count": 16, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Memory/DIMM1"}]}, "/Systems/1/Memory": {"@odata.context": "/redfish/v1/$metadata#MemoryCollection.MemoryCollection", "@odata.id": "/redfish/v1/Systems/1/Memory", "@odata.type": "#MemoryCollection.MemoryCollection", "Name": "Memory Module Collection", "Members@odata.count": 16, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Memory/DIMM1"}]}, "Systems/1/Memory": {"@odata.context": "/redfish/v1/$metadata#MemoryCollection.MemoryCollection", "@odata.id": "/redfish/v1/Systems/1/Memory", "@odata.type": "#MemoryCollection.MemoryCollection", "Name": "Memory Module Collection", "Members@odata.count": 16, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Memory/DIMM1"}]}, "/redfish/v1/Systems/1/Processors/1": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/1", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "1", "Name": "CPU 1", "Socket": "CPU 1", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "redfish/v1/Systems/1/Processors/1": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/1", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "1", "Name": "CPU 1", "Socket": "CPU 1", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "/Systems/1/Processors/1": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/1", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "1", "Name": "CPU 1", "Socket": "CPU 1", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "Systems/1/Processors/1": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/1", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "1", "Name": "CPU 1", "Socket": "CPU 1", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "/redfish/v1/Systems/1/Processors/2": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/2", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "2", "Name": "CPU 2", "Socket": "CPU 2", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "redfish/v1/Systems/1/Processors/2": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/2", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "2", "Name": "CPU 2", "Socket": "CPU 2", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "/Systems/1/Processors/2": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/2", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "2", "Name": "CPU 2", "Socket": "CPU 2", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "Systems/1/Processors/2": {"@odata.context": "/redfish/v1/$metadata#Processor.Processor", "@odata.id": "/redfish/v1/Systems/1/Processors/2", "@odata.type": "#Processor.v1_7_0.Processor", "Id": "2", "Name": "CPU 2", "Socket": "CPU 2", "ProcessorType": "CPU", "ProcessorArchitecture": "x86", "InstructionSet": "x86-64", "Manufacturer": "Intel", "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "TotalCores": 28, "TotalThreads": 56, "Status": {"Health": "OK", "State": "Enabled"}}, "/redfish/v1/Systems/1/Processors": {"@odata.context": "/redfish/v1/$metadata#ProcessorCollection.ProcessorCollection", "@odata.id": "/redfish/v1/Systems/1/Processors", "@odata.type": "#ProcessorCollection.ProcessorCollection", "Name": "Processors Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Processors/1"}, {"@odata.id": "/redfish/v1/Systems/1/Processors/2"}]}, "redfish/v1/Systems/1/Processors": {"@odata.context": "/redfish/v1/$metadata#ProcessorCollection.ProcessorCollection", "@odata.id": "/redfish/v1/Systems/1/Processors", "@odata.type": "#ProcessorCollection.ProcessorCollection", "Name": "Processors Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Processors/1"}, {"@odata.id": "/redfish/v1/Systems/1/Processors/2"}]}, "/Systems/1/Processors": {"@odata.context": "/redfish/v1/$metadata#ProcessorCollection.ProcessorCollection", "@odata.id": "/redfish/v1/Systems/1/Processors", "@odata.type": "#ProcessorCollection.ProcessorCollection", "Name": "Processors Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Processors/1"}, {"@odata.id": "/redfish/v1/Systems/1/Processors/2"}]}, "Systems/1/Processors": {"@odata.context": "/redfish/v1/$metadata#ProcessorCollection.ProcessorCollection", "@odata.id": "/redfish/v1/Systems/1/Processors", "@odata.type": "#ProcessorCollection.ProcessorCollection", "Name": "Processors Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Processors/1"}, {"@odata.id": "/redfish/v1/Systems/1/Processors/2"}]}, "/redfish/v1/Systems/1/SecureBoot": {"@odata.context": "/redfish/v1/$metadata#SecureBoot.SecureBoot", "@odata.id": "/redfish/v1/Systems/1/SecureBoot", "@odata.type": "#SecureBoot.v1_0_4.SecureBoot", "Id": "SecureBoot", "Name": "UEFI Secure Boot", "SecureBootEnable": true, "SecureBootCurrentBoot": "Disabled", "SecureBootMode": "SetupMode", "Actions": {"#SecureBoot.ResetKeys": {"target": "/redfish/v1/Systems/1/SecureBoot/Actions/SecureBoot.ResetKeys", "title": "ResetKeys", "@Redfish.ActionInfo": "/redfish/v1/Systems/1/SecureBoot/ResetKeysActionInfo"}}}, "redfish/v1/Systems/1/SecureBoot": {"@odata.context": "/redfish/v1/$metadata#SecureBoot.SecureBoot", "@odata.id": "/redfish/v1/Systems/1/SecureBoot", "@odata.type": "#SecureBoot.v1_0_4.SecureBoot", "Id": "SecureBoot", "Name": "UEFI Secure Boot", "SecureBootEnable": true, "SecureBootCurrentBoot": "Disabled", "SecureBootMode": "SetupMode", "Actions": {"#SecureBoot.ResetKeys": {"target": "/redfish/v1/Systems/1/SecureBoot/Actions/SecureBoot.ResetKeys", "title": "ResetKeys", "@Redfish.ActionInfo": "/redfish/v1/Systems/1/SecureBoot/ResetKeysActionInfo"}}}, "/Systems/1/SecureBoot": {"@odata.context": "/redfish/v1/$metadata#SecureBoot.SecureBoot", "@odata.id": "/redfish/v1/Systems/1/SecureBoot", "@odata.type": "#SecureBoot.v1_0_4.SecureBoot", "Id": "SecureBoot", "Name": "UEFI Secure Boot", "SecureBootEnable": true, "SecureBootCurrentBoot": "Disabled", "SecureBootMode": "SetupMode", "Actions": {"#SecureBoot.ResetKeys": {"target": "/redfish/v1/Systems/1/SecureBoot/Actions/SecureBoot.ResetKeys", "title": "ResetKeys", "@Redfish.ActionInfo": "/redfish/v1/Systems/1/SecureBoot/ResetKeysActionInfo"}}}, "Systems/1/SecureBoot": {"@odata.context": "/redfish/v1/$metadata#SecureBoot.SecureBoot", "@odata.id": "/redfish/v1/Systems/1/SecureBoot", "@odata.type": "#SecureBoot.v1_0_4.SecureBoot", "Id": "SecureBoot", "Name": "UEFI Secure Boot", "SecureBootEnable": true, "SecureBootCurrentBoot": "Disabled", "SecureBootMode": "SetupMode", "Actions": {"#SecureBoot.ResetKeys": {"target": "/redfish/v1/Systems/1/SecureBoot/Actions/SecureBoot.ResetKeys", "title": "ResetKeys", "@Redfish.ActionInfo": "/redfish/v1/Systems/1/SecureBoot/ResetKeysActionInfo"}}}, "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "Id": "Disk.0", "Name": "Drive 0", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "Id": "Disk.0", "Name": "Drive 0", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "/Systems/1/Storage/RAID_Slot1/Drives/Disk.0": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "Id": "Disk.0", "Name": "Drive 0", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "Systems/1/Storage/RAID_Slot1/Drives/Disk.0": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0", "Id": "Disk.0", "Name": "Drive 0", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "Id": "Disk.1", "Name": "Drive 1", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "Id": "Disk.1", "Name": "Drive 1", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "/Systems/1/Storage/RAID_Slot1/Drives/Disk.1": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "Id": "Disk.1", "Name": "Drive 1", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "Systems/1/Storage/RAID_Slot1/Drives/Disk.1": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1", "Id": "Disk.1", "Name": "Drive 1", "Model": "MZQL21T9HCJR-00A07", "Manufacturer": "Samsung", "MediaType": "SSD", "Protocol": "NVMe", "CapacityBytes": 1920383410176, "Status": {"Health": "OK", "State": "Enabled"}, "Oem": {"Lenovo": {"Drive": {"PowerOnHours": 5420, "DriveErrorCount": 0, "PartNumber": "4XB7A17076"}}}}, "/redfish/v1/Systems/1/Storage/RAID_Slot1": {"@odata.context": "/redfish/v1/$metadata#Storage.Storage", "@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1", "@odata.type": "#Storage.v1_9_0.Storage", "Id": "RAID_Slot1", "Name": "RAID Controller", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "StorageControllers": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1#/StorageControllers/0", "MemberId": "0", "Name": "ThinkSystem RAID 930-8i", "Manufacturer": "Lenovo", "Model": "ThinkSystem RAID 930-8i 2GB Flash", "FirmwareVersion": "51.13.0-3151", "Status": {"Health": "OK", "State": "Enabled"}}], "Drives@odata.count": 2, "Drives": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0"}, {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1"}], "Volumes": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Volumes"}}, "redfish/v1/Systems/1/Storage/RAID_Slot1": {"@odata.context": "/redfish/v1/$metadata#Storage.Storage", "@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1", "@odata.type": "#Storage.v1_9_0.Storage", "Id": "RAID_Slot1", "Name": "RAID Controller", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "StorageControllers": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1#/StorageControllers/0", "MemberId": "0", "Name": "ThinkSystem RAID 930-8i", "Manufacturer": "Lenovo", "Model": "ThinkSystem RAID 930-8i 2GB Flash", "FirmwareVersion": "51.13.0-3151", "Status": {"Health": "OK", "State": "Enabled"}}], "Drives@odata.count": 2, "Drives": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0"}, {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1"}], "Volumes": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Volumes"}}, "/Systems/1/Storage/RAID_Slot1": {"@odata.context": "/redfish/v1/$metadata#Storage.Storage", "@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1", "@odata.type": "#Storage.v1_9_0.Storage", "Id": "RAID_Slot1", "Name": "RAID Controller", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "StorageControllers": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1#/StorageControllers/0", "MemberId": "0", "Name": "ThinkSystem RAID 930-8i", "Manufacturer": "Lenovo", "Model": "ThinkSystem RAID 930-8i 2GB Flash", "FirmwareVersion": "51.13.0-3151", "Status": {"Health": "OK", "State": "Enabled"}}], "Drives@odata.count": 2, "Drives": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0"}, {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1"}], "Volumes": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Volumes"}}, "Systems/1/Storage/RAID_Slot1": {"@odata.context": "/redfish/v1/$metadata#Storage.Storage", "@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1", "@odata.type": "#Storage.v1_9_0.Storage", "Id": "RAID_Slot1", "Name": "RAID Controller", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "StorageControllers": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1#/StorageControllers/0", "MemberId": "0", "Name": "ThinkSystem RAID 930-8i", "Manufacturer": "Lenovo", "Model": "ThinkSystem RAID 930-8i 2GB Flash", "FirmwareVersion": "51.13.0-3151", "Status": {"Health": "OK", "State": "Enabled"}}], "Drives@odata.count": 2, "Drives": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.0"}, {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Drives/Disk.1"}], "Volumes": {"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1/Volumes"}}, "/redfish/v1/Systems/1/Storage": {"@odata.context": "/redfish/v1/$metadata#StorageCollection.StorageCollection", "@odata.id": "/redfish/v1/Systems/1/Storage", "@odata.type": "#StorageCollection.StorageCollection", "Description": "Collection of Storage resource instances", "Name": "Storage Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1"}]}, "redfish/v1/Systems/1/Storage": {"@odata.context": "/redfish/v1/$metadata#StorageCollection.StorageCollection", "@odata.id": "/redfish/v1/Systems/1/Storage", "@odata.type": "#StorageCollection.StorageCollection", "Description": "Collection of Storage resource instances", "Name": "Storage Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1"}]}, "/Systems/1/Storage": {"@odata.context": "/redfish/v1/$metadata#StorageCollection.StorageCollection", "@odata.id": "/redfish/v1/Systems/1/Storage", "@odata.type": "#StorageCollection.StorageCollection", "Description": "Collection of Storage resource instances", "Name": "Storage Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1"}]}, "Systems/1/Storage": {"@odata.context": "/redfish/v1/$metadata#StorageCollection.StorageCollection", "@odata.id": "/redfish/v1/Systems/1/Storage", "@odata.type": "#StorageCollection.StorageCollection", "Description": "Collection of Storage resource instances", "Name": "Storage Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/RAID_Slot1"}]}, "/redfish/v1/Systems/1": {"@odata.context": "/redfish/v1/$metadata#ComputerSystem.ComputerSystem", "@odata.id": "/redfish/v1/Systems/1", "@odata.type": "#ComputerSystem.v1_10_0.ComputerSystem", "Id": "1", "Name": "System", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR630 V2", "SKU": "SKU-AC23AF", "SerialNumber": "SN-F91643", "UUID": "4c4c4544-0000-0000-0000-000000000001", "PowerState": "On", "SystemType": "Physical", "BiosVersion": "TEE142M-2.41", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "BootProgress": {"LastState": "SystemHardwareInitializationComplete"}, "Bios": {"@odata.id": "/redfish/v1/Systems/1/Bios"}, "SecureBoot": {"@odata.id": "/redfish/v1/Systems/1/SecureBoot"}, "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces"}, "Boot": {"BootSourceOverrideEnabled": "Once", "BootSourceOverrideMode": "Legacy", "BootSourceOverrideTarget": "Hdd", "BootSourceOverrideTarget@Redfish.AllowableValues": ["None", "Pxe", "Cd", "Hdd", "BiosSetup"], "BootSourceOverrideEnabled@Redfish.AllowableValues": ["Once", "Disabled"], "UefiTargetBootSourceOverride": null}, "Actions": {"#ComputerSystem.Reset": {"target": "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", "ResetType@Redfish.AllowableValues": ["On", "ForceOff", "GracefulShutdown", "GracefulRestart", "ForceRestart", "Nmi", "ForceOn"]}}, "Links": {"ManagedBy": [{"@odata.id": "/redfish/v1/Managers/1"}], "Chassis": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "MemorySummary": {"TotalSystemMemoryGiB": 512, "Status": {"Health": "OK", "State": "Enabled"}}, "ProcessorSummary": {"Count": 2, "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "Status": {"Health": "OK", "State": "Enabled"}}, "TrustedModules": [{"InterfaceType": "TPM2_0", "FirmwareVersion": "7.2.1", "Status": {"State": "Enabled", "Health": "OK"}}], "Processors": {"@odata.id": "/redfish/v1/Systems/1/Processors"}, "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory"}}, "redfish/v1/Systems/1": {"@odata.context": "/redfish/v1/$metadata#ComputerSystem.ComputerSystem", "@odata.id": "/redfish/v1/Systems/1", "@odata.type": "#ComputerSystem.v1_10_0.ComputerSystem", "Id": "1", "Name": "System", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR630 V2", "SKU": "SKU-AC23AF", "SerialNumber": "SN-F91643", "UUID": "4c4c4544-0000-0000-0000-000000000001", "PowerState": "On", "SystemType": "Physical", "BiosVersion": "TEE142M-2.41", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "BootProgress": {"LastState": "SystemHardwareInitializationComplete"}, "Bios": {"@odata.id": "/redfish/v1/Systems/1/Bios"}, "SecureBoot": {"@odata.id": "/redfish/v1/Systems/1/SecureBoot"}, "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces"}, "Boot": {"BootSourceOverrideEnabled": "Once", "BootSourceOverrideMode": "Legacy", "BootSourceOverrideTarget": "Hdd", "BootSourceOverrideTarget@Redfish.AllowableValues": ["None", "Pxe", "Cd", "Hdd", "BiosSetup"], "BootSourceOverrideEnabled@Redfish.AllowableValues": ["Once", "Disabled"], "UefiTargetBootSourceOverride": null}, "Actions": {"#ComputerSystem.Reset": {"target": "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", "ResetType@Redfish.AllowableValues": ["On", "ForceOff", "GracefulShutdown", "GracefulRestart", "ForceRestart", "Nmi", "ForceOn"]}}, "Links": {"ManagedBy": [{"@odata.id": "/redfish/v1/Managers/1"}], "Chassis": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "MemorySummary": {"TotalSystemMemoryGiB": 512, "Status": {"Health": "OK", "State": "Enabled"}}, "ProcessorSummary": {"Count": 2, "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "Status": {"Health": "OK", "State": "Enabled"}}, "TrustedModules": [{"InterfaceType": "TPM2_0", "FirmwareVersion": "7.2.1", "Status": {"State": "Enabled", "Health": "OK"}}], "Processors": {"@odata.id": "/redfish/v1/Systems/1/Processors"}, "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory"}}, "/Systems/1": {"@odata.context": "/redfish/v1/$metadata#ComputerSystem.ComputerSystem", "@odata.id": "/redfish/v1/Systems/1", "@odata.type": "#ComputerSystem.v1_10_0.ComputerSystem", "Id": "1", "Name": "System", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR630 V2", "SKU": "SKU-AC23AF", "SerialNumber": "SN-F91643", "UUID": "4c4c4544-0000-0000-0000-000000000001", "PowerState": "On", "SystemType": "Physical", "BiosVersion": "TEE142M-2.41", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "BootProgress": {"LastState": "SystemHardwareInitializationComplete"}, "Bios": {"@odata.id": "/redfish/v1/Systems/1/Bios"}, "SecureBoot": {"@odata.id": "/redfish/v1/Systems/1/SecureBoot"}, "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces"}, "Boot": {"BootSourceOverrideEnabled": "Once", "BootSourceOverrideMode": "Legacy", "BootSourceOverrideTarget": "Hdd", "BootSourceOverrideTarget@Redfish.AllowableValues": ["None", "Pxe", "Cd", "Hdd", "BiosSetup"], "BootSourceOverrideEnabled@Redfish.AllowableValues": ["Once", "Disabled"], "UefiTargetBootSourceOverride": null}, "Actions": {"#ComputerSystem.Reset": {"target": "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", "ResetType@Redfish.AllowableValues": ["On", "ForceOff", "GracefulShutdown", "GracefulRestart", "ForceRestart", "Nmi", "ForceOn"]}}, "Links": {"ManagedBy": [{"@odata.id": "/redfish/v1/Managers/1"}], "Chassis": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "MemorySummary": {"TotalSystemMemoryGiB": 512, "Status": {"Health": "OK", "State": "Enabled"}}, "ProcessorSummary": {"Count": 2, "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "Status": {"Health": "OK", "State": "Enabled"}}, "TrustedModules": [{"InterfaceType": "TPM2_0", "FirmwareVersion": "7.2.1", "Status": {"State": "Enabled", "Health": "OK"}}], "Processors": {"@odata.id": "/redfish/v1/Systems/1/Processors"}, "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory"}}, "Systems/1": {"@odata.context": "/redfish/v1/$metadata#ComputerSystem.ComputerSystem", "@odata.id": "/redfish/v1/Systems/1", "@odata.type": "#ComputerSystem.v1_10_0.ComputerSystem", "Id": "1", "Name": "System", "Manufacturer": "Lenovo", "Model": "ThinkSystem SR630 V2", "SKU": "SKU-AC23AF", "SerialNumber": "SN-F91643", "UUID": "4c4c4544-0000-0000-0000-000000000001", "PowerState": "On", "SystemType": "Physical", "BiosVersion": "TEE142M-2.41", "Status": {"Health": "OK", "HealthRollup": "OK", "State": "Enabled"}, "BootProgress": {"LastState": "SystemHardwareInitializationComplete"}, "Bios": {"@odata.id": "/redfish/v1/Systems/1/Bios"}, "SecureBoot": {"@odata.id": "/redfish/v1/Systems/1/SecureBoot"}, "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage"}, "EthernetInterfaces": {"@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces"}, "Boot": {"BootSourceOverrideEnabled": "Once", "BootSourceOverrideMode": "Legacy", "BootSourceOverrideTarget": "Hdd", "BootSourceOverrideTarget@Redfish.AllowableValues": ["None", "Pxe", "Cd", "Hdd", "BiosSetup"], "BootSourceOverrideEnabled@Redfish.AllowableValues": ["Once", "Disabled"], "UefiTargetBootSourceOverride": null}, "Actions": {"#ComputerSystem.Reset": {"target": "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", "ResetType@Redfish.AllowableValues": ["On", "ForceOff", "GracefulShutdown", "GracefulRestart", "ForceRestart", "Nmi", "ForceOn"]}}, "Links": {"ManagedBy": [{"@odata.id": "/redfish/v1/Managers/1"}], "Chassis": [{"@odata.id": "/redfish/v1/Chassis/1"}]}, "MemorySummary": {"TotalSystemMemoryGiB": 512, "Status": {"Health": "OK", "State": "Enabled"}}, "ProcessorSummary": {"Count": 2, "Model": "Intel(R) Xeon(R) Gold 6330 CPU @ 2.00GHz", "Status": {"Health": "OK", "State": "Enabled"}}, "TrustedModules": [{"InterfaceType": "TPM2_0", "FirmwareVersion": "7.2.1", "Status": {"State": "Enabled", "Health": "OK"}}], "Processors": {"@odata.id": "/redfish/v1/Systems/1/Processors"}, "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory"}}, "/redfish/v1/Systems": {"@odata.context": "/redfish/v1/$metadata#ComputerSystemCollection.ComputerSystemCollection", "@odata.id": "/redfish/v1/Systems", "@odata.type": "#ComputerSystemCollection.ComputerSystemCollection", "Description": "Collection of Computer Systems", "Name": "Computer System Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1"}]}, "redfish/v1/Systems": {"@odata.context": "/redfish/v1/$metadata#ComputerSystemCollection.ComputerSystemCollection", "@odata.id": "/redfish/v1/Systems", "@odata.type": "#ComputerSystemCollection.ComputerSystemCollection", "Description": "Collection of Computer Systems", "Name": "Computer System Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1"}]}, "/Systems": {"@odata.context": "/redfish/v1/$metadata#ComputerSystemCollection.ComputerSystemCollection", "@odata.id": "/redfish/v1/Systems", "@odata.type": "#ComputerSystemCollection.ComputerSystemCollection", "Description": "Collection of Computer Systems", "Name": "Computer System Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1"}]}, "Systems": {"@odata.context": "/redfish/v1/$metadata#ComputerSystemCollection.ComputerSystemCollection", "@odata.id": "/redfish/v1/Systems", "@odata.type": "#ComputerSystemCollection.ComputerSystemCollection", "Description": "Collection of Computer Systems", "Name": "Computer System Collection", "Members@odata.count": 1, "Members": [{"@odata.id": "/redfish/v1/Systems/1"}]}, "/redfish/v1/UpdateService/FirmwareInventory/BMC": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "BMC", "Name": "Lenovo XClarity Controller Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "redfish/v1/UpdateService/FirmwareInventory/BMC": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "BMC", "Name": "Lenovo XClarity Controller Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "/UpdateService/FirmwareInventory/BMC": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "BMC", "Name": "Lenovo XClarity Controller Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "UpdateService/FirmwareInventory/BMC": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "BMC", "Name": "Lenovo XClarity Controller Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "/redfish/v1/UpdateService/FirmwareInventory/UEFI": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "UEFI", "Name": "ThinkSystem UEFI Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "redfish/v1/UpdateService/FirmwareInventory/UEFI": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "UEFI", "Name": "ThinkSystem UEFI Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "/UpdateService/FirmwareInventory/UEFI": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "UEFI", "Name": "ThinkSystem UEFI Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "UpdateService/FirmwareInventory/UEFI": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventory.SoftwareInventory", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI", "@odata.type": "#SoftwareInventory.v1_4_0.SoftwareInventory", "Id": "UEFI", "Name": "ThinkSystem UEFI Firmware", "Version": "TEE142M-2.41", "ReleaseDate": "2023-04-18", "Updateable": true, "Status": {"Health": "OK", "State": "Enabled"}}, "/redfish/v1/UpdateService/FirmwareInventory": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventoryCollection.SoftwareInventoryCollection", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory", "@odata.type": "#SoftwareInventoryCollection.SoftwareInventoryCollection", "Name": "Firmware Inventory Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI"}, {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC"}]}, "redfish/v1/UpdateService/FirmwareInventory": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventoryCollection.SoftwareInventoryCollection", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory", "@odata.type": "#SoftwareInventoryCollection.SoftwareInventoryCollection", "Name": "Firmware Inventory Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI"}, {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC"}]}, "/UpdateService/FirmwareInventory": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventoryCollection.SoftwareInventoryCollection", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory", "@odata.type": "#SoftwareInventoryCollection.SoftwareInventoryCollection", "Name": "Firmware Inventory Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI"}, {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC"}]}, "UpdateService/FirmwareInventory": {"@odata.context": "/redfish/v1/$metadata#SoftwareInventoryCollection.SoftwareInventoryCollection", "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory", "@odata.type": "#SoftwareInventoryCollection.SoftwareInventoryCollection", "Name": "Firmware Inventory Collection", "Members@odata.count": 2, "Members": [{"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI"}, {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC"}]}, "/redfish/v1/UpdateService": {"@odata.context": "/redfish/v1/$metadata#UpdateService.UpdateService", "@odata.id": "/redfish/v1/UpdateService", "@odata.type": "#UpdateService.v1_8_0.UpdateService", "Id": "UpdateService", "Name": "Update Service", "ServiceEnabled": true, "HttpPushUri": "/fwupdate", "MultipartHttpPushUri": "/mfwupdate", "HttpPushUriTargetsBusy": false, "HttpPushUriTargets": [], "FirmwareInventory": {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory"}, "Actions": {"#UpdateService.SimpleUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate"}, "#UpdateService.StartUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate"}}}, "redfish/v1/UpdateService": {"@odata.context": "/redfish/v1/$metadata#UpdateService.UpdateService", "@odata.id": "/redfish/v1/UpdateService", "@odata.type": "#UpdateService.v1_8_0.UpdateService", "Id": "UpdateService", "Name": "Update Service", "ServiceEnabled": true, "HttpPushUri": "/fwupdate", "MultipartHttpPushUri": "/mfwupdate", "HttpPushUriTargetsBusy": false, "HttpPushUriTargets": [], "FirmwareInventory": {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory"}, "Actions": {"#UpdateService.SimpleUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate"}, "#UpdateService.StartUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate"}}}, "/UpdateService": {"@odata.context": "/redfish/v1/$metadata#UpdateService.UpdateService", "@odata.id": "/redfish/v1/UpdateService", "@odata.type": "#UpdateService.v1_8_0.UpdateService", "Id": "UpdateService", "Name": "Update Service", "ServiceEnabled": true, "HttpPushUri": "/fwupdate", "MultipartHttpPushUri": "/mfwupdate", "HttpPushUriTargetsBusy": false, "HttpPushUriTargets": [], "FirmwareInventory": {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory"}, "Actions": {"#UpdateService.SimpleUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate"}, "#UpdateService.StartUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate"}}}, "UpdateService": {"@odata.context": "/redfish/v1/$metadata#UpdateService.UpdateService", "@odata.id": "/redfish/v1/UpdateService", "@odata.type": "#UpdateService.v1_8_0.UpdateService", "Id": "UpdateService", "Name": "Update Service", "ServiceEnabled": true, "HttpPushUri": "/fwupdate", "MultipartHttpPushUri": "/mfwupdate", "HttpPushUriTargetsBusy": false, "HttpPushUriTargets": [], "FirmwareInventory": {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory"}, "Actions": {"#UpdateService.SimpleUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate"}, "#UpdateService.StartUpdate": {"target": "/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate"}}}, "/redfish/v1": {"@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot", "@odata.id": "/redfish/v1/", "@odata.type": "#ServiceRoot.v1_5_0.ServiceRoot", "Id": "RootService", "Name": "Root Service", "Description": "This resource is used to represent a service root for a Redfish implementation.", "Vendor": "Lenovo", "Product": "ThinkSystem", "RedfishVersion": "1.15.0", "UUID": "4c4c4544-0000-0000-0000-000000000001", "AccountService": {"@odata.id": "/redfish/v1/AccountService"}, "CertificateService": {"@odata.id": "/redfish/v1/CertificateService"}, "Chassis": {"@odata.id": "/redfish/v1/Chassis"}, "EventService": {"@odata.id": "/redfish/v1/EventService"}, "JobService": {"@odata.id": "/redfish/v1/JobService"}, "JsonSchemas": {"@odata.id": "/redfish/v1/JsonSchemas"}, "Managers": {"@odata.id": "/redfish/v1/Managers"}, "Registries": {"@odata.id": "/redfish/v1/Registries"}, "SessionService": {"@odata.id": "/redfish/v1/SessionService"}, "Systems": {"@odata.id": "/redfish/v1/Systems"}, "Tasks": {"@odata.id": "/redfish/v1/TaskService"}, "TelemetryService": {"@odata.id": "/redfish/v1/TelemetryService"}, "UpdateService": {"@odata.id": "/redfish/v1/UpdateService"}, "Links": {"Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions"}}, "ProtocolFeaturesSupported": {"ExcerptQuery": true, "ExpandQuery": {"ExpandAll": true, "Levels": true, "Links": true, "MaxLevels": 2, "NoLinks": true}, "FilterQuery": true, "OnlyMemberQuery": true, "SelectQuery": true}}, "redfish/v1": {"@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot", "@odata.id": "/redfish/v1/", "@odata.type": "#ServiceRoot.v1_5_0.ServiceRoot", "Id": "RootService", "Name": "Root Service", "Description": "This resource is used to represent a service root for a Redfish implementation.", "Vendor": "Lenovo", "Product": "ThinkSystem", "RedfishVersion": "1.15.0", "UUID": "4c4c4544-0000-0000-0000-000000000001", "AccountService": {"@odata.id": "/redfish/v1/AccountService"}, "CertificateService": {"@odata.id": "/redfish/v1/CertificateService"}, "Chassis": {"@odata.id": "/redfish/v1/Chassis"}, "EventService": {"@odata.id": "/redfish/v1/EventService"}, "JobService": {"@odata.id": "/redfish/v1/JobService"}, "JsonSchemas": {"@odata.id": "/redfish/v1/JsonSchemas"}, "Managers": {"@odata.id": "/redfish/v1/Managers"}, "Registries": {"@odata.id": "/redfish/v1/Registries"}, "SessionService": {"@odata.id": "/redfish/v1/SessionService"}, "Systems": {"@odata.id": "/redfish/v1/Systems"}, "Tasks": {"@odata.id": "/redfish/v1/TaskService"}, "TelemetryService": {"@odata.id": "/redfish/v1/TelemetryService"}, "UpdateService": {"@odata.id": "/redfish/v1/UpdateService"}, "Links": {"Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions"}}, "ProtocolFeaturesSupported": {"ExcerptQuery": true, "ExpandQuery": {"ExpandAll": true, "Levels": true, "Links": true, "MaxLevels": 2, "NoLinks": true}, "FilterQuery": true, "OnlyMemberQuery": true, "SelectQuery": true}}, "/redfish/v1/": {"@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot", "@odata.id": "/redfish/v1/", "@odata.type": "#ServiceRoot.v1_5_0.ServiceRoot", "Id": "RootService", "Name": "Root Service", "Description": "This resource is used to represent a service root for a Redfish implementation.", "Vendor": "Lenovo", "Product": "ThinkSystem", "RedfishVersion": "1.15.0", "UUID": "4c4c4544-0000-0000-0000-000000000001", "AccountService": {"@odata.id": "/redfish/v1/AccountService"}, "CertificateService": {"@odata.id": "/redfish/v1/CertificateService"}, "Chassis": {"@odata.id": "/redfish/v1/Chassis"}, "EventService": {"@odata.id": "/redfish/v1/EventService"}, "JobService": {"@odata.id": "/redfish/v1/JobService"}, "JsonSchemas": {"@odata.id": "/redfish/v1/JsonSchemas"}, "Managers": {"@odata.id": "/redfish/v1/Managers"}, "Registries": {"@odata.id": "/redfish/v1/Registries"}, "SessionService": {"@odata.id": "/redfish/v1/SessionService"}, "Systems": {"@odata.id": "/redfish/v1/Systems"}, "Tasks": {"@odata.id": "/redfish/v1/TaskService"}, "TelemetryService": {"@odata.id": "/redfish/v1/TelemetryService"}, "UpdateService": {"@odata.id": "/redfish/v1/UpdateService"}, "Links": {"Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions"}}, "ProtocolFeaturesSupported": {"ExcerptQuery": true, "ExpandQuery": {"ExpandAll": true, "Levels": true, "Links": true, "MaxLevels": 2, "NoLinks": true}, "FilterQuery": true, "OnlyMemberQuery": true, "SelectQuery": true}}, "redfish/v1/": {"@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot", "@odata.id": "/redfish/v1/", "@odata.type": "#ServiceRoot.v1_5_0.ServiceRoot", "Id": "RootService", "Name": "Root Service", "Description": "This resource is used to represent a service root for a Redfish implementation.", "Vendor": "Lenovo", "Product": "ThinkSystem", "RedfishVersion": "1.15.0", "UUID": "4c4c4544-0000-0000-0000-000000000001", "AccountService": {"@odata.id": "/redfish/v1/AccountService"}, "CertificateService": {"@odata.id": "/redfish/v1/CertificateService"}, "Chassis": {"@odata.id": "/redfish/v1/Chassis"}, "EventService": {"@odata.id": "/redfish/v1/EventService"}, "JobService": {"@odata.id": "/redfish/v1/JobService"}, "JsonSchemas": {"@odata.id": "/redfish/v1/JsonSchemas"}, "Managers": {"@odata.id": "/redfish/v1/Managers"}, "Registries": {"@odata.id": "/redfish/v1/Registries"}, "SessionService": {"@odata.id": "/redfish/v1/SessionService"}, "Systems": {"@odata.id": "/redfish/v1/Systems"}, "Tasks": {"@odata.id": "/redfish/v1/TaskService"}, "TelemetryService": {"@odata.id": "/redfish/v1/TelemetryService"}, "UpdateService": {"@odata.id": "/redfish/v1/UpdateService"}, "Links": {"Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions"}}, "ProtocolFeaturesSupported": {"ExcerptQuery": true, "ExpandQuery": {"ExpandAll": true, "Levels": true, "Links": true, "MaxLevels": 2, "NoLinks": true}, "FilterQuery": true, "OnlyMemberQuery": true, "SelectQuery": true}}, "/": {"@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot", "@odata.id": "/redfish/v1/", "@odata.type": "#ServiceRoot.v1_5_0.ServiceRoot", "Id": "RootService", "Name": "Root Service", "Description": "This resource is used to represent a service root for a Redfish implementation.", "Vendor": "Lenovo", "Product": "ThinkSystem", "RedfishVersion": "1.15.0", "UUID": "4c4c4544-0000-0000-0000-000000000001", "AccountService": {"@odata.id": "/redfish/v1/AccountService"}, "CertificateService": {"@odata.id": "/redfish/v1/CertificateService"}, "Chassis": {"@odata.id": "/redfish/v1/Chassis"}, "EventService": {"@odata.id": "/redfish/v1/EventService"}, "JobService": {"@odata.id": "/redfish/v1/JobService"}, "JsonSchemas": {"@odata.id": "/redfish/v1/JsonSchemas"}, "Managers": {"@odata.id": "/redfish/v1/Managers"}, "Registries": {"@odata.id": "/redfish/v1/Registries"}, "SessionService": {"@odata.id": "/redfish/v1/SessionService"}, "Systems": {"@odata.id": "/redfish/v1/Systems"}, "Tasks": {"@odata.id": "/redfish/v1/TaskService"}, "TelemetryService": {"@odata.id": "/redfish/v1/TelemetryService"}, "UpdateService": {"@odata.id": "/redfish/v1/UpdateService"}, "Links": {"Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions"}}, "ProtocolFeaturesSupported": {"ExcerptQuery": true, "ExpandQuery": {"ExpandAll": true, "Levels": true, "Links": true, "MaxLevels": 2, "NoLinks": true}, "FilterQuery": true, "OnlyMemberQuery": true, "SelectQuery": true}}, "": {"@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot", "@odata.id": "/redfish/v1/", "@odata.type": "#ServiceRoot.v1_5_0.ServiceRoot", "Id": "RootService", "Name": "Root Service", "Description": "This resource is used to represent a service root for a Redfish implementation.", "Vendor": "Lenovo", "Product": "ThinkSystem", "RedfishVersion": "1.15.0", "UUID": "4c4c4544-0000-0000-0000-000000000001", "AccountService": {"@odata.id": "/redfish/v1/AccountService"}, "CertificateService": {"@odata.id": "/redfish/v1/CertificateService"}, "Chassis": {"@odata.id": "/redfish/v1/Chassis"}, "EventService": {"@odata.id": "/redfish/v1/EventService"}, "JobService": {"@odata.id": "/redfish/v1/JobService"}, "JsonSchemas": {"@odata.id": "/redfish/v1/JsonSchemas"}, "Managers": {"@odata.id": "/redfish/v1/Managers"}, "Registries": {"@odata.id": "/redfish/v1/Registries"}, "SessionService": {"@odata.id": "/redfish/v1/SessionService"}, "Systems": {"@odata.id": "/redfish/v1/Systems"}, "Tasks": {"@odata.id": "/redfish/v1/TaskService"}, "TelemetryService": {"@odata.id": "/redfish/v1/TelemetryService"}, "UpdateService": {"@odata.id": "/redfish/v1/UpdateService"}, "Links": {"Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions"}}, "ProtocolFeaturesSupported": {"ExcerptQuery": true, "ExpandQuery": {"ExpandAll": true, "Levels": true, "Links": true, "MaxLevels": 2, "NoLinks": true}, "FilterQuery": true, "OnlyMemberQuery": true, "SelectQuery": true}}}, "initial_uri": "/redfish/v1/Systems/1/Bios"}
+  </script>
+
+  <!-- Client-Side Navigation, Tree Rendering & Event Delegation -->
+  <script>
+    (function() {
+      var rawEl = document.getElementById('explorerData');
+      var data = JSON.parse(rawEl.textContent);
+
+      var host = data.host;
+      var fixtures = data.fixtures || [];
+      var tree = data.tree || {};
+      var vcfOps = data.vcf_ops || {};
+      var endpoints = data.endpoints || {};
+
+      var activeUri = data.initial_uri;
+      var activeFixtureId = fixtures.length > 0 ? fixtures[0].id : null;
+      var selectedJsonPath = '$';
+      var currentSearchTerm = '';
+      var jsonSearchTerm = '';
+
+      // Toast Notification Helper
+      function showToast(msg) {
+        var toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(function() { toast.classList.remove('show'); }, 2000);
+      }
+
+      // Clipboard Helper
+      function copyText(txt, successMsg) {
+        if (!navigator.clipboard) {
+          var ta = document.createElement('textarea');
+          ta.value = txt;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          showToast(successMsg || 'Copied to clipboard');
+          return;
+        }
+        navigator.clipboard.writeText(txt).then(function() {
+          showToast(successMsg || 'Copied to clipboard');
+        });
+      }
+
+      // Render Fixtures List
+      function renderFixtures() {
+        var container = document.getElementById('fixturesList');
+        var term = currentSearchTerm.toLowerCase();
+
+        var html = '';
+        for (var i = 0; i < fixtures.length; i++) {
+          var f = fixtures[i];
+          if (term) {
+            var blob = (f.category + ' ' + f.title + ' ' + f.subtitle + ' ' + f.resource_kind).toLowerCase();
+            if (blob.indexOf(term) === -1) continue;
+          }
+
+          var isActive = (f.id === activeFixtureId);
+          var activeClass = isActive ? ' active' : '';
+
+          html += '<div class="fixture-item' + activeClass + '" data-action="select-fixture" data-fixture-id="' + f.id + '">' +
+            '<div class="fixture-header">' +
+              '<span>' + f.icon + '</span>' +
+              '<span>' + f.category + '</span>' +
+            '</div>' +
+            '<div class="fixture-sub" style="font-weight:600; color:#fff;">' + f.title + '</div>' +
+            '<div class="fixture-sub">' + f.subtitle + '</div>' +
+            '<span class="fixture-badge">' + f.resource_kind + ' (' + (f.uris ? f.uris.length : 1) + ' endpoints)</span>' +
+          '</div>';
+        }
+
+        if (!html) {
+          container.innerHTML = '<div style="color:var(--text-muted); padding:16px; font-size:0.8rem;">No fixtures match query.</div>';
+          return;
+        }
+        container.innerHTML = html;
+      }
+
+      // Render Tree Hierarchy
+      function renderTree() {
+        var container = document.getElementById('treeList');
+        var term = currentSearchTerm.toLowerCase();
+
+        function renderNode(name, node, level) {
+          var hasChildren = node._children && Object.keys(node._children).length > 0;
+          var uri = node._uri;
+          var isActive = (uri === activeUri);
+          var activeClass = isActive ? ' active' : '';
+
+          var toggleIcon = hasChildren ? '▼' : '•';
+          var isEndpoint = (uri in endpoints);
+
+          if (term && uri.toLowerCase().indexOf(term) === -1) {
+            // check children
+            var matchChild = false;
+            for (var k in node._children) {
+              if (node._children[k]._uri.toLowerCase().indexOf(term) !== -1) {
+                matchChild = true; break;
+              }
+            }
+            if (!matchChild) return '';
+          }
+
+          var nodeHtml = '<div class="tree-node">' +
+            '<div class="tree-item' + activeClass + '" data-action="select-uri" data-uri="' + uri + '" title="' + uri + '">' +
+              '<span class="tree-toggle" data-action="toggle-tree">' + toggleIcon + '</span>' +
+              '<span style="font-weight:' + (isEndpoint ? '600' : '400') + '; color:' + (isEndpoint ? '#fff' : 'var(--text-muted)') + ';">' + name + '</span>' +
+            '</div>';
+
+          if (hasChildren) {
+            nodeHtml += '<div class="tree-children">';
+            for (var childName in node._children) {
+              nodeHtml += renderNode(childName, node._children[childName], level + 1);
+            }
+            nodeHtml += '</div>';
+          }
+
+          nodeHtml += '</div>';
+          return nodeHtml;
+        }
+
+        var treeHtml = '';
+        for (var rootKey in tree) {
+          treeHtml += renderNode(rootKey, tree[rootKey], 0);
+        }
+        container.innerHTML = treeHtml || '<div style="color:var(--text-muted); padding:16px; font-size:0.8rem;">No matching endpoints.</div>';
+      }
+
+      // Syntax Highlight JSON Helper
+      function formatAndHighlightJson(obj, filterTerm) {
+        var jsonStr = JSON.stringify(obj, null, 2);
+        if (!jsonStr) return '<span class="json-null">null</span>';
+
+        // Escape HTML
+        jsonStr = jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        // Tokenize JSON
+        var tokenRegex = /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g;
+
+        var highlighted = jsonStr.replace(tokenRegex, function (match) {
+          var cls = 'json-number';
+          if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+              cls = 'json-key';
+              var cleanKey = match.slice(1, -2);
+              return '<span class="' + cls + '" data-action="click-json-key" data-key="' + cleanKey + '">' + match.slice(0, -1) + '</span>:';
+            } else {
+              cls = 'json-string';
+            }
+          } else if (/true|false/.test(match)) {
+            cls = 'json-boolean';
+          } else if (/null/.test(match)) {
+            cls = 'json-null';
+          }
+          return '<span class="' + cls + '">' + match + '</span>';
+        });
+
+        if (filterTerm) {
+          var escFilter = filterTerm.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          var re = new RegExp('(' + escFilter + ')', 'gi');
+          highlighted = highlighted.replace(re, '<mark class="json-highlight">$1</mark>');
+        }
+
+        return highlighted;
+      }
+
+      // Load Selected Endpoint
+      function loadEndpoint(uri) {
+        activeUri = uri;
+        document.getElementById('bannerUri').textContent = uri;
+
+        var payload = endpoints[uri];
+        if (!payload) {
+          document.getElementById('bannerOdataType').textContent = 'Endpoint not found in capture';
+          document.getElementById('bannerStatus').textContent = '404 Missing';
+          document.getElementById('jsonViewer').innerHTML = '<span style="color:var(--text-muted)">No payload captured for this URI.</span>';
+          return;
+        }
+
+        document.getElementById('bannerStatus').textContent = '200 OK';
+        var odataType = payload['@odata.type'] || payload['@odata.context'] || '#RedfishResource.v1.Payload';
+        document.getElementById('bannerOdataType').textContent = 'Type: ' + odataType;
+
+        // Render JSON
+        document.getElementById('jsonViewer').innerHTML = formatAndHighlightJson(payload, jsonSearchTerm);
+        document.getElementById('currentJsonPath').textContent = '$';
+        selectedJsonPath = '$';
+
+        // Update VCF Ops monitoring card
+        updateVcfOpsCard(uri, payload);
+
+        // Update active class in tree
+        var treeItems = document.querySelectorAll('.tree-item');
+        for (var t = 0; t < treeItems.length; t++) {
+          if (treeItems[t].getAttribute('data-uri') === uri) {
+            treeItems[t].classList.add('active');
+          } else {
+            treeItems[t].classList.remove('active');
+          }
+        }
+      }
+
+      // Update VCF Operations Card based on URI
+      function updateVcfOpsCard(uri, payload) {
+        var uLow = uri.toLowerCase();
+        var kind = 'PhysicalServer';
+        if (uLow.indexOf('/processors') !== -1) kind = 'Processor';
+        else if (uLow.indexOf('/drives') !== -1 || uLow.indexOf('/storage') !== -1) kind = 'PhysicalDrive';
+        else if (uLow.indexOf('/networkadapters') !== -1 || uLow.indexOf('/ethernet') !== -1) kind = 'NetworkAdapter';
+        else if (uLow.indexOf('/power') !== -1 || uLow.indexOf('/psu') !== -1) kind = 'PowerSupplyUnit';
+
+        var rkDef = (vcfOps.resource_kinds || {})[kind];
+        if (!rkDef) rkDef = (vcfOps.resource_kinds || {})['PhysicalServer'];
+
+        document.getElementById('vcfResourceKindBadge').textContent = rkDef.name;
+        document.getElementById('vcfResourceKindDesc').textContent = rkDef.description;
+
+        var metrics = rkDef.metrics || [];
+        var rowsHtml = '';
+        for (var m = 0; m < metrics.length; m++) {
+          var met = metrics[m];
+          rowsHtml += '<tr>' +
+            '<td><span class="metric-key">' + met.key + '</span><div style="font-size:0.75rem; color:var(--text-muted);">' + met.name + '</div></td>' +
+            '<td><span class="json-path-cell">' + met.json_path + '</span></td>' +
+            '<td><span class="badge" style="background:rgba(255,255,255,0.06);">' + met.unit + '</span></td>' +
+            '<td><span class="vendor-note">' + met.vendor_note + '</span></td>' +
+          '</tr>';
+        }
+
+        var tableHtml = '<table class="vcf-table">' +
+          '<thead>' +
+            '<tr>' +
+              '<th>VCF Operations Metric Key</th>' +
+              '<th>Source Redfish JSON Path</th>' +
+              '<th>Unit</th>' +
+              '<th>Vendor Telemetry Architecture Note</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody>' + rowsHtml + '</tbody>' +
+        '</table>';
+
+        document.getElementById('vcfMetricsContainer').innerHTML = tableHtml;
+      }
+
+      function selectFixtureById(fId) {
+        var fObj = null;
+        for (var j = 0; j < fixtures.length; j++) {
+          if (fixtures[j].id === fId) { fObj = fixtures[j]; break; }
+        }
+        if (fObj && fObj.primary_uri) {
+          activeFixtureId = fId;
+          loadEndpoint(fObj.primary_uri);
+          var items = document.querySelectorAll('.fixture-item');
+          for (var k = 0; k < items.length; k++) {
+            if (items[k].getAttribute('data-fixture-id') === fId) {
+              items[k].classList.add('active');
+            } else {
+              items[k].classList.remove('active');
+            }
+          }
+        }
+      }
+
+      // Centralized Event Delegation (embedded-javascript-quoting.mdc)
+      document.addEventListener('click', function(e) {
+        var actionEl = e.target.closest('[data-action]');
+        if (!actionEl) return;
+
+        var action = actionEl.getAttribute('data-action');
+
+        if (action === 'switch-side-tab') {
+          var targetTab = actionEl.getAttribute('data-tab');
+          var tabs = document.querySelectorAll('.nav-tab');
+          for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+          actionEl.classList.add('active');
+
+          document.getElementById('tab-fixtures').style.display = (targetTab === 'tab-fixtures') ? 'block' : 'none';
+          document.getElementById('tab-tree').style.display = (targetTab === 'tab-tree') ? 'block' : 'none';
+        }
+        else if (action === 'select-fixture') {
+          var fId = actionEl.getAttribute('data-fixture-id');
+          selectFixtureById(fId);
+        }
+        else if (action === 'select-uri') {
+          var targetUri = actionEl.getAttribute('data-uri');
+          if (targetUri) loadEndpoint(targetUri);
+        }
+        else if (action === 'toggle-tree') {
+          var node = actionEl.closest('.tree-node');
+          if (node) {
+            var children = node.querySelector('.tree-children');
+            if (children) {
+              if (children.style.display === 'none') {
+                children.style.display = 'block';
+                actionEl.textContent = '▼';
+              } else {
+                children.style.display = 'none';
+                actionEl.textContent = '▶';
+              }
+            }
+          }
+          e.stopPropagation();
+        }
+        else if (action === 'click-json-key') {
+          var key = actionEl.getAttribute('data-key');
+          selectedJsonPath = '$.' + key;
+          document.getElementById('currentJsonPath').textContent = selectedJsonPath;
+          copyText(selectedJsonPath, 'Copied path: ' + selectedJsonPath);
+        }
+        else if (action === 'copy-uri') {
+          copyText(activeUri, 'Copied URI: ' + activeUri);
+        }
+        else if (action === 'copy-path') {
+          copyText(selectedJsonPath, 'Copied JSONPath: ' + selectedJsonPath);
+        }
+        else if (action === 'copy-json') {
+          var payload = endpoints[activeUri];
+          if (payload) {
+            copyText(JSON.stringify(payload, null, 2), 'Copied raw JSON payload');
+          }
+        }
+        else if (action === 'copy-all-keys') {
+          var keys = [];
+          var rows = document.querySelectorAll('.metric-key');
+          for (var r = 0; r < rows.length; r++) {
+            keys.push(rows[r].textContent);
+          }
+          copyText(keys.join('\n'), 'Copied ' + keys.length + ' metric keys');
+        }
+      });
+
+      // Sidebar Filter Listener
+      document.getElementById('sidebarSearch').addEventListener('input', function(e) {
+        currentSearchTerm = e.target.value.trim();
+        renderFixtures();
+        renderTree();
+      });
+
+      // In-JSON Filter Listener
+      document.getElementById('jsonFilterInput').addEventListener('input', function(e) {
+        jsonSearchTerm = e.target.value.trim();
+        var payload = endpoints[activeUri];
+        if (payload) {
+          document.getElementById('jsonViewer').innerHTML = formatAndHighlightJson(payload, jsonSearchTerm);
+        }
+      });
+
+      // Initial Render
+      renderFixtures();
+      renderTree();
+
+      // Deep Linking Check via Query String or Hash Anchor
+      var urlParams = new URLSearchParams(window.location.search);
+      var reqFixture = urlParams.get('fixture') || (window.location.hash ? window.location.hash.replace(/^#/, '') : '');
+      var reqUri = urlParams.get('uri');
+
+      if (reqFixture) {
+        selectFixtureById(reqFixture);
+      } else if (reqUri && endpoints[reqUri]) {
+        loadEndpoint(reqUri);
+      } else {
+        loadEndpoint(activeUri);
+      }
+
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "tool_version": "9.9.4",
+  "scanned_at": "2026-10-15 02:24:51 UTC",
+  "host_count": 30,
+  "collector_id": "",
+  "site": "",
+  "scan_profile": "offline-regenerated-top25",
+  "obfuscated": true,
+  "tier": "top25",
+  "generator": "tools/regenerate_library_fleet.py"
+}
