@@ -123,6 +123,15 @@ class TestGetNested(unittest.TestCase):
 
 
 class TestConfigureLogging(unittest.TestCase):
+    def tearDown(self):
+        logger = logging.getLogger("vcf_assess")
+        for h in list(logger.handlers):
+            try:
+                h.close()
+            except Exception:
+                pass
+            logger.removeHandler(h)
+
     def test_configure_logging_debug_and_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = os.path.join(tmpdir, "test.log")
@@ -134,6 +143,9 @@ class TestConfigureLogging(unittest.TestCase):
             with open(log_file, encoding="utf-8") as f:
                 content = f.read()
                 self.assertIn("test debug message", content)
+            for h in list(logger.handlers):
+                h.close()
+                logger.removeHandler(h)
 
     def test_configure_logging_append_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -151,6 +163,9 @@ class TestConfigureLogging(unittest.TestCase):
                 content = f.read()
                 self.assertIn("first pass message", content)
                 self.assertIn("second pass message", content)
+            for h in list(logger.handlers):
+                h.close()
+                logger.removeHandler(h)
 
     def test_configure_logging_file_permissions_0o600(self):
         if os.name != "posix":
@@ -160,6 +175,10 @@ class TestConfigureLogging(unittest.TestCase):
             configure_logging(debug=True, log_file=log_file)
             st_mode = os.stat(log_file).st_mode & 0o777
             self.assertEqual(st_mode, 0o600)
+            logger = logging.getLogger("vcf_assess")
+            for h in list(logger.handlers):
+                h.close()
+                logger.removeHandler(h)
 
 
 class TestScanOutputAndAliases(unittest.TestCase):
