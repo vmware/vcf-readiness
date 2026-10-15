@@ -494,7 +494,7 @@ def scan_hosts(
         if cancel_event and cancel_event.is_set():
             ctx.was_cancelled = True
 
-    # Timeout retry pass (Plan 06 / lab_fleet_smoke port)
+    # Timeout retry pass (resilience retry pass)
     if getattr(ctx, "allow_timeout_retry", True) and not ctx.was_cancelled and (ctx.timed_out_hosts or ctx.failed_hosts):
         def _item_matches_ip(item: Any, target_ip: str) -> bool:
             if not isinstance(item, dict):
