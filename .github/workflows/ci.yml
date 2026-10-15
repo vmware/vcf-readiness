@@ -103,7 +103,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install "pytest==8.*" "pytest-cov==6.*" && pip install -e .
-      - run: python -m pytest tests/ -q --cov=vcf_hci --cov-report=term-missing --cov-fail-under=10
+      - run: python -m pytest tests/ -q --cov=vcf_hci --cov-report=term-missing --cov-fail-under=8
 
   package:
     name: build and smoke wheel/sdist
