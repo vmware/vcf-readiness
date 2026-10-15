@@ -931,6 +931,14 @@ def match_pcie_cache(dev_dict: dict, pcie_cache: Union[list, dict], get_fn: Opti
                         if clean_dev_id in clean_p_id or clean_p_id in clean_dev_id:
                             best_match = pcie_dev
                             break
+                dev_slot_m = re.search(r"\b(?:Slot|Mezzanine|Bay)[._\s]+([0-9a-zA-Z_]+)\b", f"{dev_id} {raw_name}", re.I)
+                if dev_slot_m:
+                    dev_slot = dev_slot_m.group(1).lower()
+                    p_slot_str = str(pcie_dev.get("slot_label") or pcie_dev.get("slot") or "")
+                    p_slot_m = re.search(r"\b(?:Slot|Mezzanine|Bay)[._\s]+([0-9a-zA-Z_]+)\b", p_slot_str, re.I)
+                    if p_slot_m and p_slot_m.group(1).lower() == dev_slot:
+                        best_match = pcie_dev
+                        break
             # 4. Name match (filtering generic strings)
             if name not in _GENERIC_NAMES and p_name not in _GENERIC_NAMES:
                 if (name in p_name or p_name in name) and len(name) >= 4:
@@ -1742,6 +1750,8 @@ def clean_oem_adapter_title(
     if re.match(r"^(?:ConnectX|BlueField)\b", cleaned, re.I):
         if not re.search(r"\b(?:Mellanox|NVIDIA)\b", cleaned, re.I):
             cleaned = f"NVIDIA Mellanox {cleaned}"
+    elif re.match(r"^BCM\d+\b", cleaned, re.I):
+        cleaned = f"Broadcom {cleaned}"
 
     return cleaned.strip()
 

@@ -206,12 +206,23 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         )
     display_name = str(nic.get("name") or "").strip()
     pn_val = str(nic.get("part_number") or "").strip()
+    slot_lbl = nic.get("slot") or ""
+    if not slot_lbl:
+        m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", display_name, re.I)
+        if m_s:
+            slot_lbl = m_s.group(1).title()
+        else:
+            m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(nic.get("id") or ""), re.I)
+            if m_ids:
+                slot_lbl = f"Slot {m_ids.group(1)}"
     if is_unfriendly_nic_name(display_name, pn_val):
         cand_m = str(nic.get("model") or "").strip()
         if cand_m and not is_unfriendly_nic_name(cand_m, pn_val):
             display_name = cand_m
         elif pn_val and not is_generic_name(pn_val):
             display_name = pn_val
+    if slot_lbl and slot_lbl.lower() not in display_name.lower() and f"({slot_lbl})" not in display_name:
+        display_name = f"{display_name} ({slot_lbl})"
 
     bcg_nic, bcg_vsan_nic = BCGLinkGenerator.io_nic_exact(
         display_name or nic.get("name", ""), fw,
@@ -259,6 +270,8 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
         if is_unfriendly_nic_name(display_name, pn_val) and matched_m:
             display_name = str(matched_m).strip()
+            if slot_lbl and slot_lbl.lower() not in display_name.lower() and f"({slot_lbl})" not in display_name:
+                display_name = f"{display_name} ({slot_lbl})"
         pci_verdict_html = f"<br>{pci_eval['badge']}"
         if pci_eval.get("rdma_badge"):
             pci_verdict_html += f"<br>{pci_eval['rdma_badge']}"
@@ -284,6 +297,8 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if _unique:
             if is_unfriendly_nic_name(display_name, pn_val) and _unique.get("model"):
                 display_name = str(_unique["model"]).strip()
+                if slot_lbl and slot_lbl.lower() not in display_name.lower() and f"({slot_lbl})" not in display_name:
+                    display_name = f"{display_name} ({slot_lbl})"
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
             elif _unique.get("product_id"):

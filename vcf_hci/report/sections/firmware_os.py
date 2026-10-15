@@ -1,6 +1,7 @@
 """
 VCF Readiness Tool — OS information, firmware inventory, alignment & warranty report section builders (Layer D).
 """
+import re
 from typing import Any, Dict, List, Optional
 
 from vcf_hci.bcg_links import BCGLinkGenerator
@@ -259,6 +260,7 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
     _collected_nics = data.get("network_adapters", [])
     _collected_gpus = data.get("gpu_accelerators", [])
     _collected_fcs = data.get("fc_hbas", [])
+    raw_rf = data.get("raw_redfish_capture", {})
 
     fw_inv = data.get("firmware_inventory", [])
     _fw_inv_rows = ""
@@ -299,7 +301,7 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
             desc_parts.append(f"Target {f_id}")
         sub_desc = " • ".join(desc_parts)
 
-        comb_text = f"{f_name} {f_desc} {f_comp_id}".upper()
+        comb_text = f"{f_name} {f_desc} {f_comp_id} {f_id}".upper()
 
         matched_drv = None
         for drv in _collected_drives:
@@ -325,6 +327,7 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
 
         vid, did, svid, ssid = "", "", "", ""
         drv_model = ""
+        matched_nics = []
 
         if matched_drv:
             vid = str(matched_drv.get("vendor_id", "")).strip()
@@ -333,14 +336,74 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
             ssid = str(matched_drv.get("subsystem_id", "")).strip()
             drv_model = str(matched_drv.get("model", "")).strip()
         elif not is_drive:
-            for nic in _collected_nics:
-                n_name = str(nic.get("name", "")).strip().upper()
-                if n_name and (n_name in comb_text or f_name.upper() in n_name):
-                    vid = str(nic.get("vendor_id", "")).strip()
-                    did = str(nic.get("device_id", "")).strip()
-                    svid = str(nic.get("subsystem_vendor_id", "")).strip()
-                    ssid = str(nic.get("subsystem_id", "")).strip()
-                    break
+            # 1. Match NICs via related_items (or raw_redfish_capture)
+            rel_uris = list(f.get("related_items") or [])
+            if not rel_uris and raw_rf:
+                rf_fw = raw_rf.get(f"/redfish/v1/UpdateService/FirmwareInventory/{f_id}")
+                if isinstance(rf_fw, dict):
+                    for r in rf_fw.get("RelatedItem", []):
+                        if isinstance(r, dict) and r.get("@odata.id"):
+                            rel_uris.append(str(r["@odata.id"]).strip())
+                        elif isinstance(r, str) and r.strip():
+                            rel_uris.append(r.strip())
+            if rel_uris:
+                for r_uri in rel_uris:
+                    for nic in _collected_nics:
+                        nid = str(nic.get("id") or "").strip()
+                        if nid and (nid in r_uri or r_uri.endswith("/" + nid)):
+                            if nic not in matched_nics:
+                                matched_nics.append(nic)
+            # 2. Match by Dell component ID for Broadcom adapters
+            # 115076 -> BCM57414 (subsystem 4422, Slot 9)
+            # 114493 -> BCM57414 OCP (subsystem 4432, Slots 4 & 10)
+            if not matched_nics and f_comp_id in ("115076", "114493"):
+                target_ssid = "4422" if f_comp_id == "115076" else "4432"
+                for nic in _collected_nics:
+                    if str(nic.get("subsystem_id") or "").lower() == target_ssid.lower():
+                        matched_nics.append(nic)
+
+            # 3. Match by slot number extracted from f_id / f_name
+            if not matched_nics:
+                m_slot = re.search(r"\b(?:NIC\.Slot\.|Slot[._\s]*)(\d+)\b", f"{f_id} {f_name}", re.I)
+                if m_slot:
+                    s_num = m_slot.group(1)
+                    for nic in _collected_nics:
+                        n_slot = str(nic.get("slot") or "")
+                        n_id = str(nic.get("id") or "")
+                        if f"Slot.{s_num}" in n_id or f"Slot {s_num}" in n_slot:
+                            matched_nics.append(nic)
+
+            # 4. Match by NIC name, model, id, or slot
+            if not matched_nics:
+                for nic in _collected_nics:
+                    n_name = str(nic.get("name", "")).strip().upper()
+                    n_model = str(nic.get("model", "")).strip().upper()
+                    n_id = str(nic.get("id", "")).strip().upper()
+                    n_slot = str(nic.get("slot", "")).strip().upper()
+                    if (
+                        (n_name and (n_name in comb_text or f_name.upper() in n_name))
+                        or (n_model and n_model in comb_text)
+                        or (n_id and n_id in comb_text)
+                        or (n_slot and n_slot in comb_text)
+                    ):
+                        matched_nics.append(nic)
+                        break
+
+            # 5. Match by NIC.Slot / NIC.Embedded and firmware version
+            if not matched_nics and any(k in comb_text for k in ("NIC.SLOT", "NIC.EMBEDDED", "NETWORK", "ETHERNET")):
+                if f_ver and f_ver.upper() != "N/A":
+                    for nic in _collected_nics:
+                        nic_fw = str(nic.get("firmware_version") or "").strip()
+                        if nic_fw and nic_fw.upper() == f_ver.upper():
+                            matched_nics.append(nic)
+
+            if matched_nics:
+                first_nic = matched_nics[0]
+                vid = str(first_nic.get("vendor_id", "")).strip()
+                did = str(first_nic.get("device_id", "")).strip()
+                svid = str(first_nic.get("subsystem_vendor_id", "")).strip()
+                ssid = str(first_nic.get("subsystem_id", "")).strip()
+
             if not (vid and did):
                 for ctrl in _collected_ctrls:
                     c_name = str(ctrl.get("name", "")).strip().upper()
@@ -371,8 +434,45 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
                         ssid = str(fc.get("subsystem_id", "")).strip()
                         break
 
-        if is_drive and f_ver and f_ver.upper() != "N/A":
-            model_for_eval = drv_model or f_name
+        display_comp_name = f_name
+        if matched_nics:
+            first_nic = matched_nics[0]
+            mfr = first_nic.get("manufacturer") or ""
+            model = first_nic.get("model") or ""
+            slot_labels = []
+            for n in matched_nics:
+                s_lbl = n.get("slot") or ""
+                if not s_lbl:
+                    m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", str(n.get("name") or ""), re.I)
+                    if m_s:
+                        s_lbl = m_s.group(1).title()
+                    else:
+                        m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(n.get("id") or ""), re.I)
+                        if m_ids:
+                            s_lbl = f"Slot {m_ids.group(1)}"
+                if s_lbl and s_lbl not in slot_labels:
+                    slot_labels.append(s_lbl)
+
+            if mfr and model:
+                base_title = f"{mfr} {model}" if mfr.lower() not in model.lower() else model
+            elif model:
+                base_title = model
+            elif mfr:
+                base_title = f"{mfr} Network Adapter"
+            else:
+                base_title = f_name
+
+            if slot_labels:
+                display_comp_name = f"{base_title} ({', '.join(slot_labels)})"
+            else:
+                display_comp_name = base_title
+
+            if f_name and f_name != display_comp_name and f_name not in desc_parts:
+                desc_parts.insert(0, f_name)
+            sub_desc = " • ".join(desc_parts)
+
+        if (is_drive or (vid and did)) and f_ver and f_ver.upper() != "N/A":
+            model_for_eval = drv_model or (matched_nics[0].get("model") if matched_nics else "") or f_name
             _fw_cell = evaluate_drive_fw(
                 model_for_eval,
                 f_ver,
@@ -392,10 +492,15 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
             bcg_program = ("hdd" if is_magnetic else "ssd") if (is_drive or is_nvme_comp) else "io"
 
             _unique_item = lookup_unique_hcl_device(vid=vid, did=did, svid=svid, ssid=ssid, json_hcl=json_hcl, model_name=f_name)
-            _pid = _unique_item.get("product_id", "") if _unique_item else ""
-            _hcl_prog = _unique_item.get("hcl_program", "") if _unique_item else ""
-            if _hcl_prog:
-                bcg_program = _hcl_prog
+            _pid = ""
+            if _unique_item:
+                if bcg_program == "io" and _unique_item.get("io_product_id"):
+                    _pid = str(_unique_item["io_product_id"])
+                else:
+                    _pid = str(_unique_item.get("product_id") or "")
+                _hcl_prog = _unique_item.get("hcl_program", "")
+                if _hcl_prog:
+                    bcg_program = _hcl_prog
 
             bcg_url = BCGLinkGenerator.prefer_device_or_search(
                 _pid, bcg_program,
@@ -448,7 +553,7 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
         sub_desc_html = f'<br><small style="color:var(--text-muted)">{_h(sub_desc)}</small>' if sub_desc else ''
         _fw_inv_rows += (
             f"<tr>"
-            f"<td><strong>{_h(f_name)}</strong>"
+            f"<td><strong>{_h(display_comp_name)}</strong>"
             f"{sub_desc_html}</td>"
             f"<td>{_fw_cell}</td>"
             f"<td><code>{_h(f_comp_id or 'N/A')}</code></td>"

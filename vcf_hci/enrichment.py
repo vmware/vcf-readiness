@@ -1128,8 +1128,41 @@ def _enrich_single_host(
                         matched_model = io_dev["model"]
 
                 cur_pn = str(nic.get("part_number") or "").strip()
-                if is_unfriendly_nic_name(nic.get("name"), cur_pn) and matched_model:
-                    nic["name"] = matched_model
+                if not cur_pn and is_raw_part_number(nic.get("model")):
+                    cur_pn = str(nic.get("model")).strip()
+
+                # Extract slot if available from name or id before name is updated
+                slot_val = nic.get("slot") or ""
+                if not slot_val:
+                    m_slot = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", str(nic.get("name") or ""), re.I)
+                    if m_slot:
+                        slot_val = m_slot.group(1).title()
+                    else:
+                        m_id_slot = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(nic.get("id") or ""), re.I)
+                        if m_id_slot:
+                            slot_val = f"Slot {m_id_slot.group(1)}"
+                if slot_val and not nic.get("slot"):
+                    nic["slot"] = slot_val
+
+                # Prepend brand name if not already in matched_model
+                brand = (
+                    nic.get("manufacturer")
+                    or dev.get("brand_name")
+                    or (io_dev.get("brand_name") if isinstance(io_dev, dict) else "")
+                    or ""
+                )
+                matched_title = matched_model
+                if brand and matched_model and brand.lower() not in matched_model.lower():
+                    if not re.match(r"^(?:ConnectX|BlueField|BCM\d+)\b", matched_model, re.I):
+                        matched_title = f"{brand} {matched_model}"
+
+                if slot_val and matched_title and slot_val.lower() not in matched_title.lower() and f"({slot_val})" not in matched_title:
+                    matched_title_with_slot = f"{matched_title} ({slot_val})"
+                else:
+                    matched_title_with_slot = matched_title
+
+                if is_unfriendly_nic_name(nic.get("name"), cur_pn) and matched_title:
+                    nic["name"] = matched_title_with_slot
                 if not nic.get("model") or is_unfriendly_nic_name(nic.get("model"), cur_pn):
                     if matched_model:
                         nic["model"] = matched_model
@@ -1155,9 +1188,27 @@ def _enrich_single_host(
 
             # Fallback if name is still generic/unfriendly but model or part number is present
             cur_pn = str(nic.get("part_number") or "").strip()
+            slot_val = nic.get("slot") or ""
+            if not slot_val:
+                m_slot = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", str(nic.get("name") or ""), re.I)
+                if m_slot:
+                    slot_val = m_slot.group(1).title()
+                else:
+                    m_id_slot = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(nic.get("id") or ""), re.I)
+                    if m_id_slot:
+                        slot_val = f"Slot {m_id_slot.group(1)}"
+            if slot_val and not nic.get("slot"):
+                nic["slot"] = slot_val
+
             if is_unfriendly_nic_name(nic.get("name"), cur_pn):
                 cand_m = str(nic.get("model") or "").strip()
                 if cand_m and not is_unfriendly_nic_name(cand_m, cur_pn):
+                    brand = nic.get("manufacturer") or ""
+                    if brand and brand.lower() not in cand_m.lower():
+                        if not re.match(r"^(?:ConnectX|BlueField|BCM\d+)\b", cand_m, re.I):
+                            cand_m = f"{brand} {cand_m}"
+                    if slot_val and slot_val.lower() not in cand_m.lower() and f"({slot_val})" not in cand_m:
+                        cand_m = f"{cand_m} ({slot_val})"
                     nic["name"] = cand_m
                 elif cur_pn and not is_generic_name(cur_pn):
                     if not nic.get("name"):

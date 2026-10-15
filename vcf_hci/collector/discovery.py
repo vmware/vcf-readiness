@@ -789,7 +789,11 @@ class DiscoveryMixin(_CollectorBase):
                                 ssid=pci_check.get("subsystem_id", ""),
                             )
                     if isinstance(h_dev, dict) and h_dev.get("model"):
-                        clean_h_name = clean_oem_adapter_title(str(h_dev["model"]).strip(), part_number=pn)
+                        raw_model = str(h_dev["model"]).strip()
+                        brand_name = str(h_dev.get("brand_name") or "").strip()
+                        if brand_name and brand_name.lower() not in raw_model.lower():
+                            raw_model = f"{brand_name} {raw_model}"
+                        clean_h_name = clean_oem_adapter_title(raw_model, part_number=pn)
                         if clean_h_name and not is_unfriendly_nic_name(clean_h_name, pn):
                             return clean_h_name
         except Exception:

@@ -1,2 +1,0 @@
-Host / IP,Hostname,GPU / Device Name,Manufacturer,PCIe Slot,PCIe Gen,Lanes,PCI Quad,Part Number,Serial Number,Health / State,VCF AI / vGPU Readiness,Temperature (°C),Max Operating Temp (°C),Power Brake Status
-Host-11,Host-11,Tesla T4,NVIDIA Corporation,PCIe Slot 3,,,10de:1eb8:10de:12a2,PN-905F15,SN-131D0A,OK,Supported (vGPU / Compute),64,85,Released

@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.9.3"
+TOOL_VERSION = "9.9.4"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -279,6 +279,10 @@ def is_generic_name(name: Optional[str]) -> bool:
         return True
     if re.match(r"^nic\s*[0-9]+$", sl):
         return True
+    if re.match(r"^(?:nic|network\s*(?:adapter|device|interface)|ethernet(?:\s*adapter)?)\s+in\s+(?:slot|mezzanine|bay|pcie)\s*[0-9a-z_]+$", sl):
+        return True
+    if re.match(r"^(?:integrated|embedded)\s+(?:nic|network\s*(?:adapter|device|interface)|ethernet(?:\s*adapter)?)(?:\s*[0-9]+)?$", sl):
+        return True
     if re.match(r"^devtype\d+(?:_\w+)?$", sl):
         return True
     if re.match(r"^[0-9a-f]{2}_[0-9a-f]{2}_[0-9a-f]{2}$", sl):
@@ -303,6 +307,10 @@ def is_raw_part_number(name: Optional[str]) -> bool:
     # Supermicro AOC-... (e.g. AOC-ATG-b2TM-NI22, AOC-S25GC-i4S)
     if re.match(r"^AOC-[A-Z0-9\-]+$", s, re.I):
         return True
+    # Broadcom controller ASIC / family models (e.g. BCM57414, BCM5720, BCM57504, BCM5719)
+    # These are friendly chip/model designations, not unformatted internal part numbers / SKUs.
+    if re.match(r"^BCM\d{4,}[A-Z0-9]*$", s, re.I):
+        return False
     # General part number heuristic: uppercase alphanumeric with hyphens/underscores,
     # containing at least one digit and at least 3 letters, length between 6 and 32 chars, no spaces.
     return bool(re.match(r"^[A-Z0-9\-_]{6,32}$", s) and re.search(r"\d", s) and len(re.findall(r"[A-Za-z]", s)) >= 3)

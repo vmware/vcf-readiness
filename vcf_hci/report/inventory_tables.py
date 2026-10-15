@@ -1131,12 +1131,23 @@ def build_compact_fleet_inventory(
         for ad in data.get("network_adapters") or []:
             ad_name = str(ad.get("name") or ad.get("model") or "Network Adapter")
             ad_pn = str(ad.get("part_number") or "").strip()
+            slot_lbl = ad.get("slot") or ""
+            if not slot_lbl:
+                m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", ad_name, re.I)
+                if m_s:
+                    slot_lbl = m_s.group(1).title()
+                else:
+                    m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(ad.get("id") or ""), re.I)
+                    if m_ids:
+                        slot_lbl = f"Slot {m_ids.group(1)}"
             if is_unfriendly_nic_name(ad_name, ad_pn):
                 cand_m = str(ad.get("model") or "").strip()
                 if cand_m and not is_unfriendly_nic_name(cand_m, ad_pn):
                     ad_name = cand_m
                 elif ad_pn and not is_generic_name(ad_pn):
                     ad_name = ad_pn
+            if slot_lbl and slot_lbl.lower() not in ad_name.lower() and f"({slot_lbl})" not in ad_name:
+                ad_name = f"{ad_name} ({slot_lbl})"
             sys_m = str((data.get("system") or {}).get("manufacturer") or "")
             ad_name = clean_oem_adapter_title(ad_name, host_mfg=sys_m, adapter_mfg=str(ad.get("manufacturer") or ""), part_number=ad_pn)
             fw = str(ad.get("firmware_version") or ad.get("firmware") or "")
@@ -1520,12 +1531,23 @@ def build_inventory_sheets(
                 meets_25g_cell = ("Yes", "green") if spd_val >= 25 else ("No", "yellow")
                 n_name = str(n.get("name") or "")
                 n_pn = str(n.get("part_number") or "").strip()
+                n_slot_lbl = n.get("slot") or ""
+                if not n_slot_lbl:
+                    m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", n_name, re.I)
+                    if m_s:
+                        n_slot_lbl = m_s.group(1).title()
+                    else:
+                        m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(n.get("id") or ""), re.I)
+                        if m_ids:
+                            n_slot_lbl = f"Slot {m_ids.group(1)}"
                 if is_unfriendly_nic_name(n_name, n_pn):
                     cand_m = str(n.get("model") or "").strip()
                     if cand_m and not is_unfriendly_nic_name(cand_m, n_pn):
                         n_name = cand_m
                     elif n_pn and not is_generic_name(n_pn):
                         n_name = n_pn
+                if n_slot_lbl and n_slot_lbl.lower() not in n_name.lower() and f"({n_slot_lbl})" not in n_name:
+                    n_name = f"{n_name} ({n_slot_lbl})"
                 sys_m = str((data.get("system") or {}).get("manufacturer") or "")
                 n_name = clean_oem_adapter_title(n_name, host_mfg=sys_m, adapter_mfg=str(n.get("manufacturer") or ""), part_number=n_pn)
                 net_rows.append([

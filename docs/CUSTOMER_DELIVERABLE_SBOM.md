@@ -1,7 +1,7 @@
 # Software Bill of Materials (SBOM) — Customer Deliverables
 
 > **Product:** VCF / vSphere 9.1 HCI Readiness Assessment Tool (`vcf-readiness`)
-> **Runtime version in this checkout:** 9.9.3 (`vcf_hci/constants.py`)
+> **Runtime version in this checkout:** 9.9.4 (`vcf_hci/constants.py`)
 > **Historical inventory date:** 2026-09-27
 > **Companion JSON:** `docs/sbom/cyclonedx-customer-v9.7.1.json`, `docs/sbom/spdx-customer-v9.7.1.json`
 > **License:** CA, Inc. Software License Agreement (Broadcom)  
@@ -36,7 +36,7 @@ The following table enumerates all first-party and bundled open-source component
 
 | Component Name | Version | Type | License | Supplier | Delivery / Inclusion Mechanism | Required / Optional |
 |---|---|---|---|---|---|---|
-| `vcf_hci` | `9.9.3` | application | LicenseRef-CA-Inc | Broadcom / CA, Inc. | Python source in this checkout | **Required** |
+| `vcf_hci` | `9.9.4` | application | LicenseRef-CA-Inc | Broadcom / CA, Inc. | Python source in this checkout | **Required** |
 | `@cds/core` | `5.7.0` | library | Apache-2.0 | VMware by Broadcom | In-memory CSS in `vcf_hci/web/assets.py`, served by the local Web UI and embedded in offline HTML reports | **Required** |
 | `vsan-hcl-dataset` | packaged local data | data | LicenseRef-Proprietary-Broadcom | Broadcom | `vcf_hci/hcl/io_nics.json` plus any local HCL data the operator already has. A public download requires `--refresh-hcl` or `--bundle-hcl`. | **Required for HCL correlation** |
 

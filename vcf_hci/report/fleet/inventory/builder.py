@@ -691,6 +691,7 @@ def build_detailed_inventory_html(
       warnEl: '#invPageWarn',
       bindControls: false,
       filterFn: function(tr) {{
+        if (!hostFilterActive) return true;
         return !!matchingHostIndicesMap[tr.getAttribute('data-host-idx')];
       }}
     }}),
@@ -799,6 +800,7 @@ def build_detailed_inventory_html(
     document.querySelectorAll('#invRoot .inv-seg button').forEach(function(b){{
       b.classList.toggle('active', b.getAttribute('data-inv-view') === name);
     }});
+    evaluateHostMatches();
     var p = getActiveInvPager();
     if (p) p.setPage(1);
   }}
@@ -811,6 +813,12 @@ def build_detailed_inventory_html(
   }});
   var filt = document.getElementById('invFilter');
   if (filt) filt.addEventListener('input', applyInvFilters);
+
+  evaluateHostMatches();
+  var pInit = getActiveInvPager();
+  if (pInit) {{
+    pInit.update();
+  }}
 
   function setupTableResizers(rootEl){{
     (rootEl || document).querySelectorAll('table.inv-table, table.sortable-table').forEach(function(table){{

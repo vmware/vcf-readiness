@@ -286,12 +286,23 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
         return f"<span class='inv-muted'>{_DASH}</span>"
 
     pn_val = str(n.get("part_number") or "").strip()
+    slot_lbl = n.get("slot") or ""
+    if not slot_lbl:
+        m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", name, re.I)
+        if m_s:
+            slot_lbl = m_s.group(1).title()
+        else:
+            m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(n.get("id") or ""), re.I)
+            if m_ids:
+                slot_lbl = f"Slot {m_ids.group(1)}"
     if is_unfriendly_nic_name(name, pn_val):
         cand_model = str(n.get("model") or "").strip()
         if cand_model and not is_unfriendly_nic_name(cand_model, pn_val):
             name = cand_model
         elif pn_val and not is_generic_name(pn_val):
             name = pn_val
+    if slot_lbl and slot_lbl.lower() not in name.lower() and f"({slot_lbl})" not in name:
+        name = f"{name} ({slot_lbl})"
 
     vid = str(n.get("vendor_id") or "").strip()
     did = str(n.get("device_id") or "").strip()
@@ -311,6 +322,8 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
         matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
         if is_unfriendly_nic_name(name, pn_val) and matched_m:
             name = str(matched_m).strip()
+            if slot_lbl and slot_lbl.lower() not in name.lower() and f"({slot_lbl})" not in name:
+                name = f"{name} ({slot_lbl})"
 
         if pci_eval.get("vcglink"):
             bcg_vsan_nic = pci_eval["vcglink"]
@@ -328,6 +341,8 @@ def _nic_name_link(n: dict, json_hcl: Optional[dict] = None) -> str:
         if _unique:
             if is_unfriendly_nic_name(name, pn_val) and _unique.get("model"):
                 name = str(_unique["model"]).strip()
+                if slot_lbl and slot_lbl.lower() not in name.lower() and f"({slot_lbl})" not in name:
+                    name = f"{name} ({slot_lbl})"
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
             elif _unique.get("product_id"):

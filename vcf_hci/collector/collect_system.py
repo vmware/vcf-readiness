@@ -2384,6 +2384,14 @@ class _SystemMixin(_CollectorBase):
             fw_status = fw_obj.get("Status") if isinstance(fw_obj.get("Status"), dict) else {}
             status_health = fw_status.get("Health")
             status_state = fw_status.get("State")
+            related_items = []
+            raw_related = fw_obj.get("RelatedItem") or []
+            if isinstance(raw_related, list):
+                for r in raw_related:
+                    if isinstance(r, dict) and r.get("@odata.id"):
+                        related_items.append(str(r["@odata.id"]).strip())
+                    elif isinstance(r, str) and r.strip():
+                        related_items.append(r.strip())
             parsed_items.append({
                 "id": str(fw_obj.get("Id") or "").strip(),
                 "name": name,
@@ -2396,6 +2404,7 @@ class _SystemMixin(_CollectorBase):
                 "lowest_supported_version": str(fw_obj.get("LowestSupportedVersion") or "").strip(),
                 "status_health": str(status_health).strip() if status_health not in (None, "") else "",
                 "status_state": str(status_state).strip() if status_state not in (None, "") else "",
+                "related_items": related_items,
             })
         return parsed_items
 
