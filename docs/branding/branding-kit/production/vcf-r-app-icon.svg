@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="VCF-R">
+  <title>VCF-R app icon</title>
+  <desc>Large app / binary icon (export to PNG at 256 or 512 as needed).</desc>
+  <rect width="512" height="512" rx="96" ry="96" fill="#0072A3"/>
+  <rect x="96" y="248" width="320" height="16" rx="8" fill="#717074"/>
+  <text x="256" y="200" text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="112" font-weight="700" letter-spacing="0.08em" fill="#FFFFFF">VCF</text>
+  <text x="256" y="400" text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    font-size="144" font-weight="700" fill="#FFFFFF">R</text>
+</svg>

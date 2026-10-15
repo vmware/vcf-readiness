@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="VCF-R">
+  <title>VCF-R avatar</title>
+  <desc>Circular avatar for GitHub org/user, Slack, etc.</desc>
+  <circle cx="48" cy="48" r="48" fill="#0072A3"/>
+  <path d="M28 50 L42 64 L70 30" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

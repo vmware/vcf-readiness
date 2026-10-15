@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="VCF-R">
+  <title>VCF-R favicon</title>
+  <desc>16-32px favicon. Simplified mark for browser tabs.</desc>
+  <rect width="32" height="32" rx="6" ry="6" fill="#0072A3"/>
+  <path d="M8 16.5 L13 21.5 L24 9" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
