@@ -1322,8 +1322,10 @@ def _enrich_single_host(
                     except (ValueError, TypeError):
                         p["optical_signal_health"] = "marginal"
                     p["optical_health"] = p["optical_signal_health"]
-                    host_data.setdefault("optical_warnings", []).append(finding)
-                    host_data.setdefault("optical_findings", []).append(finding)
+                    if finding not in host_data.setdefault("optical_warnings", []):
+                        host_data["optical_warnings"].append(finding)
+                    if finding not in host_data.setdefault("optical_findings", []):
+                        host_data["optical_findings"].append(finding)
                 elif p.get("rx_power_dbm") is not None or p.get("transceiver_rx_power_dbm") is not None:
                     rx_p = p.get("rx_power_dbm") if p.get("rx_power_dbm") is not None else p.get("transceiver_rx_power_dbm")
                     try:
@@ -1343,8 +1345,9 @@ def _enrich_single_host(
                 nic["downgraded"] = True
                 nic["downgrade_reason"] = finding
                 nic["downgrade_badge"] = link_health["badge"]
-                host_data.setdefault("pcie_link_warnings", []).append(finding)
-                host_data.setdefault("warnings", []).append(finding)
+                if finding not in host_data.get("pcie_link_warnings", []):
+                    host_data.setdefault("pcie_link_warnings", []).append(finding)
+                    host_data.setdefault("warnings", []).append(finding)
 
     # 7b. FC HBA PCIe Link Health Evaluation
     fc_hbas = host_data.get("fc_hbas")
@@ -1408,7 +1411,8 @@ def _enrich_single_host(
                     host_data.setdefault("pcie_link_warnings", []).append(finding)
                     host_data.setdefault("warnings", []).append(finding)
                 if link_health.get("signal_severity") == "critical":
-                    host_data.setdefault("critical_findings", []).append(finding)
+                    if finding not in host_data.setdefault("critical_findings", []):
+                        host_data["critical_findings"].append(finding)
 
     # 7e. TelemetryService PCIe Error Evaluation
     io_tel = host_data.get("io_telemetry") or {}
@@ -1507,7 +1511,8 @@ def _enrich_single_host(
                         host_data.setdefault("pcie_link_warnings", []).append(c_finding)
                         host_data.setdefault("warnings", []).append(c_finding)
                     if ctrl_link.get("signal_severity") == "critical":
-                        host_data.setdefault("critical_findings", []).append(c_finding)
+                        if c_finding not in host_data.setdefault("critical_findings", []):
+                            host_data["critical_findings"].append(c_finding)
 
                 drives = ctrl.get("drives") or []
                 if isinstance(drives, list):
@@ -1532,7 +1537,8 @@ def _enrich_single_host(
                                     if d_link.get("signal_severity") == "critical":
                                         drive["is_failing"] = True
                                         drive["failure_reason"] = d_link["finding"]
-                                        host_data.setdefault("critical_findings", []).append(d_link["finding"])
+                                        if d_link["finding"] not in host_data.setdefault("critical_findings", []):
+                                            host_data["critical_findings"].append(d_link["finding"])
 
                             d_model = str(drive.get("model") or drive.get("name") or "")
                             d_fw = str(drive.get("firmware") or "")
@@ -1866,17 +1872,17 @@ def _enrich_single_host(
     ni_warn = False
     if node_interleave_val and node_interleave_val.lower() in ("enabled", "enable", "on", "true", "1"):
         ni_warn = True
-        host_data.setdefault("readiness_warnings", []).append(
-            "BIOS: Node Interleaving is Enabled. This flattens NUMA into UMA, degrading ESXi NUMA-aware scheduling. Disable in BIOS."
-        )
+        ni_msg = "BIOS: Node Interleaving is Enabled. This flattens NUMA into UMA, degrading ESXi NUMA-aware scheduling. Disable in BIOS."
+        if ni_msg not in host_data.setdefault("readiness_warnings", []):
+            host_data["readiness_warnings"].append(ni_msg)
 
     x2_warn = False
     if x2apic_val and x2apic_val.lower() in ("disabled", "disable", "off", "false", "0"):
         if is_multi_sock or int(cpu_info.get("cores") or 0) > 32:
             x2_warn = True
-            host_data.setdefault("readiness_warnings", []).append(
-                "BIOS: Processor x2APIC Mode is Disabled on a multi-socket / high-core server. Must be Enabled in BIOS for vSphere 9.1 interrupt scaling."
-            )
+            x2_msg = "BIOS: Processor x2APIC Mode is Disabled on a multi-socket / high-core server. Must be Enabled in BIOS for vSphere 9.1 interrupt scaling."
+            if x2_msg not in host_data.setdefault("readiness_warnings", []):
+                host_data["readiness_warnings"].append(x2_msg)
 
     mst = {
         "is_multi_socket": is_multi_sock,
@@ -1920,9 +1926,13 @@ def _enrich_single_host(
                 "status": "warning",
             }
             job_q["evaluation"] = eval_dict
-            host_data.setdefault("readiness_findings", []).append(finding)
-            host_data.setdefault("readiness_warnings", []).append(finding)
-            host_data.setdefault("warnings", []).append(f"{finding} Remediation: {remediation}")
+            if finding not in host_data.setdefault("readiness_findings", []):
+                host_data["readiness_findings"].append(finding)
+            if finding not in host_data.setdefault("readiness_warnings", []):
+                host_data["readiness_warnings"].append(finding)
+            rem_warn = f"{finding} Remediation: {remediation}"
+            if rem_warn not in host_data.setdefault("warnings", []):
+                host_data["warnings"].append(rem_warn)
         elif pending_reboot_jobs > 0:
             finding = f"Lifecycle Controller has {pending_reboot_jobs} job(s) pending reboot."
             eval_dict = {
