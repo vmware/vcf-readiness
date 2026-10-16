@@ -1,12 +1,10 @@
 """Fleet health dashboard tiles generator."""
-import json
 import logging
 import re
 
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.constants import (
     ESXI_KB_URL,
-    VCF_MANAGEMENT_PROFILES,
     VCF_PLANNING_WORKBOOK_URL,
     VCF_SIZER_URL,
 )
@@ -51,17 +49,21 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
                     d["hcl_str"] = eval_hcl["hcl_str"]
                     d["vsan_eligible"] = eval_hcl["vsan_eligible"]
 
-    # ── Tile 1: Resource Headroom ─────────────────────────────────────────────
-    fleet_vcpu = 0
+    # ── Tile 1: Fleet Aggregate Raw Resources ────────────────────────────────
+    fleet_cores = 0
+    fleet_sockets = 0
     fleet_ram_gb = 0
     fleet_nvme_tb = 0.0
     for data in all_results:
         si = data.get("system", {})
         ci = si.get("cpu_summary", {})
         sockets = ci.get("count", 1)
+        if not isinstance(sockets, int) or sockets <= 0:
+            sockets = 1
+        fleet_sockets += sockets
         cores = ci.get("core_count", 0)
-        if isinstance(cores, int):
-            fleet_vcpu += sockets * cores
+        if isinstance(cores, int) and cores > 0:
+            fleet_cores += sockets * cores
         raw_mem = si.get("total_memory_gb")
         if isinstance(raw_mem, (int, float)):
             fleet_ram_gb += int(raw_mem)
@@ -76,6 +78,8 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
                     if isinstance(d_cap, (int, float)) and d_cap > 0:
                         fleet_nvme_tb += d_cap / 1024
     fleet_nvme_tb = round(fleet_nvme_tb, 2)
+    fleet_ram_tb = round(fleet_ram_gb / 1024.0, 2)
+    fleet_vcpu = fleet_cores
 
     # ── Tile 2: BIOS Status ───────────────────────────────────────────────────
     bios_outdated = bios_update_avail = bios_no_baseline = 0
@@ -204,6 +208,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
              for n in data.get("network_adapters", [])),
             default=0,
         )
+        total_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in drives if d.get("category") == "vSAN ESA/OSA NVMe") / 1000, 1)
         verdict, _ = VCF9CompatibilityEngine.evaluate_vsan(
             nvme_direct,
             sas_sata,
@@ -212,6 +217,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             trimode_nvme_count=trimode_nvme,
             raid_nvme_count=raid_nvme,
             osa_nvme_count=osa_nvme_count,
+            total_nvme_tb=total_nvme_tb,
         )
         if "ESA Ready" in verdict:
             vsan_esa += 1
@@ -484,8 +490,8 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     nic_html = (
         _bar_row("100 GbE+", nic_100g, "#16a34a") +
         _bar_row("25 GbE", nic_25g, "#16a34a") +
-        _bar_row("10 GbE (upgrade needed for ESA)", nic_10g, "#ca8a04") +
-        _bar_row("&lt;10 GbE / Unknown", nic_sub10g, "#dc2626")
+        _bar_row("10 GbE (ESA Small / 25G Rec. for ≥20TB)", nic_10g, "#16a34a") +
+        _bar_row("&lt;10 GbE (upgrade needed for ESA)", nic_sub10g, "#dc2626")
     ) or "<div style='color:#94a3b8;font-size:.85rem'>No NIC data collected</div>"
 
     # Power Health tile HTML (PSU redundancy + live power consumption)
@@ -531,7 +537,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     # vSAN tile HTML (includes VMD status sub-section)
     vsan_parts = []
     if vsan_esa:
-        vsan_parts.append(f"<div style='color:#16a34a;font-weight:600'>&#128994; {vsan_esa} \u2014 ESA Ready (\u22652 NVMe + 25 GbE)</div>")
+        vsan_parts.append(f"<div style='color:#16a34a;font-weight:600'>&#128994; {vsan_esa} \u2014 ESA Ready (\u22652 NVMe + 10/25 GbE)</div>")
     if vsan_osa:
         vsan_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {vsan_osa} \u2014 OSA / Needs NIC Upgrade</div>")
     if vsan_none:
@@ -777,113 +783,26 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
 
     _tile_css = FLEET_EXTRA_CSS
 
-    sizing_options = []
-    for idx, p in enumerate(VCF_MANAGEMENT_PROFILES):
-        p_name = _h(p["name"])
-        p_vcpu = p["vcpu"]
-        p_ram = p["ram"]
-        p_nvme = p["nvme"]
-        sizing_options.append(
-            f'<option value="{idx}">{p_name} ({p_vcpu} vCPU &middot; {p_ram} GB &middot; {p_nvme:.1f} TB)</option>'
-        )
-    sizing_options_html = "\n        ".join(sizing_options)
-    initial_profile_desc = _h(VCF_MANAGEMENT_PROFILES[0]["desc"])
-
     if host_count >= 4:
+        host_count_badge = (
+            f'<span style="background:rgba(22,163,74,.12);color:var(--success,#16a34a);'
+            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">'
+            f'&#10003; Node Minimum Met ({host_count} hosts &ge; 4)</span>'
+        )
         host_count_note = f'<span style="color:var(--success,#16a34a);font-weight:500">&#10003; Node minimum met ({host_count} hosts &ge; 4)</span>'
     elif host_count > 0:
+        host_count_badge = (
+            f'<span style="background:rgba(217,119,6,.12);color:#d97706;'
+            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">'
+            f'⚠️ Requires &ge;4 hosts ({host_count} scanned)</span>'
+        )
         host_count_note = f'<span style="color:#d97706;font-weight:600">⚠️ VCF mgmt domain requires &ge;4 hosts ({host_count} scanned)</span>'
     else:
-        host_count_note = ""
+        host_count_badge = '<span style="color:var(--text-muted,#64748b);font-size:.72rem">No hosts</span>'
+        host_count_note = '<span style="color:var(--text-muted,#64748b)">0 hosts scanned</span>'
 
-    profiles_json = json.dumps([
-        {
-            "id": p["id"],
-            "name": p["name"],
-            "shortName": p["short_name"],
-            "vcpu": p["vcpu"],
-            "ram": p["ram"],
-            "nvme": p["nvme"],
-            "min_hosts": p["min_hosts"],
-            "desc": p["desc"],
-        }
-        for p in VCF_MANAGEMENT_PROFILES
-    ])
-
-    # ── JS (f-string injects fleet values; regular string literals for JS braces) ──
+    # ── JS (Hosts | Network Topology pane switcher used by ToR tile + fleet detail segment) ──
     _js = (
-        "(function(){\n"
-        f"  var FLEET = {{vcpu: {fleet_vcpu}, ram: {fleet_ram_gb}, nvme: {fleet_nvme_tb}}};\n"
-        f"  var PROFILES = {profiles_json};\n"
-        "  function updateHeadroom(){\n"
-        "    var sel = document.getElementById('sizing-sel');\n"
-        "    if (!sel) return;\n"
-        "    var idx = parseInt(sel.value, 10);\n"
-        "    if (isNaN(idx) || idx < 0 || idx >= PROFILES.length) idx = 0;\n"
-        "    var p = PROFILES[idx];\n"
-        "    var descEl = document.getElementById('hd-profile-desc');\n"
-        "    if (descEl) descEl.textContent = p.desc;\n"
-        "    var buckets = [\n"
-        "      ['compute', p.vcpu, FLEET.vcpu, 'vCPU', false],\n"
-        "      ['ram', p.ram, FLEET.ram, 'GB', false],\n"
-        "      ['storage', p.nvme, FLEET.nvme, 'TB raw', true]\n"
-        "    ];\n"
-        "    buckets.forEach(function(r){\n"
-        "      var el = document.getElementById('hd-' + r[0]);\n"
-        "      if (!el) return;\n"
-        "      var req = r[1], avail = r[2], unit = r[3], isFloat = r[4];\n"
-        "      var availStr = isFloat ? avail.toFixed(2) : '' + avail;\n"
-        "      var reqStr = isFloat ? req.toFixed(1) : '' + req;\n"
-        "      if (avail >= req) {\n"
-        "        var rem = avail - req;\n"
-        "        var remStr = isFloat ? rem.toFixed(2) : '' + Math.round(rem);\n"
-        "        el.innerHTML = '<span style=\"color:#16a34a;font-weight:700\">\u2705 ' + availStr + ' ' + unit + '</span> ' +\n"
-        "          '<span style=\"color:var(--text-muted,#64748b);font-size:.78rem\">(needs ' + reqStr + ', +' + remStr + ' free)</span>';\n"
-        "      } else {\n"
-        "        var diff = req - avail;\n"
-        "        var diffStr = isFloat ? diff.toFixed(2) : '' + Math.round(diff);\n"
-        "        el.innerHTML = '<span style=\"color:#dc2626;font-weight:700\">\u2717 Short by ' + diffStr + ' ' + unit + '</span> ' +\n"
-        "          '<span style=\"color:var(--text-muted,#64748b);font-size:.78rem\">(have ' + availStr + ', need ' + reqStr + ')</span>';\n"
-        "      }\n"
-        "    });\n"
-        "  }\n"
-        "  function initHeadroom(){\n"
-        "    var maxIdx = -1;\n"
-        "    for (var i = PROFILES.length - 1; i >= 0; i--) {\n"
-        "      var p = PROFILES[i];\n"
-        "      if (FLEET.vcpu >= p.vcpu && FLEET.ram >= p.ram && FLEET.nvme >= p.nvme) {\n"
-        "        maxIdx = i;\n"
-        "        break;\n"
-        "      }\n"
-        "    }\n"
-        "    var maxBadge = document.getElementById('hd-max-badge');\n"
-        "    var sel = document.getElementById('sizing-sel');\n"
-        "    if (maxBadge) {\n"
-        "      if (maxIdx >= 0) {\n"
-        "        maxBadge.innerHTML = '<span style=\"color:#16a34a;font-weight:700\">\u2705 Max Supported: ' + PROFILES[maxIdx].shortName + '</span>';\n"
-        "      } else {\n"
-        "        maxBadge.innerHTML = '<span style=\"color:#dc2626;font-weight:700\">\u2717 Insufficient for Core MVP</span>';\n"
-        "      }\n"
-        "    }\n"
-        "    if (sel) {\n"
-        "      sel.value = '' + (maxIdx >= 0 ? maxIdx : 0);\n"
-        "    }\n"
-        "    updateHeadroom();\n"
-        "  }\n"
-        "  document.addEventListener('change', function(e){\n"
-        "    var actionEl = e.target && e.target.closest ? e.target.closest('[data-action]') : null;\n"
-        "    if (!actionEl) return;\n"
-        "    if (actionEl.getAttribute('data-action') === 'change-sizing-profile') {\n"
-        "      updateHeadroom();\n"
-        "    }\n"
-        "  });\n"
-        "  if (document.readyState === 'loading') {\n"
-        "    document.addEventListener('DOMContentLoaded', initHeadroom);\n"
-        "  } else {\n"
-        "    initHeadroom();\n"
-        "  }\n"
-        "})();\n"
-        # Hosts | Network Topology pane switcher (used by ToR tile + fleet detail segment)
         "window.showFleetDetailView=function(name){\n"
         "  var hosts=document.getElementById('fleet-detail-hosts');\n"
         "  var topo=document.getElementById('fleet-detail-topology');\n"
@@ -911,13 +830,13 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     return f"""<style>{_tile_css}</style>
 <div class="tile-grid">
 
-  <!-- Tile 1: VCF Resource Headroom -->
+  <!-- Tile 1: Fleet Aggregate Raw Resources -->
   <div class="tile tile-wide">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:.65rem">
       <div>
-        <h3 style="margin:0 0 .2rem">VCF Management Resource Headroom</h3>
+        <h3 style="margin:0 0 .2rem">Fleet Aggregate Raw Resources</h3>
         <div style="font-size:.76rem;color:var(--text-muted,#64748b)">
-          Management domain bring-up only &middot; <span id="hd-max-badge" style="font-weight:600">Evaluating...</span>
+          Total unreserved physical capacity across all scanned inventory hosts &middot; {host_count_note}
         </div>
       </div>
       <div style="display:flex;gap:.75rem;font-size:.78rem;align-items:center;padding-top:.1rem">
@@ -925,39 +844,36 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         <a href="{VCF_SIZER_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600" title="Official Broadcom VCF / vSAN Sizer">🧮 VCF Sizer &#x2197;</a>
       </div>
     </div>
-    <div style="margin-bottom:.75rem">
-      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:.4rem">
-        <label for="sizing-sel" style="font-size:.82rem;font-weight:600;color:var(--text-muted,#475569)">Target Model:</label>
-        <select id="sizing-sel" data-action="change-sizing-profile"
-          style="flex:1;min-width:260px;max-width:100%;padding:.25rem .5rem;border:1px solid var(--border,#e2e8f0);border-radius:5px;font-size:.82rem;background:var(--card,#fff);color:var(--text,#1e293b)">
-          {sizing_options_html}
-        </select>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.65rem;margin:.5rem 0 .75rem">
+      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Node Count</div>
+        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{host_count} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Nodes</span></div>
+        <div style="margin-top:.35rem">{host_count_badge}</div>
       </div>
-      <div id="hd-profile-desc" style="font-size:.74rem;color:var(--text-muted,#64748b);margin-top:.3rem;line-height:1.35">
-        {initial_profile_desc}
+      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Physical Compute</div>
+        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_cores} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Cores</span></div>
+        <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_sockets} CPU socket(s) ({fleet_cores} vCPU)</div>
       </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
-      <div>
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.35rem">Compute (vCPU)</div>
-        <div id="hd-compute" style="font-size:.88rem">&mdash;</div>
+      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Physical Memory</div>
+        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_ram_gb:,} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">GB RAM</span></div>
+        <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_ram_tb:.2f} TB physical RAM</div>
       </div>
-      <div>
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.35rem">Memory (RAM)</div>
-        <div id="hd-ram" style="font-size:.88rem">&mdash;</div>
-      </div>
-      <div>
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.35rem">
-          Storage (NVMe Raw)&nbsp;<span
-            title="Raw NVMe capacity shown. Actual usable storage depends on RAID policy, metadata, deduplication, and compression applied by vSAN ESA."
-            style="cursor:help;color:var(--primary,#60a5fa);font-size:.88rem">&#9432;</span>
-        </div>
-        <div id="hd-storage" style="font-size:.88rem">&mdash;</div>
+      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Raw NVMe Storage</div>
+        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_nvme_tb:.2f} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">TB NVMe</span></div>
+        <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">Direct-attached raw storage</div>
       </div>
     </div>
-    <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin:.75rem 0 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:.3rem">
-      <span>Fleet aggregate: {fleet_vcpu} vCPU &middot; {fleet_ram_gb} GB RAM &middot; {fleet_nvme_tb:.2f} TB NVMe raw &mdash; {host_count} host(s)</span>
-      <span>{host_count_note}</span>
+    <div style="background:var(--bg-subtle,rgba(241,245,249,.6));border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.6rem .8rem;font-size:.76rem;line-height:1.45;color:var(--text-muted,#475569)">
+      <div style="font-weight:600;color:var(--text,#1e293b);margin-bottom:.2rem;display:flex;align-items:center;gap:.35rem">
+        <span>📐 Sizing &amp; Failure Domain Guidance</span>
+      </div>
+      <div>
+        Raw totals represent unreserved physical hardware capacity across all scanned hosts. These aggregates do <strong>not</strong> deduct N+1 / N+2 host failover reserves, vSAN ESA RAID parity, metadata slack space (20&ndash;30%), ESXi system overhead, or workload vCPU overcommit ratios.
+        Use the official <a href="{VCF_PLANNING_WORKBOOK_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600">Broadcom Planning &amp; Preparation Workbook &#x2197;</a> and <a href="{VCF_SIZER_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600">VCF Sizer &#x2197;</a> to validate usable workload capacity, HA failover headroom, and cluster sizing for your target deployment model.
+      </div>
     </div>
   </div>
 

@@ -3,7 +3,7 @@ vSAN ESA / OSA readiness and storage architecture evaluation for VCF 9.1.
 """
 
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 def evaluate_vsan(
@@ -15,6 +15,7 @@ def evaluate_vsan(
     raid_nvme_count: int = 0,
     software_raid_nvme_count: int = 0,
     osa_nvme_count: int = 0,
+    total_nvme_tb: Optional[float] = None,
 ) -> Tuple[str, str]:
     if trimode_nvme_count > 0 and nvme_direct_count == 0:
         return (
@@ -36,11 +37,18 @@ def evaluate_vsan(
         if software_raid_nvme_count > 0:
             sub_note += " (SW RAID: bypass in BIOS)"
         return "\U0001f7e2 vSAN ESA Ready", sub_note
+    elif nvme_direct_count >= 2 and nic_max_gbps >= 10:
+        sub_note = f"{nvme_direct_count} Direct NVMe + {int(nic_max_gbps)} GbE NIC (Small Profile)"
+        if total_nvme_tb is not None and total_nvme_tb >= 20.0:
+            sub_note += " (25Gbps upgrade recommended for ≥20TB capacity)"
+        if software_raid_nvme_count > 0:
+            sub_note += " (SW RAID: bypass in BIOS)"
+        return "\U0001f7e2 vSAN ESA Ready", sub_note
     elif nvme_direct_count >= 2:
         sub_note = f"{nvme_direct_count} NVMe drives but max NIC is {nic_max_gbps} GbE"
         if software_raid_nvme_count > 0:
             sub_note += " (SW RAID: bypass in BIOS)"
-        return "\U0001f7e1 ESA Storage Met (Needs 25GbE NIC)", sub_note
+        return "\U0001f7e1 ESA Storage Met (Needs ≥10GbE NIC)", sub_note
     elif sas_sata_count >= 2 or (nvme_direct_count + sas_sata_count >= 2) or (nvme_direct_count + sas_sata_count + osa_nvme_count >= 2):
         total_osa = sas_sata_count + osa_nvme_count
         if nvme_direct_count > 0:

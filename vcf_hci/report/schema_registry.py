@@ -143,6 +143,7 @@ def _extract_vsan_verdict(data: Dict[str, Any]) -> str:
          for n in data.get("network_adapters", [])),
         default=0,
     )
+    total_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe") / 1000, 1)
     vsan_verdict, _ = VCF9CompatibilityEngine.evaluate_vsan(
         esa_count,
         osa_count,
@@ -152,6 +153,7 @@ def _extract_vsan_verdict(data: Dict[str, Any]) -> str:
         raid_nvme_count=raid_nvme,
         software_raid_nvme_count=sw_raid_nvme,
         osa_nvme_count=osa_nvme_count,
+        total_nvme_tb=total_nvme_tb,
     )
     return strip_html(vsan_verdict)
 

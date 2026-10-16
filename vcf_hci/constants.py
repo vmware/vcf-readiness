@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.9.4"
+TOOL_VERSION = "9.9.5"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -57,7 +57,7 @@ MTAT_GITHUB_URL = "https://github.com/VMware/MTAT"
 # - Broadcom TechDocs: VCF Fleet Sizing Models (Simple, HA - Medium, HA - Large)
 # ---------------------------------------------------------------------------
 VCF_PLANNING_WORKBOOK_URL = (
-    "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/planning-and-preparatio-0.html"
+    "https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/planning-and-preparation.html"
 )
 VCF_SIZER_URL = "https://vcf.broadcom.com/tools/vsansizer/home"
 VCF_CONFIG_MAX_URL = "https://configmax.broadcom.com/"
