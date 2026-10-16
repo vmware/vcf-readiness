@@ -148,6 +148,7 @@ def generate_summary_html(
         esa_count = sum(1 for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe")
         osa_count = sum(1 for d in all_drives if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA"))
         osa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA Only")
+        esa_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe") / 1000, 1)
         verdict = cpu_info.get("verdict", "")
         if "Unsupported" in verdict:
             cpu_td = "<span class='badge danger'>🔴 Unsupported</span>"
@@ -189,6 +190,7 @@ def generate_summary_html(
             trimode_nvme_count=trimode_nvme,
             raid_nvme_count=raid_nvme,
             osa_nvme_count=osa_nvme_count,
+            total_nvme_tb=esa_nvme_tb,
         )
         if "ESA Ready" in vsan_verdict:
             esa_td = f"<span class='badge success'>🟢 ESA Ready</span> <small style='color:#64748b'>{esa_count} NVMe</small>"

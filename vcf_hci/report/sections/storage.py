@@ -128,12 +128,16 @@ def render_vsan_esa_ready_node_cards(
             if _idx == 0:
                 _badge = f"<span class='badge success'>🟢 {_matched['name']}</span>"
                 _note  = top_note or f"All {_matched['name']} criteria met."
+                if _rn_nvme_tb >= 20.0 and _rn_nic < 25:
+                    _note += " (25Gbps upgrade recommended for capacity ≥20TB)"
             else:
                 _next_p     = profiles[_idx - 1]
                 _next_gaps  = _gaps[_next_p["name"]]
                 _gap_labels = [f"{g[0]}: {g[1]} (need {g[2]})" for g in _next_gaps]
                 _badge = f"<span class='badge warning'>🟡 {_matched['name']}</span>"
                 _note  = f"Gating factor for {_next_p['name']}: {' · '.join(_gap_labels)}"
+                if _rn_nvme_tb >= 20.0 and _rn_nic < 25:
+                    _note += " (25Gbps upgrade recommended for capacity ≥20TB)"
         else:
             _sm_gaps    = _gaps.get(profiles[-1]["name"], [])
             _gap_labels = [f"{g[0]}: {g[1]} (need {g[2]})" for g in _sm_gaps]
@@ -194,14 +198,19 @@ def render_vsan_esa_ready_node_cards(
         trimode_nvme_count=trimode_nvme_count,
         raid_nvme_count=raid_nvme_count,
         osa_nvme_count=osa_nvme_count,
+        total_nvme_tb=_rn_nvme_tb,
     )
 
     if "ESA Ready" in vsan_verdict:
         esa_badge = '<span class="badge success">🟢 ESA Ready</span>'
-        esa_subtext = f"Direct-attached NVMe ({esa_nvme_count} drives) + ≥25 GbE NIC ({max_nic_gbps} Gbps)."
+        if max_nic_gbps >= 25:
+            esa_subtext = f"Direct-attached NVMe ({esa_nvme_count} drives) + ≥25 GbE NIC ({max_nic_gbps:g} Gbps)."
+        else:
+            rec_note = " — 25Gbps upgrade recommended for capacity ≥20TB" if _rn_nvme_tb >= 20.0 else ""
+            esa_subtext = f"Direct-attached NVMe ({esa_nvme_count} drives) + {max_nic_gbps:g} GbE NIC (Small Profile supported{rec_note})."
     elif "ESA Storage Met" in vsan_verdict:
         esa_badge = '<span class="badge warning">🟡 ESA Storage Met</span>'
-        esa_subtext = f"Direct-attached NVMe ({esa_nvme_count} drives) met; NIC speed is {max_nic_gbps} Gbps (needs ≥25 GbE)."
+        esa_subtext = f"Direct-attached NVMe ({esa_nvme_count} drives) met; NIC speed is {max_nic_gbps:g} Gbps (needs ≥10 GbE for Small or ≥25 GbE for Medium/Large)."
     elif "Tri-Mode RAID" in vsan_verdict:
         esa_badge = '<span class="badge danger">🔴 NOT Supported (Tri-Mode RAID)</span>'
         esa_subtext = vsan_detail

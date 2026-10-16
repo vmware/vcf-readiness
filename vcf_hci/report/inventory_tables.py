@@ -342,8 +342,10 @@ def summarize_nics(data: dict) -> dict:
         tooltip = f"vSAN ESA Network Ready: {up_25g} active \u226525 GbE ports (Total: {port_count} ports, {up} Up, {down} Down, Max: {max_gbps:g} Gbps)"
     elif max_gbps >= 25:
         tooltip = f"\u226525 GbE Capable ({max_gbps:g} Gbps), but only {up_25g} active \u226525G link(s) (Total: {port_count} ports, {up} Up, {down} Down; vSAN ESA recommends \u22652 active 25 GbE uplinks)"
+    elif max_gbps >= 10:
+        tooltip = f"10 GbE Capable ({max_gbps:g} Gbps): Meets vSAN ESA Small / Edge baseline (Total: {port_count} ports, {up} Up, {down} Down; 25Gbps upgrade recommended for \u226520TB node capacity)"
     elif port_count > 0:
-        tooltip = f"Sub-25 GbE NIC: Max link speed is {max_gbps:g} Gbps (vSAN ESA recommends \u226525 GbE uplinks)"
+        tooltip = f"Sub-10 GbE NIC: Max link speed is {max_gbps:g} Gbps (vSAN ESA requires \u226510 GbE for Small or \u226525 GbE for Medium/Large)"
     else:
         tooltip = "No network interfaces detected"
 
@@ -359,6 +361,7 @@ def summarize_nics(data: dict) -> dict:
         "tooltip": tooltip,
         "has_down": down > 0,
         "meets_25g": max_gbps >= 25,
+        "meets_esa_nic": max_gbps >= 10,
     }
 
 
@@ -521,34 +524,71 @@ def evaluate_vsan_esa_profile(
     is_medium = (c_esa >= 2 and (c_ram >= 256 or c_ram == 0) and (c_cores >= 32 or c_cores == 0))
     is_small = (c_esa >= 2 and (c_ram >= 128 or c_ram == 0) and (c_cores >= 16 or c_cores == 0))
 
-    if c_nic < 25:
+    if c_nic < 10:
         target_name = "ESA-L (Large)" if is_large else ("ESA-M (Medium)" if is_medium else "ESA-S (Small)")
         ram_str = f", {c_ram:g} GB RAM" if c_ram else ""
         core_str = f", {c_cores} cores" if c_cores else ""
         return {
-            "tier_code": "Needs 25G",
-            "tier_label": "Needs 25G NIC",
-            "profile": "Needs 25G",
+            "tier_code": "Needs NIC",
+            "tier_label": "Needs ≥10G NIC",
+            "profile": "Needs NIC",
             "status": "warn",
             "tooltip": (
                 f"Storage & compute qualify for vSAN ESA {target_name} ({c_esa} Direct NVMe{ram_str}{core_str}), "
-                f"but max NIC speed is {c_nic:g} Gbps. Upgrade to \u226525 GbE NIC for ESA Ready status.{sw_note}"
+                f"but max NIC speed is {c_nic:g} Gbps. Upgrade to \u226510 GbE (Small) or \u226525 GbE (Medium/Large) for ESA Ready status.{sw_note}"
             ),
             "meets_storage": True,
             "meets_network": False,
         }
 
+    # At 10 GbE (< 25 GbE), vSAN-HCI-SM / CyberRecovery-SM is officially supported
+    if c_nic < 25:
+        rec_25g = (c_tb >= 20.0 or is_medium or is_large)
+        ram_desc = f"{c_ram:g} GB RAM (\u2265128GB)" if c_ram else "RAM \u2265128GB"
+        core_desc = f"{c_cores} cores (\u226516c)" if c_cores else "Cores \u226516"
+        if is_small or is_medium or is_large:
+            tier_label = "ESA-S (25G Rec.)" if rec_25g else "ESA-S (Small)"
+            rec_note = " — 25Gbps upgrade recommended for capacity \u226520TB / Medium workloads" if rec_25g else " (10 GbE supported)"
+            return {
+                "tier_code": "ESA-S",
+                "tier_label": tier_label,
+                "profile": "Small",
+                "status": "good",
+                "rec_upgrade_25g": rec_25g,
+                "tooltip": (
+                    f"vSAN ESA Small Profile (ESA-S): {c_esa} Direct NVMe ({c_tb:g} TB), "
+                    f"{ram_desc}, {core_desc}, {c_nic:g} GbE NIC. Meets entry datacenter cluster criteria{rec_note}.{sw_note}"
+                ),
+                "meets_storage": True,
+                "meets_network": True,
+            }
+        return {
+            "tier_code": "ESA-XS",
+            "tier_label": "ESA-XS (Edge)",
+            "profile": "Edge",
+            "status": "good",
+            "rec_upgrade_25g": False,
+            "tooltip": (
+                f"vSAN ESA Edge Profile (ESA-XS): {c_esa} Direct NVMe ({c_tb:g} TB), "
+                f"{c_ram:g} GB RAM, {c_cores} cores, {c_nic:g} GbE NIC. Suitable for ROBO / Edge deployments (10 GbE supported).{sw_note}"
+            ),
+            "meets_storage": True,
+            "meets_network": True,
+        }
+
     if is_large:
         ram_desc = f"{c_ram:g} GB RAM (\u2265512GB)" if c_ram else "RAM \u2265512GB"
         core_desc = f"{c_cores} cores (\u226548c)" if c_cores else "Cores \u226548"
+        fabric_note = " (100G recommended fabric met)" if c_nic >= 100 else " (25 GbE supported deviation; 100 GbE recommended)"
         return {
             "tier_code": "ESA-L",
             "tier_label": "ESA-L (Large)",
             "profile": "Large",
             "status": "good",
+            "rec_upgrade_25g": False,
             "tooltip": (
                 f"vSAN ESA Large Profile (ESA-L): {c_esa} Direct NVMe ({c_tb:g} TB), "
-                f"{ram_desc}, {core_desc}, {c_nic:g} GbE NIC. Meets high-performance cluster criteria.{sw_note}"
+                f"{ram_desc}, {core_desc}, {c_nic:g} GbE NIC{fabric_note}. Meets high-performance cluster criteria.{sw_note}"
             ),
             "meets_storage": True,
             "meets_network": True,
@@ -562,6 +602,7 @@ def evaluate_vsan_esa_profile(
             "tier_label": "ESA-M (Medium)",
             "profile": "Medium",
             "status": "good",
+            "rec_upgrade_25g": False,
             "tooltip": (
                 f"vSAN ESA Medium Profile (ESA-M): {c_esa} Direct NVMe ({c_tb:g} TB), "
                 f"{ram_desc}, {core_desc}, {c_nic:g} GbE NIC. Meets standard enterprise cluster criteria.{sw_note}"
@@ -578,6 +619,7 @@ def evaluate_vsan_esa_profile(
             "tier_label": "ESA-S (Small)",
             "profile": "Small",
             "status": "good",
+            "rec_upgrade_25g": False,
             "tooltip": (
                 f"vSAN ESA Small Profile (ESA-S): {c_esa} Direct NVMe ({c_tb:g} TB), "
                 f"{ram_desc}, {core_desc}, {c_nic:g} GbE NIC. Meets entry datacenter cluster criteria.{sw_note}"
@@ -591,6 +633,7 @@ def evaluate_vsan_esa_profile(
         "tier_label": "ESA-XS (Edge)",
         "profile": "Edge",
         "status": "good",
+        "rec_upgrade_25g": False,
         "tooltip": (
             f"vSAN ESA Edge Profile (ESA-XS): {c_esa} Direct NVMe ({c_tb:g} TB), "
             f"{c_ram:g} GB RAM, {c_cores} cores, {c_nic:g} GbE NIC. Suitable for ROBO / Edge deployments.{sw_note}"
@@ -837,6 +880,7 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             raid_nvme_count=raid_nvme,
             software_raid_nvme_count=sw_raid_nvme,
             osa_nvme_count=osa_nvme,
+            total_nvme_tb=_safe_float(esa.get("total_tb"), 0.0),
         )
         esa_tier = _map_esa_tier(vsan_verdict)
         esa_profile = evaluate_vsan_esa_profile(

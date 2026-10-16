@@ -8,7 +8,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
-[![Download v9.9.4](https://img.shields.io/badge/Download-v9.9.4-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.9.4)
+[![Download v9.9.5](https://img.shields.io/badge/Download-v9.9.5-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.9.5)
 
 ---
 
@@ -40,8 +40,8 @@ Watch short step-by-step video guides to get up and running, launch on macOS, an
 The recommended and verified installation runs directly from source using the Python 3.9+ standard library (zero external dependencies).
 
 <p align="center">
-  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.9.4/Distribution-VCF-Readiness.zip">
-    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.9.4_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
+  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.9.5/Distribution-VCF-Readiness.zip" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.9.5_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
   </a>
 </p>
 <p align="center">
@@ -51,10 +51,10 @@ The recommended and verified installation runs directly from source using the Py
 <details>
 <summary><strong>Alternative: Pre-compiled standalone binaries (unsigned developer builds)</strong></summary>
 
-If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.9.4 page](https://github.com/vmware/vcf-readiness/releases/tag/9.9.4):
+If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.9.5 page](https://github.com/vmware/vcf-readiness/releases/tag/9.9.5):
 
-- **Windows:** `VCF-Readiness-Web-v9.9.4-win.zip` (double-click executable; may show Windows SmartScreen notice).
-- **macOS:** `VCF-Readiness-Web-v9.9.4-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
+- **Windows:** `VCF-Readiness-Web-v9.9.5-win.zip` (double-click executable; may show Windows SmartScreen notice).
+- **macOS:** `VCF-Readiness-Web-v9.9.5-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
 
 *Note: These are unsigned community convenience builds. To avoid operating system security prompts, running directly from source with Python 3.9+ is strongly recommended.*
 

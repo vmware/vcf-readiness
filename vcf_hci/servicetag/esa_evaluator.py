@@ -61,6 +61,15 @@ _NIC_25G_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Matches 10 GbE NICs
+_NIC_10G_PATTERN = re.compile(
+    r"\b10\s*GbE\b"
+    r"|\b10\s*Gb\b"
+    r"|\b10G\b"
+    r"|\bSFP\+\b",
+    re.IGNORECASE,
+)
+
 # "No RAID" — explicit "no hardware RAID" line item
 _NO_RAID_PATTERN = re.compile(r"\bNo\s+RAID\b", re.IGNORECASE)
 
@@ -99,10 +108,11 @@ def evaluate_esa_from_components(
         "has_perc":        bool,
         "nvme_count":      int,
         "has_25g_nic":     bool,
+        "has_10g_nic":     bool,
         "no_raid_explicit": bool,
         "perc_items":      [str, ...],    # matching PERC/RAID descriptions
         "nvme_items":      [str, ...],    # matching NVMe drive descriptions
-        "nic_items":       [str, ...],    # matching ≥25 GbE NIC descriptions
+        "nic_items":       [str, ...],    # matching ≥25 GbE / 10 GbE NIC descriptions
         "notes":           [str, ...],    # human-readable explanation bullets
         "data_source":     "components" | "model_inference" | "none",
       }
@@ -113,6 +123,7 @@ def evaluate_esa_from_components(
         "has_perc":         False,
         "nvme_count":       0,
         "has_25g_nic":      False,
+        "has_10g_nic":      False,
         "no_raid_explicit": False,
         "perc_items":       [],
         "nvme_items":       [],
@@ -155,11 +166,14 @@ def evaluate_esa_from_components(
                 result["nvme_count"] += qty
                 result["nvme_items"].append(f"{qty}× {desc.strip()}")
 
-        # NIC detection (25 GbE+)
+        # NIC detection (25 GbE+ and 10 GbE)
         is_nic = bool(_NIC_CODE.match(item_num))
         if is_nic or "NIC" in desc.upper() or "Ethernet" in desc or "GbE" in desc:
             if _NIC_25G_PATTERN.search(desc):
                 result["has_25g_nic"] = True
+                result["nic_items"].append(desc.strip())
+            elif _NIC_10G_PATTERN.search(desc):
+                result["has_10g_nic"] = True
                 result["nic_items"].append(desc.strip())
 
     return _apply_verdict(result)
@@ -210,10 +224,17 @@ def _apply_verdict(result: dict) -> dict:
         notes.append("≥ 25 GbE NIC present — vSAN ESA networking requirement met.")
         result["verdict"] = "ESA Ready"
         result["badge"]   = "success"
+    elif result.get("has_10g_nic"):
+        notes.append(
+            "10 GbE NIC present — satisfies vSAN ESA Small ReadyNode profile "
+            "(25Gbps upgrade recommended for node capacity ≥ 20TB / Medium profiles)."
+        )
+        result["verdict"] = "ESA Ready (Small)"
+        result["badge"]   = "success"
     else:
         notes.append(
-            "No ≥ 25 GbE NIC detected in original config — "
-            "vSAN ESA networking requires at least 1 × 25 GbE adapter. "
+            "No ≥ 10 GbE NIC detected in original config — "
+            "vSAN ESA networking requires at least 10 GbE for Small or 25 GbE for Medium/Large. "
             "The server may still qualify as 'ESA Storage Met' pending a NIC upgrade."
         )
         result["verdict"] = "ESA Storage Met"

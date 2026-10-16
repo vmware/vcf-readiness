@@ -387,7 +387,7 @@ def build_detailed_inventory_html(
       <option value="ESA-S">ESA-S (Small)</option>
       <option value="ESA-XS">ESA-XS (Edge)</option>
       <option value="StorageMet">Storage Met</option>
-      <option value="Needs 25G">Needs 25G NIC</option>
+      <option value="Needs NIC">Needs NIC Upgrade</option>
       <option value="Ready">ESA Ready (Any)</option>
       <option value="Blocked">Blocked</option>
       <option value="Insufficient">Insufficient</option>
@@ -627,7 +627,9 @@ def build_detailed_inventory_html(
         if (esa === 'Ready') {{
           if (dProfile !== 'ESA-L' && dProfile !== 'ESA-M' && dProfile !== 'ESA-S' && dProfile !== 'ESA-XS' && dEsa !== 'Ready') ok = false;
         }} else if (esa === 'StorageMet') {{
-          if (dEsa !== 'StorageMet' && dProfile !== 'Needs 25G' && dProfile.indexOf('Storage') < 0) ok = false;
+          if (dEsa !== 'StorageMet' && dProfile !== 'Needs NIC' && dProfile !== 'Needs 25G' && dProfile.indexOf('Storage') < 0 && dProfile.indexOf('Needs') < 0) ok = false;
+        }} else if (esa === 'Needs NIC' || esa === 'Needs 25G') {{
+          if (dProfile !== 'Needs NIC' && dProfile !== 'Needs 25G' && dProfile.indexOf('Needs') < 0) ok = false;
         }} else if (esa === 'Blocked') {{
           if (dProfile !== 'Blocked' && dEsa !== 'Blocked') ok = false;
         }} else if (esa === 'Insufficient') {{

@@ -144,8 +144,8 @@ def _esa_tier_chip(tier: str) -> str:
         "Unknown": "?",
     }.get(tier, tier)
     tip = {
-        "Ready": "vSAN ESA Ready: Meets storage (>=2 direct NVMe SSDs) and networking (>=25 GbE) requirements.",
-        "StorageMet": "ESA Storage Met: Meets vSAN ESA storage criteria (>=2 Direct NVMe SSDs), but host NIC is <25 GbE. Requires a 25 GbE+ NIC upgrade for full ESA readiness.",
+        "Ready": "vSAN ESA Ready: Meets storage (>=2 direct NVMe SSDs) and networking (>=10 GbE for Small, >=25 GbE for Medium/Large) requirements.",
+        "StorageMet": "ESA Storage Met: Meets vSAN ESA storage criteria (>=2 Direct NVMe SSDs), but host NIC is <10 GbE. Requires a 10/25 GbE+ NIC upgrade for full ESA readiness.",
         "Blocked": "vSAN ESA Ineligible: NVMe drives are behind RAID/Tri-Mode controller or Intel VMD is enabled.",
         "Insufficient": "Insufficient drives for vSAN ESA/OSA.",
         "Unknown": "vSAN status unknown",
