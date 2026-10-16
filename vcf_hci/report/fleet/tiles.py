@@ -785,18 +785,20 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
 
     if host_count >= 4:
         host_count_badge = (
-            f'<span style="background:rgba(22,163,74,.12);color:var(--success,#16a34a);'
-            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">'
+            f'<span style="background:rgba(22,163,74,.15);color:var(--success,#16a34a);'
+            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600;'
+            f'border:1px solid rgba(22,163,74,.3)">'
             f'&#10003; Node Minimum Met ({host_count} hosts &ge; 4)</span>'
         )
         host_count_note = f'<span style="color:var(--success,#16a34a);font-weight:500">&#10003; Node minimum met ({host_count} hosts &ge; 4)</span>'
     elif host_count > 0:
         host_count_badge = (
-            f'<span style="background:rgba(217,119,6,.12);color:#d97706;'
-            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">'
+            f'<span style="background:rgba(217,119,6,.15);color:var(--warning,#ca8a04);'
+            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600;'
+            f'border:1px solid rgba(217,119,6,.3)">'
             f'⚠️ Requires &ge;4 hosts ({host_count} scanned)</span>'
         )
-        host_count_note = f'<span style="color:#d97706;font-weight:600">⚠️ VCF mgmt domain requires &ge;4 hosts ({host_count} scanned)</span>'
+        host_count_note = f'<span style="color:var(--warning,#ca8a04);font-weight:600">⚠️ VCF mgmt domain requires &ge;4 hosts ({host_count} scanned)</span>'
     else:
         host_count_badge = '<span style="color:var(--text-muted,#64748b);font-size:.72rem">No hosts</span>'
         host_count_note = '<span style="color:var(--text-muted,#64748b)">0 hosts scanned</span>'
@@ -834,7 +836,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
   <div class="tile tile-wide">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:.65rem">
       <div>
-        <h3 style="margin:0 0 .2rem">Fleet Aggregate Raw Resources</h3>
+        <h3 class="tile-title-primary" style="margin:0 0 .2rem">Fleet Aggregate Raw Resources</h3>
         <div style="font-size:.76rem;color:var(--text-muted,#64748b)">
           Total unreserved physical capacity across all scanned inventory hosts &middot; {host_count_note}
         </div>
@@ -845,28 +847,28 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.65rem;margin:.5rem 0 .75rem">
-      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Node Count</div>
-        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{host_count} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Nodes</span></div>
+      <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Node Count</div>
+        <div class="resource-metric-val" style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{host_count} <span class="resource-metric-unit" style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Nodes</span></div>
         <div style="margin-top:.35rem">{host_count_badge}</div>
       </div>
-      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Physical Compute</div>
-        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_cores} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Cores</span></div>
-        <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_sockets} CPU socket(s) ({fleet_cores} vCPU)</div>
+      <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Physical Compute</div>
+        <div class="resource-metric-val" style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_cores} <span class="resource-metric-unit" style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Cores</span></div>
+        <div class="resource-metric-sub" style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_sockets} CPU socket(s) ({fleet_cores} vCPU)</div>
       </div>
-      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Physical Memory</div>
-        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_ram_gb:,} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">GB RAM</span></div>
-        <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_ram_tb:.2f} TB physical RAM</div>
+      <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Physical Memory</div>
+        <div class="resource-metric-val" style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_ram_gb:,} <span class="resource-metric-unit" style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">GB RAM</span></div>
+        <div class="resource-metric-sub" style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_ram_tb:.2f} TB physical RAM</div>
       </div>
-      <div style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
-        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:.25rem">Raw NVMe Storage</div>
-        <div style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_nvme_tb:.2f} <span style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">TB NVMe</span></div>
-        <div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">Direct-attached raw storage</div>
+      <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
+        <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Raw NVMe Storage</div>
+        <div class="resource-metric-val" style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_nvme_tb:.2f} <span class="resource-metric-unit" style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">TB NVMe</span></div>
+        <div class="resource-metric-sub" style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">Direct-attached raw storage</div>
       </div>
     </div>
-    <div style="background:var(--bg-subtle,rgba(241,245,249,.6));border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.6rem .8rem;font-size:.76rem;line-height:1.45;color:var(--text-muted,#475569)">
+    <div class="resource-guidance-box" style="background:var(--bg-subtle,rgba(241,245,249,.6));border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.6rem .8rem;font-size:.76rem;line-height:1.45;color:var(--text-muted,#475569)">
       <div style="font-weight:600;color:var(--text,#1e293b);margin-bottom:.2rem;display:flex;align-items:center;gap:.35rem">
         <span>📐 Sizing &amp; Failure Domain Guidance</span>
       </div>
