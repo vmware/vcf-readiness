@@ -475,11 +475,12 @@ def parse_drive_details(
             raw_proto = "PCIe/NVMe"
             proto = "PCIE/NVME"
 
+    drive_id_up = str(drive_json.get("Id", "") or "").upper()
     is_boot = (
         bool(drive_json.get("Bootable") or drive_json.get("IsBootDisk"))
-        or any(k in ctrl_id_up or k in ctrl_name_up for k in ["BOSS", "NS204I", "M.2", "AHCI.SLOT", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "SATADOM", "IDSDM"])
+        or any(k in ctrl_id_up or k in ctrl_name_up for k in ["BOSS", "NS204I", "M.2", "AHCI.SLOT", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "SATADOM", "IDSDM", "B545"])
         or "MTFDDAV240TCB" in model_up
-        or any(k in model_up or k in drive_name_up for k in ["BOOT", "BOSS", "NS204I", "SATADOM", "DOM", "IDSDM", "MARVELL", "KXG80ZNV"])
+        or any(k in model_up or k in drive_name_up or k in drive_id_up for k in ["BOOT", "BOSS", "NS204I", "SATADOM", "DOM", "IDSDM", "MARVELL", "KXG80ZNV", "BOOT_DRIVE_BAY"])
         or ("SATA" in proto and 0 < cap_gb <= 240 and any(k in model_up or k in drive_name_up for k in ["OS", "SYS", "HYPERVISOR", "M.2"]))
     )
     if is_boot and "KXG80ZNV" in model_up and cap_gb <= 0:
@@ -506,7 +507,7 @@ def parse_drive_details(
     _is_m2 = (
         "M2" in _ff_raw or "M.2" in _ff_raw
         or any(k in ctrl_id_up or k in ctrl_name_up
-               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID"])
+               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "B545"])
     )
 
     sw_raid_names = getattr(coll, "_SOFTWARE_RAID_NAMES", _SOFTWARE_RAID_NAMES) if coll else _SOFTWARE_RAID_NAMES
@@ -579,7 +580,7 @@ def parse_drive_details(
     _is_m2 = (
         "M2" in _ff_raw or "M.2" in _ff_raw
         or any(k in ctrl_id_up or k in ctrl_name_up
-               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID"])
+               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "B545"])
     )
     if is_edsff:
         nvme_connector = form_factor_label          # "E3.S" / "E1.S" / "EDSFF"

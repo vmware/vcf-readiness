@@ -1769,6 +1769,13 @@ class BaseRedfishCollector(
             except Exception as crawl_err:
                 logger.warning("[%s] Deep crawl encountered an error: %s", getattr(self, "host", "host"), crawl_err)
 
+            # If the primary assessment completed cleanly, do not let diagnostic crawler timeouts mark host failed
+            if result is not None and not result.get("partial_scan"):
+                self.timed_out = False
+                self.skipped = False
+                self._bmc_unresponsive = False
+                self._consecutive_timeouts = 0
+
         self._assessment_complete = True
         return result
 

@@ -185,6 +185,10 @@ def render_cpu_combined_card(
         _spec_bits.append(
             f"<span><span style='color:var(--text-muted)'>NUMA</span> <strong>{_h(_nns_c)}</strong></span>"
         )
+    if sys_info.get("is_liquid_cooled") or (isinstance(cpu_info, dict) and cpu_info.get("cooling") and "liquid" in str(cpu_info.get("cooling")).lower()):
+        _spec_bits.append(
+            f"<span><span style='color:var(--text-muted)'>Cooling</span> <strong>{_h(sys_info.get('cooling_type') or 'Liquid Cooled')}</strong></span>"
+        )
 
     _specs_html = (
         f"<div style='display:flex;flex-wrap:wrap;gap:.3rem 1rem;font-size:.8rem;line-height:1.45;"
@@ -219,12 +223,13 @@ def render_cpu_combined_card(
         "<a href='#tab-cpu' data-jump-tab='tab-cpu' class='btn-link tab-jump-link' style='font-size:.78rem'>"
         "Full details in CPU tab &#8599;</a>"
     )
+    _cooling_badge = sys_info.get("liquid_cooling_badge") or (cpu_info.get("cooling_badge") if isinstance(cpu_info, dict) else "")
     _badges_html = (
         f"<div style='margin-bottom:.55rem'>"
         f"<div style='font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;"
         f"color:var(--text-muted);font-weight:600;margin-bottom:.25rem'>vSphere Support</div>"
         f"<div style='display:flex;gap:.4rem;flex-wrap:wrap;align-items:center'>"
-        f"{vsphere_9_badge}{(' ' + _server_badge) if _server_badge else ''}"
+        f"{vsphere_9_badge}{(' ' + _server_badge) if _server_badge else ''}{(' ' + _cooling_badge) if _cooling_badge else ''}"
         f"</div></div>"
     )
     _combined_sub = " ".join(p for p in (_server_subtext, cpu_subtext) if p)

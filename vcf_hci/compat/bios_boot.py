@@ -113,15 +113,27 @@ def evaluate_bios_version(model_name: str, installed_version: str, release_date:
 
 def _spectre_badge(installed_str: str, baseline: dict) -> tuple:
     """Security floor. Family changes do not invent a pre-Spectre failure."""
+    inst_clean = str(installed_str or "").strip().upper()
+    floor = str(baseline.get("min_spectre") or "0").strip()
+    floor_clean = floor.upper()
+
+    if inst_clean and inst_clean == floor_clean and inst_clean not in ("0", "NONE", "UNKNOWN", "N/A"):
+        return (
+            "ok",
+            (
+                f"<span class='badge success'>\U0001f6e1️ Spectre Microcode: OK "
+                f"(≥ v{floor})</span>"
+            ),
+        )
+
     _inst_fam, inst_nums, _inst_kind = parse_version(installed_str)
-    _sp_fam, sp_nums, _sp_kind = parse_version(str(baseline.get("min_spectre") or "0"))
+    _sp_fam, sp_nums, _sp_kind = parse_version(floor)
     if not inst_nums or not sp_nums:
         inst = parse_version_tuple(installed_str)
-        sp = parse_version_tuple(str(baseline.get("min_spectre") or "0"))
+        sp = parse_version_tuple(floor)
         covered = inst >= sp and inst != (0, 0, 0, 0)
     else:
         covered = _cmp(inst_nums, sp_nums) >= 0
-    floor = baseline.get("min_spectre", "0")
     if covered:
         return (
             "ok",

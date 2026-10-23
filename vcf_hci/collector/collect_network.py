@@ -140,6 +140,12 @@ def _evaluate_npar_partitions(partitions: list, port_count: int = 1, is_vic: boo
     standard_speeds = {1.0, 2.5, 5.0, 10.0, 25.0, 40.0, 50.0, 100.0, 200.0, 400.0}
     for p in partitions:
         spd = float(p.get("speed_gbps") or 0.0)
+        if 10.2 <= spd <= 10.3:
+            spd = 10.0
+        elif 20.4 <= spd <= 20.6:
+            spd = 20.0
+        elif 25.5 <= spd <= 25.7:
+            spd = 25.0
         if spd > 0.0 and spd not in standard_speeds:
             return True
 
@@ -475,36 +481,44 @@ def _usable_lldp_system_desc(text: Any) -> str:
 def infer_nic_manufacturer(raw_mfg: str, pci_info: Optional[dict] = None, adapter_name: str = "") -> str:
     """Infer manufacturer when BMC returns 'Unknown', empty, or unhelpful string."""
     mfg = str(raw_mfg or "").strip()
-    if mfg and mfg.lower() not in ("unknown", "n/a", "none", "", "null"):
-        return normalize_component_manufacturer(mfg)
-
     pci = pci_info or {}
     vid = normalize_pci_id(pci.get("vendor_id", ""))
     svid = normalize_pci_id(pci.get("subsystem_vendor_id", ""))
     name = str(adapter_name or "").strip()
     name_lower = name.lower()
 
+    # If OEM system integrator brand is reported (e.g. LNV/Lenovo/Dell/HPE), check if adapter is third-party silicon
+    is_oem_label = mfg.lower() in ("unknown", "n/a", "none", "", "null", "lnv", "lnvo", "lenovo")
+    if not is_oem_label and mfg.lower() in ("dell", "hpe", "cisco", "supermicro"):
+        if vid in ("15b3", "14e4", "8086", "1077", "10df", "1924") or any(
+            kw in name_lower for kw in ("mellanox", "connectx", "broadcom", "netxtreme", "intel", "qlogic", "fastlinq", "solarflare")
+        ):
+            is_oem_label = True
+
+    if not is_oem_label and mfg:
+        return normalize_component_manufacturer(mfg)
+
     # 1. Check adapter name prefix/keywords
-    if name_lower.startswith("hpe ") or "hewlett packard" in name_lower:
-        return "HPE"
-    if name_lower.startswith("dell ") or "poweredge" in name_lower:
-        return "Dell"
-    if name_lower.startswith("qlogic ") or "qlogic" in name_lower:
-        return "QLogic / Marvell" if "marvell" not in name_lower else "Marvell"
-    if name_lower.startswith("marvell ") or "marvell" in name_lower or "fastlinq" in name_lower:
-        return "Marvell"
-    if name_lower.startswith("intel ") or "intel" in name_lower:
-        return "Intel"
-    if name_lower.startswith("broadcom ") or "broadcom" in name_lower or "netxtreme" in name_lower:
-        return "Broadcom"
     if name_lower.startswith("mellanox ") or "mellanox" in name_lower or "connectx" in name_lower:
         return "Mellanox"
-    if name_lower.startswith("cisco ") or "cisco" in name_lower:
-        return "Cisco"
+    if name_lower.startswith("broadcom ") or "broadcom" in name_lower or "netxtreme" in name_lower:
+        return "Broadcom"
+    if name_lower.startswith("intel ") or "intel" in name_lower:
+        return "Intel"
+    if name_lower.startswith("qlogic ") or "qlogic" in name_lower or "fastlinq" in name_lower:
+        return "QLogic / Marvell" if "marvell" not in name_lower else "Marvell"
+    if name_lower.startswith("marvell ") or "marvell" in name_lower:
+        return "Marvell"
     if name_lower.startswith("emulex ") or "emulex" in name_lower:
         return "Emulex"
     if name_lower.startswith("solarflare ") or "solarflare" in name_lower or "xilinx" in name_lower:
         return "Solarflare"
+    if name_lower.startswith("hpe ") or "hewlett packard" in name_lower:
+        return "HPE"
+    if name_lower.startswith("dell ") or "poweredge" in name_lower:
+        return "Dell"
+    if name_lower.startswith("cisco ") or "cisco" in name_lower:
+        return "Cisco"
 
     # 2. Check PCI Vendor ID
     if vid:
@@ -551,7 +565,14 @@ class _NetworkMixin(_CollectorBase):
             return float(cur_gbps)
         cur_mbps = port.get("CurrentLinkSpeedMbps")
         if cur_mbps and float(cur_mbps) > 0:
-            return float(cur_mbps) / 1000.0
+            c_val = float(cur_mbps)
+            if 10200 <= c_val <= 10300:
+                return 10.0
+            if 20400 <= c_val <= 20600:
+                return 20.0
+            if 25500 <= c_val <= 25700:
+                return 25.0
+            return c_val / 1000.0
 
         # Cisco VIC Port OEM telemetry
         cisco_vic = get_nested(port, "Oem", "Cisco", "VicPort", default={}) or get_nested(port, "Oem", "CIMC", "VicPort", default={})
@@ -584,7 +605,14 @@ class _NetworkMixin(_CollectorBase):
             or adapter.get("SpeedMbps")
         )
         if max_mbps and float(max_mbps) > 0:
-            return float(max_mbps) / 1000.0
+            m_val = float(max_mbps)
+            if 10200 <= m_val <= 10300:
+                return 10.0
+            if 20400 <= m_val <= 20600:
+                return 20.0
+            if 25500 <= m_val <= 25700:
+                return 25.0
+            return m_val / 1000.0
 
         # 3. Supported speeds list
         supp = port.get("SupportedSpeedsGbps") or adapter.get("SupportedSpeedsGbps") or []
@@ -963,6 +991,20 @@ class _NetworkMixin(_CollectorBase):
                         or get_nested(adapter, "Oem", "Supermicro", "USBConnection")
                     ):
                         continue
+                    # Deduplicate logical NetworkInterface resources linking directly to a physical NetworkAdapter
+                    net_adapter_link = (
+                        get_nested(adapter, "Links", "NetworkAdapter", "@odata.id")
+                        or get_nested(adapter, "Links", "NetworkAdapter")
+                    )
+                    if isinstance(net_adapter_link, dict):
+                        net_adapter_link = net_adapter_link.get("@odata.id")
+                    if net_adapter_link and isinstance(net_adapter_link, str):
+                        target_id = net_adapter_link.rstrip("/").split("/")[-1]
+                        if target_id in seen_ids or any(n.get("id") == target_id for n in nic_list):
+                            logger.debug("Deduplicated logical NetworkInterface %s linking to physical adapter %s", uid, target_id)
+                            seen_ids.add(uid)
+                            continue
+
                     # Sub-interface / partition of a NetworkAdapter already captured
                     adapter_mac = _clean_mac_address(adapter.get("MACAddress"))
                     parent_uid = _get_parent_iface_id(
@@ -1018,6 +1060,9 @@ class _NetworkMixin(_CollectorBase):
                                             port_match["current_speed_gbps"] = int(sub_speed) if sub_speed == int(sub_speed) else round(sub_speed, 2)
                                         if sub_link and sub_link != "Down" and port_match.get("link_status") in ("Down", None, ""):
                                             port_match["link_status"] = sub_link
+                                    elif p_nic.get("npar_enabled") is False:
+                                        # Explicitly not an NPAR adapter - do not create artificial NPAR partitions
+                                        pass
                                     else:
                                         sub_parts.append({
                                             "partition_id": uid,
@@ -1027,7 +1072,7 @@ class _NetworkMixin(_CollectorBase):
                                         })
                                 p_ports = p_nic.get("ports")
                                 p_ports_len = len(p_ports) if isinstance(p_ports, (list, tuple)) else 0
-                                p_nic["is_npar"] = _evaluate_npar_partitions(sub_parts, p_ports_len)
+                                p_nic["is_npar"] = False if p_nic.get("npar_enabled") is False else _evaluate_npar_partitions(sub_parts, p_ports_len)
                                 seen_ids.add(uid)
                                 break
                         continue
@@ -1271,7 +1316,8 @@ class _NetworkMixin(_CollectorBase):
                             try:
                                 final_speed = self._extract_nic_speed_gbps(port, adapter, resolved_name)
                                 assoc_macs = (
-                                    port.get("AssociatedNetworkAddresses")
+                                    get_nested(port, "Ethernet", "AssociatedMACAddresses")
+                                    or port.get("AssociatedNetworkAddresses")
                                     or get_nested(port, "Oem", "Cisco", "AssociatedNetworkAddresses")
                                     or get_nested(port, "Oem", "CIMC", "AssociatedNetworkAddresses")
                                     or get_nested(port, "Oem", "Cisco", "VicPort", "AssociatedNetworkAddresses")
@@ -1478,12 +1524,31 @@ class _NetworkMixin(_CollectorBase):
                                 or fn.get("MaxSpeedMbps")
                                 or eth_blk.get("MaxSpeedMbps")
                             )
-                            fn_speed_gbps = round(float(fn_speed_mbps) / 1000.0, 2) if fn_speed_mbps else 0.0
+                            if fn_speed_mbps:
+                                f_spd = float(fn_speed_mbps)
+                                if 10200 <= f_spd <= 10300:
+                                    fn_speed_gbps = 10.0
+                                elif 20400 <= f_spd <= 20600:
+                                    fn_speed_gbps = 20.0
+                                elif 25500 <= f_spd <= 25700:
+                                    fn_speed_gbps = 25.0
+                                else:
+                                    fn_speed_gbps = round(f_spd / 1000.0, 2)
+                            else:
+                                fn_speed_gbps = 0.0
+
                             phys_port_ref = (
                                 get_nested(fn, "Links", "PhysicalPortAssignment", "@odata.id")
+                                or get_nested(fn, "Links", "PhysicalNetworkPortAssignment", "@odata.id")
                                 or get_nested(fn, "PhysicalPortAssignment", "@odata.id")
+                                or get_nested(fn, "PhysicalNetworkPortAssignment", "@odata.id")
                                 or ""
                             )
+                            if not phys_port_ref and fn.get("AssignablePhysicalNetworkPorts"):
+                                _assign_ports = fn.get("AssignablePhysicalNetworkPorts")
+                                if isinstance(_assign_ports, list) and _assign_ports:
+                                    _p0 = _assign_ports[0]
+                                    phys_port_ref = _p0.get("@odata.id") if isinstance(_p0, dict) else str(_p0)
 
                             # Cisco VIC & OEM VnicConfiguration extraction
                             oem_caps = self.oem_vnic_capabilities(fn)
@@ -1575,9 +1640,23 @@ class _NetworkMixin(_CollectorBase):
                                     "pci_order": oem_caps.get("pci_order", ""),
                                     "vhba_type": oem_caps.get("vhba_type", []),
                                 })
+                    ctrl_list = adapter.get("Controllers") or []
+                    ctrl0 = ctrl_list[0] if isinstance(ctrl_list, list) and ctrl_list else {}
+                    ctrl_caps = ctrl0.get("ControllerCapabilities") if isinstance(ctrl0, dict) else {}
+                    npar_info = ctrl_caps.get("NPAR") if isinstance(ctrl_caps, dict) else {}
+                    npar_enabled_flag = npar_info.get("NparEnabled") if isinstance(npar_info, dict) else None
+                    vf_info = get_nested(ctrl_caps, "VirtualizationOffload", "VirtualFunction", default={}) or {}
+                    sriov_dev_max = vf_info.get("DeviceMaxCount")
+
+                    adapter_max_vfs = sriov_dev_max or sum(int(fn.get("MaxVirtualFunctions") or 0) for fn in ndf_jsons if fn.get("MaxVirtualFunctions"))
+                    adapter_vfs_enabled = any(fn.get("VirtualFunctionsEnabled") is True for fn in ndf_jsons) or bool(adapter_max_vfs)
+
                     if is_vic:
                         is_npar = False
                         is_vic_virtual = bool(npar_partitions)
+                    elif npar_enabled_flag is False:
+                        is_npar = False
+                        is_vic_virtual = False
                     else:
                         is_npar = _evaluate_npar_partitions(npar_partitions, len(dynamic_ports), is_vic=is_vic)
                         is_vic_virtual = False
@@ -1782,9 +1861,12 @@ class _NetworkMixin(_CollectorBase):
                         "cna_eth_bcg_url": "",
                         "cna_fc_bcg_url": "",
                         "is_npar": is_npar,
+                        "npar_enabled": npar_enabled_flag,
                         "npar_partitions": npar_partitions,
                         "is_vic_virtual": is_vic_virtual,
                         "vic_virtual_interfaces": npar_partitions if is_vic else [],
+                        "max_virtual_functions": adapter_max_vfs,
+                        "virtual_functions_enabled": adapter_vfs_enabled,
                     })
                 except Exception as m_exc:
                     logger.debug("Error processing network adapter member %s: %s", member, m_exc)
@@ -1799,6 +1881,9 @@ class _NetworkMixin(_CollectorBase):
                 nic["is_npar"] = False
                 nic["is_vic_virtual"] = bool(nic_parts_list)
                 nic["vic_virtual_interfaces"] = nic_parts_list
+            elif nic.get("npar_enabled") is False:
+                nic["is_npar"] = False
+                nic["npar_partitions"] = []
             else:
                 nic["is_npar"] = _evaluate_npar_partitions(nic_parts_list, nic_ports_len)
                 if not nic["is_npar"]:

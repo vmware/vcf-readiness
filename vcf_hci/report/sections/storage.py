@@ -26,6 +26,7 @@ from vcf_hci.report.components import (
     _vmd_banner_html,
 )
 from vcf_hci.report.helpers import _h
+from vcf_hci.report.inventory_tables import _is_boot_ctrl
 
 _RN_HCI_PROFILES = [
     {"name": "vSAN-HCI-LRG", "short": "LRG", "cpu_cores": 48, "memory_gb": 512, "nic_gbps": 25, "nvme_count": 6},
@@ -394,7 +395,7 @@ def render_storage_subsystem_section(
     _all_bay_ctrls = sorted(
         [
             c for c in (storage or [])
-            if not c.get("is_boot_ctrl")
+            if not _is_boot_ctrl(c)
             and any(d.get("populated", True) for d in c.get("drives", []))
         ],
         key=lambda c: -sum(

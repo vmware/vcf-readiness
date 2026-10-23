@@ -115,13 +115,44 @@ class LenovoCollector(GenericCollector):
 
         return self._cached_bios_date
 
+    def oem_cpu_cache(self, proc_json: dict) -> list:
+        """Read Lenovo CPU cache list from Oem.Lenovo.CacheInfo."""
+        lnv_raw = get_nested(proc_json, "Oem", "Lenovo", default={})
+        if not isinstance(lnv_raw, dict):
+            return []
+        raw_cache = lnv_raw.get("CacheInfo") or lnv_raw.get("Cache") or []
+        if not isinstance(raw_cache, list):
+            return []
+        result = []
+        for c in raw_cache:
+            if not isinstance(c, dict):
+                continue
+            lvl = c.get("CacheLevel") or c.get("Level") or c.get("Name") or ""
+            kb = c.get("InstalledSizeKByte") or c.get("CacheSizeKB") or c.get("MaximumSizeKB") or 0
+            try:
+                kb_int = int(kb)
+            except (TypeError, ValueError):
+                kb_int = 0
+            result.append({
+                "Level": lvl,
+                "MaximumSizeKB": kb_int,
+                "CacheSizeMiB": round(kb_int / 1024, 2) if kb_int else 0,
+                "Associativity": str(c.get("Associativity") or "").strip(),
+            })
+        return result
+
     def oem_drive_metrics(self, drive_json: dict) -> dict:
-        """Read Lenovo drive telemetry metrics from Oem.Lenovo.Drive."""
-        lnv_oem = get_nested(drive_json, "Oem", "Lenovo", "Drive", default={})
-        if not isinstance(lnv_oem, dict):
+        """Read Lenovo drive telemetry metrics from Oem.Lenovo or Oem.Lenovo.Drive."""
+        lnv_raw = get_nested(drive_json, "Oem", "Lenovo", default={})
+        if not isinstance(lnv_raw, dict):
             return {}
+        lnv_oem = lnv_raw.get("Drive") if isinstance(lnv_raw.get("Drive"), dict) else lnv_raw
         res = {}
-        poh = lnv_oem.get("PowerOnHours") or lnv_oem.get("OperationHours")
+        poh = (
+            lnv_oem.get("PowerOnHours")
+            or lnv_oem.get("OperationHours")
+            or lnv_oem.get("POH")
+        )
         if poh is not None:
             try:
                 res["power_on_hours"] = float(poh)
@@ -135,6 +166,29 @@ class LenovoCollector(GenericCollector):
                 res["drive_error_count"] = int(err_cnt)
             except (TypeError, ValueError):
                 pass
+        temp = lnv_oem.get("Temperature")
+        if temp is not None:
+            try:
+                res["temperature_c"] = float(temp)
+            except (TypeError, ValueError):
+                pass
+        rb = lnv_oem.get("ReadBytes")
+        if rb is not None:
+            try:
+                res["bytes_read"] = int(rb)
+                res["total_bytes_read_tb"] = round(int(rb) / (1024**4), 3)
+            except (TypeError, ValueError):
+                pass
+        wb = lnv_oem.get("WriteBytes")
+        if wb is not None:
+            try:
+                res["bytes_written"] = int(wb)
+                res["total_bytes_written_tb"] = round(int(wb) / (1024**4), 3)
+            except (TypeError, ValueError):
+                pass
+        type_str = lnv_oem.get("TypeString")
+        if type_str:
+            res["type_string"] = str(type_str).strip()
         part = lnv_oem.get("PartNumber") or lnv_oem.get("FRUPartNumber")
         if part:
             res["part_number"] = str(part).strip()
@@ -150,16 +204,50 @@ class LenovoCollector(GenericCollector):
 
     def oem_license_info(self, mgr_data: dict, sys_data: dict) -> dict:
         """Probe Lenovo XCC license status from LicenseService or FoD keys."""
-        lic_svc = self._safe_get("/redfish/v1/LicenseService/Licenses", critical=False) or {}
-        members = self._get_members(lic_svc) if isinstance(lic_svc, dict) and "Members" in lic_svc else []
         best_tier = "Standard"
-        for lic in members:
-            name = str(lic.get("Name", "") or lic.get("LicenseType", "")).upper()
-            if "ADVANCED" in name or "ENTERPRISE" in name:
-                best_tier = lic.get("Name") or lic.get("LicenseType", "Advanced")
-                break
+        has_lic_svc = False
 
-        # Fallback to Gen-1 XCC Features-on-Demand (FoD)
+        # 1. Check top-level /redfish/v1/LicenseService
+        top_lic = self._safe_get("/redfish/v1/LicenseService", critical=False)
+        if isinstance(top_lic, dict) and not top_lic.get("error"):
+            has_lic_svc = True
+            top_tier = str(get_nested(top_lic, "Oem", "Lenovo", "Tier") or "").upper()
+            if "TIER3" in top_tier or "TIER 3" in top_tier:
+                best_tier = "Premier"
+            elif "TIER2" in top_tier or "TIER 2" in top_tier:
+                best_tier = "Advanced"
+
+        # 2. Check /redfish/v1/LicenseService/Licenses
+        lic_svc = self._safe_get("/redfish/v1/LicenseService/Licenses", critical=False) or {}
+        if isinstance(lic_svc, dict) and not lic_svc.get("error"):
+            has_lic_svc = True
+            members = self._get_members(lic_svc) if "Members" in lic_svc else []
+            for lic in members:
+                if not isinstance(lic, dict):
+                    continue
+                m_uri = lic.get("@odata.id")
+                if m_uri and ("Name" not in lic or len(lic) <= 2):
+                    lic_detail = self._safe_get(m_uri, critical=False)
+                    if isinstance(lic_detail, dict) and not lic_detail.get("error"):
+                        lic = lic_detail
+
+                name = str(lic.get("Name", "") or "").upper()
+                lic_id = str(lic.get("Id", "") or "").upper()
+                lic_type = str(lic.get("LicenseType", "") or "").upper()
+                desc = str(lic.get("Description", "") or "").upper()
+                all_text = f"{name} {lic_id} {lic_type} {desc}"
+
+                if "PREMIER" in all_text or "PLATINUM" in all_text:
+                    best_tier = "Premier"
+                    break
+                elif "ENTERPRISE" in all_text:
+                    best_tier = "Enterprise"
+                    break
+                elif "ADVANCED" in all_text:
+                    if best_tier not in ("Premier", "Enterprise"):
+                        best_tier = "Advanced"
+
+        # Fallback to Gen-1 XCC Features-on-Demand (FoD) if tier is still Standard
         if best_tier == "Standard":
             mgr_path = self.mgr_uri or "/redfish/v1/Managers/1"
             fod_data = self._safe_get(f"{mgr_path}/Oem/Lenovo/FoD/Keys", critical=False) or {}
@@ -168,21 +256,58 @@ class LenovoCollector(GenericCollector):
                 if isinstance(fod_members, list):
                     for key in fod_members:
                         k_str = json.dumps(key).upper() if isinstance(key, dict) else str(key).upper()
-                        if "ENTERPRISE" in k_str:
+                        if "ENTERPRISE" in k_str or "PREMIER" in k_str:
                             best_tier = "Enterprise"
                             break
                         elif "ADVANCED" in k_str:
                             best_tier = "Advanced"
 
+        vendor_note = (
+            f"Lenovo XCC {best_tier} is active. "
+            "Provides full Redfish hardware inventory access, remote console, "
+            "virtual media, and centralized management."
+            if best_tier in ("Premier", "Enterprise", "Advanced") else
+            "XCC Standard provides full Redfish hardware inventory access. "
+            "Advanced / Enterprise / Premier adds remote console, virtual media, and LXCA "
+            "centralised management."
+        )
+
         return {
             "license_name": f"XCC {best_tier}",
             "badge": f"<span class='badge success'>🟢 Lenovo XCC {best_tier}</span>",
-            "vendor_note": (
-                "XCC Standard provides full Redfish hardware inventory access. "
-                "Advanced / Enterprise adds remote console, virtual media, and LXCA "
-                "centralised management."
-            ),
+            "vendor_note": vendor_note,
         }
+
+    def oem_security_evidence(self) -> Dict[str, Any]:
+        """Collect Lenovo XCC OEM security evidence (Security, BMCSettings, SystemGuard)."""
+        mgr_path = getattr(self, "mgr_uri", None) or "/redfish/v1/Managers/1"
+        res: Dict[str, Any] = {}
+
+        # 1. /redfish/v1/Managers/1/Oem/Lenovo/Security
+        sec_data = self._safe_get(f"{mgr_path}/Oem/Lenovo/Security", critical=False)
+        if isinstance(sec_data, dict) and not sec_data.get("error"):
+            res["security_service"] = sec_data
+
+        # 2. /redfish/v1/Managers/1/Oem/Lenovo/BMCSettings
+        bmc_data = self._safe_get(f"{mgr_path}/Oem/Lenovo/BMCSettings", critical=False)
+        if isinstance(bmc_data, dict) and not bmc_data.get("error"):
+            attrs = bmc_data.get("Attributes") or {}
+            safe_attrs = {}
+            for k, v in attrs.items():
+                k_low = k.lower()
+                if "password" in k_low and not any(
+                    p in k_low for p in ("length", "interval", "cycle", "complex", "policy", "days", "expiration", "reuse")
+                ):
+                    continue
+                safe_attrs[k] = v
+            res["bmc_settings"] = {"Attributes": safe_attrs}
+
+        # 3. /redfish/v1/Managers/1/Oem/Lenovo/SystemGuard
+        sg_data = self._safe_get(f"{mgr_path}/Oem/Lenovo/SystemGuard", critical=False)
+        if isinstance(sg_data, dict) and not sg_data.get("error"):
+            res["system_guard"] = sg_data
+
+        return res
 
     def oem_normalize_bios_attributes(self, raw_attrs: dict) -> dict:
         """Normalize Lenovo ThinkSystem BIOS attributes."""

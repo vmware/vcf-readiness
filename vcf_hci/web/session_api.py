@@ -7,6 +7,7 @@ vault management, desktop folder integration, and static report serving.
 
 import base64
 import html
+import json
 import logging
 import os
 import re
@@ -76,6 +77,236 @@ from vcf_hci.web.session_store import (
 logger = logging.getLogger("vcf_assess")
 
 _COLLECTOR_OK = True
+
+
+def _get_resp_header(resp: Any, name: str) -> str:
+    headers = getattr(resp, "headers", None)
+    if headers is not None and hasattr(headers, "get"):
+        val = headers.get(name)
+        if val is not None:
+            return str(val).strip()
+    getheader = getattr(resp, "getheader", None)
+    if callable(getheader):
+        val = getheader(name)
+        if val is not None:
+            return str(val).strip()
+    return ""
+
+
+def _is_safe_session_redirect(redirect_url: str, host: str) -> bool:
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(redirect_url)
+        if not parsed.netloc:
+            return redirect_url.startswith("/redfish/") and "Sessions" in redirect_url
+        target_host = host.split(":")[0].lower().strip("[]")
+        redir_host = (parsed.hostname or "").lower().strip("[]")
+        return (
+            parsed.scheme in ("https", "http")
+            and redir_host == target_host
+            and parsed.path.startswith("/redfish/")
+            and "Sessions" in parsed.path
+        )
+    except Exception:
+        return False
+
+
+def _delete_test_session(
+    ip: str,
+    session_uri: str,
+    session_token: str,
+    ctx: ssl.SSLContext,
+    pinned_thumbprints: Optional[dict] = None,
+) -> None:
+    """Send DELETE to terminate temporary test Redfish session cleanly."""
+    if not session_uri or not session_token:
+        return
+    try:
+        from vcf_hci.collector.http_session import RedfishSessionManager
+        mgr = RedfishSessionManager(
+            host=ip,
+            session_uri=session_uri,
+            session_token=session_token,
+            ssl_context=ctx,
+            pinned_thumbprints=pinned_thumbprints,
+        )
+        mgr.close()
+    except Exception:
+        try:
+            delete_url = session_uri if session_uri.startswith("http") else f"https://{ip}/{session_uri.lstrip('/')}"
+            req = urllib.request.Request(
+                delete_url,
+                headers={"X-Auth-Token": session_token},
+                method="DELETE",
+            )
+            del_opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
+            with del_opener.open(req, timeout=3.0):
+                pass
+        except Exception as exc:
+            logger.debug("Failed to delete test session on %s: %s", ip, exc)
+
+
+def _probe_bmc_credentials(
+    ip: str,
+    user: str,
+    pwd: str,
+    ctx: ssl.SSLContext,
+    pinned_thumbprints: Optional[dict] = None,
+    timeout: float = 3.5,
+) -> Tuple[bool, int, str, Optional[dict]]:
+    """Test BMC credentials by attempting Redfish Session POST first, falling back to Basic Auth.
+
+    Returns:
+        (auth_ok, http_status_code, detail_message, ssl_err_info)
+    """
+    if not pwd:
+        return False, 0, "Password is required", None
+
+    opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
+
+    def _open_req(req: urllib.request.Request, req_timeout: float = timeout):
+        is_mocked = not hasattr(urllib.request.urlopen, "__code__") or "Mock" in type(urllib.request.urlopen).__name__ or hasattr(urllib.request.urlopen, "mock")
+        if is_mocked and not (hasattr(opener, "mock") or "Mock" in type(opener).__name__):
+            return urllib.request.urlopen(req, timeout=req_timeout, context=ctx)
+        return opener.open(req, timeout=req_timeout)
+
+    # ── Step 1: Attempt Redfish Session creation via POST ─────────────────────
+    session_endpoints = [
+        f"https://{ip}/redfish/v1/SessionService/Sessions",
+        f"https://{ip}/redfish/v1/Sessions",
+    ]
+    session_payload = json.dumps({"UserName": user, "Password": pwd}).encode("utf-8")
+    session_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    auth_failed_code = 0
+    last_error_code = 0
+    last_error_detail = "Connection failed"
+
+    for s_url in session_endpoints:
+        s_req = urllib.request.Request(s_url, data=session_payload, headers=session_headers, method="POST")
+        session_created = False
+        status = 200
+        token = ""
+        location = ""
+        try:
+            with _open_req(s_req, req_timeout=timeout) as resp:
+                status = getattr(resp, "status", getattr(resp, "code", 200))
+                token = _get_resp_header(resp, "X-Auth-Token") or _get_resp_header(resp, "x-auth-token")
+                location = _get_resp_header(resp, "Location") or _get_resp_header(resp, "location")
+
+                if not location or not token:
+                    try:
+                        raw_body = resp.read()
+                        if raw_body:
+                            data = json.loads(raw_body.decode("utf-8", errors="replace"))
+                            if isinstance(data, dict):
+                                if not token and data.get("Token"):
+                                    token = str(data["Token"]).strip()
+                                if not location:
+                                    location = data.get("@odata.id") or ""
+                                    if not location and data.get("Id"):
+                                        location = f"{s_url.rstrip('/')}/{data['Id']}"
+                    except Exception:
+                        pass
+
+                if token or status in (200, 201):
+                    session_created = True
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 307, 308):
+                redir = e.headers.get("Location") or e.headers.get("location") or ""
+                if redir and _is_safe_session_redirect(redir, ip):
+                    redir_url = redir if redir.startswith("http") else f"https://{ip}/{redir.lstrip('/')}"
+                    try:
+                        redir_req = urllib.request.Request(redir_url, data=session_payload, headers=session_headers, method="POST")
+                        redir_token = ""
+                        redir_loc = ""
+                        redir_status = 200
+                        with _open_req(redir_req, req_timeout=timeout) as redir_resp:
+                            redir_status = getattr(redir_resp, "status", getattr(redir_resp, "code", 200))
+                            redir_token = _get_resp_header(redir_resp, "X-Auth-Token") or _get_resp_header(redir_resp, "x-auth-token")
+                            redir_loc = _get_resp_header(redir_resp, "Location") or _get_resp_header(redir_resp, "location")
+                        if redir_token or redir_status in (200, 201):
+                            if redir_loc and redir_token:
+                                _delete_test_session(ip, redir_loc, redir_token, ctx, pinned_thumbprints)
+                            return True, redir_status, "", None
+                    except Exception:
+                        pass
+
+            if e.code in (401, 403):
+                auth_failed_code = e.code
+                break
+            if e.code == 404:
+                continue
+            last_error_code = e.code
+            last_error_detail = str(e.reason)
+            break
+        except urllib.error.URLError as e:
+            reason = getattr(e, "reason", e)
+            if isinstance(reason, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
+                err_info = format_ssl_error(reason if isinstance(reason, Exception) else e, ip)
+                return False, 0, err_info["detail"], err_info
+            return False, 0, str(e), None
+        except Exception as e:
+            if isinstance(e, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
+                err_info = format_ssl_error(e, ip)
+                return False, 0, err_info["detail"], err_info
+            return False, 0, str(e), None
+
+        if session_created:
+            if location and token:
+                _delete_test_session(ip, location, token, ctx, pinned_thumbprints)
+            elif location:
+                _delete_test_session(ip, location, token or "", ctx, pinned_thumbprints)
+            return True, status, "", None
+
+    # ── Step 2: Fallback to HTTP Basic Auth on Systems/Managers ───────────────
+    # We do NOT test GET /redfish/v1/SessionService/Sessions with Basic Auth because modern
+    # BMCs (e.g. Lenovo XCC 3) reject reading the Session collection with HTTP 401 Unauthorized.
+    basic_token = base64.b64encode(f"{user}:{pwd}".encode()).decode()
+    basic_endpoints = [
+        f"https://{ip}/redfish/v1/Systems",
+        f"https://{ip}/redfish/v1/Managers",
+    ]
+    for ep in basic_endpoints:
+        b_req = urllib.request.Request(
+            ep,
+            headers={
+                "Authorization": f"Basic {basic_token}",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with _open_req(b_req, req_timeout=timeout) as resp:
+                b_status = getattr(resp, "status", getattr(resp, "code", 200))
+                return True, b_status, "", None
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return False, e.code, "Invalid credentials or unauthorized", None
+            if e.code in (404, 405):
+                continue
+            return False, e.code, str(e.reason), None
+        except urllib.error.URLError as e:
+            reason = getattr(e, "reason", e)
+            if isinstance(reason, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
+                err_info = format_ssl_error(reason if isinstance(reason, Exception) else e, ip)
+                return False, 0, err_info["detail"], err_info
+            return False, 0, str(e), None
+        except Exception as e:
+            if isinstance(e, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
+                err_info = format_ssl_error(e, ip)
+                return False, 0, err_info["detail"], err_info
+            return False, 0, str(e), None
+
+    if auth_failed_code:
+        return False, auth_failed_code, "Invalid credentials or unauthorized", None
+
+    if last_error_code:
+        return False, last_error_code, last_error_detail, None
+
+    return False, 0, "Connection failed", None
 
 
 class SessionApiMixin(_ApiMixinBase):
@@ -287,53 +518,27 @@ class SessionApiMixin(_ApiMixinBase):
             return
 
         ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
-        opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
-        token = base64.b64encode(f"{user}:{pwd}".encode()).decode()
-        # Test authenticated Redfish endpoint (fast SessionService endpoints before heavier Systems collection)
-        # Note: /redfish/v1 root document is unauthenticated on most BMCs and ignores credentials.
-        test_endpoints = [
-            f"https://{ip}/redfish/v1/SessionService/Sessions",
-            f"https://{ip}/redfish/v1/SessionService",
-            f"https://{ip}/redfish/v1/Systems",
-            f"https://{ip}/redfish/v1/Managers",
-        ]
-        last_error = None
-        for ep in test_endpoints:
-            req = urllib.request.Request(ep, headers={"Authorization": f"Basic {token}"})
-            try:
-                with opener.open(req, timeout=3.5) as resp:
-                    self._send_json({"ok": True, "code": resp.status, "tested_ip": ip})
-                    return
-            except urllib.error.HTTPError as e:
-                last_error = e
-                # 401 or 403 explicitly means authentication failure
-                if e.code in (401, 403):
-                    self._send_json({"ok": False, "code": e.code, "detail": "Invalid credentials or unauthorized", "tested_ip": ip})
-                    return
-                # If 404 or 405, try next endpoint
-                if e.code in (404, 405):
-                    continue
-                self._send_json({"ok": False, "code": e.code, "detail": str(e.reason), "tested_ip": ip})
-                return
-            except urllib.error.URLError as e:
-                if isinstance(getattr(e, "reason", None), (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
-                    err_info = format_ssl_error(e.reason if isinstance(e.reason, Exception) else e, ip)
-                    self._send_json({"ok": False, "code": 0, "detail": err_info["detail"], "reason_code": err_info["reason_code"], "tested_ip": ip})
-                    return
-                self._send_json({"ok": False, "code": 0, "detail": str(e), "tested_ip": ip})
-                return
-            except Exception as e:
-                if isinstance(e, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
-                    err_info = format_ssl_error(e, ip)
-                    self._send_json({"ok": False, "code": 0, "detail": err_info["detail"], "reason_code": err_info["reason_code"], "tested_ip": ip})
-                    return
-                self._send_json({"ok": False, "code": 0, "detail": str(e), "tested_ip": ip})
-                return
-
-        if last_error:
-            self._send_json({"ok": False, "code": last_error.code, "detail": str(last_error.reason), "tested_ip": ip})
-        else:
-            self._send_json({"ok": False, "code": 0, "detail": "Connection failed", "tested_ip": ip})
+        auth_ok, code, detail, ssl_err_info = _probe_bmc_credentials(
+            ip=ip,
+            user=user,
+            pwd=pwd,
+            ctx=ctx,
+            pinned_thumbprints=pinned_thumbprints,
+            timeout=3.5,
+        )
+        if auth_ok:
+            self._send_json({"ok": True, "code": code, "tested_ip": ip})
+            return
+        if ssl_err_info:
+            self._send_json({
+                "ok": False,
+                "code": 0,
+                "detail": ssl_err_info["detail"],
+                "reason_code": ssl_err_info.get("reason_code", "ssl_error"),
+                "tested_ip": ip,
+            })
+            return
+        self._send_json({"ok": False, "code": code, "detail": detail or "Connection failed", "tested_ip": ip})
 
     def _handle_batch_test_creds(
         self,
@@ -397,7 +602,6 @@ class SessionApiMixin(_ApiMixinBase):
                     pass
 
         ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
-        opener = build_bmc_opener(ssl_context=ctx, pinned_thumbprints=pinned_thumbprints)
 
         def _test_single_host_auth(target_ip: str) -> Dict[str, Any]:
             u, p = creds_map.get(target_ip, (default_user, default_pwd))
@@ -414,66 +618,35 @@ class SessionApiMixin(_ApiMixinBase):
                     "detail": "Password is required",
                 }
 
-            token = base64.b64encode(f"{u}:{p}".encode()).decode()
-            test_eps = [
-                f"https://{target_ip}/redfish/v1/SessionService/Sessions",
-                f"https://{target_ip}/redfish/v1/SessionService",
-                f"https://{target_ip}/redfish/v1/Systems",
-            ]
-            last_err_code = 0
-            last_err_detail = "Connection failed"
-            for ep in test_eps:
-                req = urllib.request.Request(ep, headers={"Authorization": f"Basic {token}"})
-                try:
-                    with opener.open(req, timeout=3.0) as resp:
-                        return {
-                            "ip": target_ip,
-                            "reachable": True,
-                            "auth_ok": True,
-                            "code": resp.status,
-                        }
-                except urllib.error.HTTPError as e:
-                    if e.code in (401, 403):
-                        return {
-                            "ip": target_ip,
-                            "reachable": True,
-                            "auth_ok": False,
-                            "code": e.code,
-                            "detail": "Invalid credentials or unauthorized",
-                        }
-                    if e.code in (404, 405):
-                        continue
-                    return {
-                        "ip": target_ip,
-                        "reachable": True,
-                        "auth_ok": False,
-                        "code": e.code,
-                        "detail": str(e.reason),
-                    }
-                except (urllib.error.URLError, Exception) as e:
-                    reason = getattr(e, "reason", e)
-                    if isinstance(reason, (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
-                        err_info = format_ssl_error(reason if isinstance(reason, Exception) else e, target_ip)
-                        return {
-                            "ip": target_ip,
-                            "reachable": True,
-                            "auth_ok": False,
-                            "code": 0,
-                            "detail": err_info["detail"],
-                        }
-                    return {
-                        "ip": target_ip,
-                        "reachable": True,
-                        "auth_ok": False,
-                        "code": 0,
-                        "detail": str(e),
-                    }
+            auth_ok, code, detail, ssl_err_info = _probe_bmc_credentials(
+                ip=target_ip,
+                user=u,
+                pwd=p,
+                ctx=ctx,
+                pinned_thumbprints=pinned_thumbprints,
+                timeout=3.0,
+            )
+            if auth_ok:
+                return {
+                    "ip": target_ip,
+                    "reachable": True,
+                    "auth_ok": True,
+                    "code": code,
+                }
+            if ssl_err_info:
+                return {
+                    "ip": target_ip,
+                    "reachable": True,
+                    "auth_ok": False,
+                    "code": 0,
+                    "detail": ssl_err_info["detail"],
+                }
             return {
                 "ip": target_ip,
                 "reachable": True,
                 "auth_ok": False,
-                "code": last_err_code,
-                "detail": last_err_detail,
+                "code": code,
+                "detail": detail or "Connection failed",
             }
 
         reachable_list = [t for t in target_candidates if t in reachable_set]

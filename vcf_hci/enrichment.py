@@ -185,7 +185,7 @@ def consolidate_direct_attached_nvme_controllers(
         ctrl_id = str(ctrl.get("id") or "").strip().upper()
         ctrl_name = str(ctrl.get("name") or "").strip().upper()
 
-        if any(k in ctrl_name or k in ctrl_id for k in ["BOSS", "NS204", "PERC", "SMART ARRAY", "MR GEN", "MEGA", "SR932", "SR416"]):
+        if any(k in ctrl_name or k in ctrl_id for k in ["BOSS", "NS204", "PERC", "SMART ARRAY", "MR GEN", "MEGA", "SR932", "SR416", "B545"]):
             continue
 
         is_da_pattern = (
@@ -364,6 +364,79 @@ def enrich_host_result(
         return data
 
     return data
+
+
+def detect_liquid_cooling(system: Dict[str, Any], host_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Detect Lenovo Neptune or other OEM direct-water / liquid cooling architecture."""
+    model = str(system.get("model") or "").upper()
+    sku = str(system.get("sku") or "").upper()
+    vendor = str(system.get("vendor") or "").upper()
+
+    is_lenovo = "LENOVO" in vendor or "LNVO" in vendor or "THINKSYSTEM" in model
+    is_neptune = False
+    is_liquid = False
+    cooling_tech = ""
+
+    # 1. Lenovo machine type / SKU / model checks
+    if is_lenovo:
+        if "7DK2" in sku or "7DK2" in model:
+            is_neptune = True
+            cooling_tech = "Lenovo Neptune Compute Complex DWC"
+        elif any(m in model for m in ["SD650", "SD665", "SC777"]):
+            is_neptune = True
+            cooling_tech = "Lenovo Neptune Direct Water Cooling"
+        elif any(kw in model or kw in sku for kw in ["NEPTUNE", "DWC", "DIRECT WATER", "WATER COOLED"]):
+            is_neptune = True
+            cooling_tech = "Lenovo Neptune DWC"
+
+    # 2. General OEM model/SKU liquid keywords
+    if not is_neptune and any(kw in model or kw in sku for kw in ["LIQUID", "DWC", "DIRECT WATER", "WATER COOLED", "NEPTUNE"]):
+        is_liquid = True
+        cooling_tech = "Direct Liquid Cooled"
+
+    # 3. Telemetry / sensors inspection across all OEMs
+    sensors = host_data.get("chassis_sensors") or []
+    thermal = host_data.get("thermal_telemetry") or {}
+    temp_sensors = thermal.get("temperatures") or []
+    fan_sensors = thermal.get("fans") or []
+    all_sensor_names = [
+        str(s.get("name") or s.get("Name") or s.get("id") or "")
+        for s in (sensors if isinstance(sensors, list) else []) +
+                 (temp_sensors if isinstance(temp_sensors, list) else []) +
+                 (fan_sensors if isinstance(fan_sensors, list) else [])
+    ]
+    cooling_keywords = ["coolant", "water inlet", "water outlet", "liquid", "pump", "leak detect", "neptune"]
+    for s_name in all_sensor_names:
+        s_low = s_name.lower()
+        if any(kw in s_low for kw in cooling_keywords):
+            is_liquid = True
+            if is_lenovo:
+                is_neptune = True
+                cooling_tech = cooling_tech or "Lenovo Neptune DWC"
+            else:
+                cooling_tech = cooling_tech or "Direct Liquid Cooled"
+            break
+
+    if is_neptune:
+        return {
+            "is_liquid_cooled": True,
+            "is_neptune": True,
+            "cooling_type": cooling_tech or "Lenovo Neptune DWC",
+            "badge": "<span class='badge info' style='background:rgba(14,165,233,0.15);color:#0284c7;border:1px solid rgba(14,165,233,0.3)'>💧 Lenovo Neptune DWC</span>",
+        }
+    elif is_liquid:
+        return {
+            "is_liquid_cooled": True,
+            "is_neptune": False,
+            "cooling_type": cooling_tech or "Direct Liquid Cooled",
+            "badge": "<span class='badge info' style='background:rgba(14,165,233,0.15);color:#0284c7;border:1px solid rgba(14,165,233,0.3)'>💧 Liquid Cooled</span>",
+        }
+    return {
+        "is_liquid_cooled": False,
+        "is_neptune": False,
+        "cooling_type": "Air Cooled",
+        "badge": "",
+    }
 
 
 def synthesize_pcie_slots(
@@ -717,6 +790,167 @@ def synthesize_pcie_slots(
     return slots
 
 
+def correlate_direct_attached_nvme_pcie(
+    host_data: Dict[str, Any],
+    json_hcl: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Ensure direct-attached NVMe SSDs and unpopulated physical slots appear in pcie_slots."""
+    pcie_slots = host_data.setdefault("pcie_slots", [])
+    if not isinstance(pcie_slots, list):
+        pcie_slots = []
+        host_data["pcie_slots"] = pcie_slots
+
+    seen_serials = {
+        str(s.get("device_serial") or "").strip().lower()
+        for s in pcie_slots if s.get("device_serial")
+    }
+    seen_names = {
+        str(s.get("device_name") or "").strip().lower()
+        for s in pcie_slots if s.get("device_name")
+    }
+    seen_labels = {
+        str(s.get("slot_label") or "").strip().upper()
+        for s in pcie_slots if s.get("slot_label")
+    }
+
+    # 1. Correlate direct-attached NVMe SSDs from storage_subsystem
+    for ctrl in (host_data.get("storage_subsystem") or []):
+        if not isinstance(ctrl, dict):
+            continue
+        c_name = str(ctrl.get("name") or ctrl.get("ctrl_model") or "")
+        is_direct = "direct" in c_name.lower() or not ctrl.get("is_boot_ctrl")
+        for drv in ctrl.get("drives") or []:
+            if not isinstance(drv, dict):
+                continue
+            proto = str(drv.get("protocol") or drv.get("bus_protocol") or "").lower()
+            cat = str(drv.get("category") or "").lower()
+            d_name = str(drv.get("name") or "")
+            d_model = str(drv.get("model") or "")
+            d_serial = str(drv.get("serial_number") or "").strip()
+
+            is_nvme = "nvme" in proto or "nvme" in cat or "nvme" in d_name.lower() or "nvme" in d_model.lower()
+            if not is_nvme and not is_direct:
+                continue
+
+            if d_serial and d_serial.lower() in seen_serials:
+                continue
+
+            # Determine slot label
+            m_bay = re.search(r"\b(?:Drive|Bay|Disk|Slot)\s*(\d+)\b", d_name, re.I)
+            bay_num = m_bay.group(1) if m_bay else None
+            if bay_num is not None:
+                slot_label = f"NVMe Drive Bay {bay_num}"
+            elif d_name:
+                slot_label = f"NVMe Bay ({d_name})"
+            else:
+                slot_label = f"NVMe Drive Bay {len(pcie_slots) + 1}"
+
+            if slot_label.upper() in seen_labels:
+                slot_label = f"{slot_label} ({d_serial[-6:] if len(d_serial) >= 6 else len(pcie_slots)+1})"
+
+            seen_labels.add(slot_label.upper())
+            if d_serial:
+                seen_serials.add(d_serial.lower())
+
+            # Speed / lanes
+            neg_speed = drv.get("negotiated_speed_gbs") or drv.get("speed_gbs") or 64.0
+            pcie_gen = "Gen5" if neg_speed >= 128 else ("Gen4" if neg_speed >= 64 else "Gen3")
+            bcg_link = drv.get("bcg_url") or ""
+
+            pcie_slots.append({
+                "slot_label": slot_label,
+                "lanes": 4,
+                "pcie_type": pcie_gen,
+                "slot_type": "U.3 / U.2 NVMe",
+                "hot_pluggable": True,
+                "state": "Enabled",
+                "populated": True,
+                "device_name": d_model or d_name or "NVMe Solid State Drive",
+                "device_manufacturer": drv.get("manufacturer") or "NVMe SSD",
+                "device_part_number": drv.get("part_number") or "",
+                "device_serial": d_serial,
+                "device_health": str(drv.get("health") or "OK").strip(),
+                "functions": [{"function_id": 0}],
+                "function_count": 1,
+                "vendor_id": drv.get("vendor_id", ""),
+                "device_id": drv.get("device_id", ""),
+                "subsystem_vendor_id": drv.get("subsystem_vendor_id", ""),
+                "subsystem_id": drv.get("subsystem_id", ""),
+                "pci_quad": drv.get("pci_quad", ""),
+                "pci_pair": drv.get("pci_pair", ""),
+                "current_pcie_type": pcie_gen,
+                "current_pcie_width": 4,
+                "downgraded": False,
+                "downgrade_reason": "",
+                "downgrade_badge": "",
+                "bcg_url": bcg_link,
+            })
+
+    # 2. Add unpopulated PCIe slots for Lenovo ThinkSystem SR650 V4 when omitted by BMC
+    sys_info = host_data.get("system") or {}
+    model = str(sys_info.get("model") or "").upper()
+    vendor = str(sys_info.get("vendor") or "").upper()
+    is_sr650_v4 = ("SR650 V4" in model or "SR650V4" in model) and ("LENOVO" in vendor or "LNVO" in vendor)
+
+    if is_sr650_v4:
+        existing_slot_nums = set()
+        for s in pcie_slots:
+            m = re.search(r"\bPCIe\s*(\d+)\b", str(s.get("slot_label") or ""), re.I)
+            if m:
+                existing_slot_nums.add(int(m.group(1)))
+
+        standard_slots = [
+            (1, 8, "Gen5", "LowProfile"),
+            (2, 16, "Gen5", "FullLength"),
+            (3, 8, "Gen5", "FullLength"),
+            (4, 16, "Gen5", "FullLength"),
+            (6, 8, "Gen5", "FullLength"),
+            (7, 16, "Gen5", "FullLength"),
+            (8, 16, "Gen5", "FullLength"),
+        ]
+        for slot_num, lanes, gen, stype in standard_slots:
+            if slot_num not in existing_slot_nums:
+                pcie_slots.append({
+                    "slot_label": f"PCIe {slot_num}",
+                    "lanes": lanes,
+                    "pcie_type": gen,
+                    "slot_type": stype,
+                    "hot_pluggable": False,
+                    "state": "Absent",
+                    "populated": False,
+                    "device_name": "",
+                    "device_manufacturer": "",
+                    "device_part_number": "",
+                    "device_serial": "",
+                    "device_health": "",
+                    "functions": [],
+                    "function_count": 0,
+                    "vendor_id": "",
+                    "device_id": "",
+                    "subsystem_vendor_id": "",
+                    "subsystem_id": "",
+                    "pci_quad": "",
+                    "pci_pair": "",
+                    "downgraded": False,
+                    "downgrade_reason": "",
+                    "downgrade_badge": "",
+                })
+
+    def _slot_sort_key(s: Dict[str, Any]) -> tuple:
+        label = str(s.get("slot_label") or "")
+        m_pcie = re.search(r"PCIe\s*(\d+)", label, re.I)
+        m_bay = re.search(r"Bay\s*(\d+)", label, re.I)
+        if m_pcie:
+            return (0, int(m_pcie.group(1)), label)
+        elif m_bay:
+            return (1, int(m_bay.group(1)), label)
+        elif "NVMe" in label:
+            return (1, 999, label)
+        return (2, 999, label)
+
+    pcie_slots.sort(key=_slot_sort_key)
+
+
 def _enrich_single_host(
     host_data: Dict[str, Any],
     json_hcl: Optional[Dict[str, Any]] = None,
@@ -830,6 +1064,19 @@ def _enrich_single_host(
                 cpu_summary["max_pcie_lanes_per_socket"] = max_pcie_lanes_per_socket
         except Exception as exc:
             logger.debug("Failed evaluating CPU compatibility for %s: %s", model, exc)
+
+    # Liquid Cooling / Lenovo Neptune Detection
+    try:
+        cooling_info = detect_liquid_cooling(system, host_data)
+        system["cooling_type"] = cooling_info["cooling_type"]
+        system["is_liquid_cooled"] = cooling_info["is_liquid_cooled"]
+        system["is_neptune"] = cooling_info["is_neptune"]
+        system["liquid_cooling_badge"] = cooling_info["badge"]
+        if isinstance(cpu_summary, dict) and cooling_info["is_liquid_cooled"]:
+            cpu_summary["cooling"] = cooling_info["cooling_type"]
+            cpu_summary["cooling_badge"] = cooling_info["badge"]
+    except Exception as exc:
+        logger.debug("Failed detecting liquid cooling: %s", exc)
 
     # 4. BMC Firmware Evaluation
     bmc_fw_info = host_data.get("bmc_firmware")
@@ -953,6 +1200,12 @@ def _enrich_single_host(
         pcie_slots = synthesize_pcie_slots(host_data, json_hcl=json_hcl)
         if pcie_slots:
             host_data["pcie_slots"] = pcie_slots
+
+    try:
+        correlate_direct_attached_nvme_pcie(host_data, json_hcl=json_hcl)
+        pcie_slots = host_data.get("pcie_slots") or []
+    except Exception as exc:
+        logger.debug("Failed correlating direct-attached NVMe PCIe slots: %s", exc)
 
     # Enrich generic slot device names & manufacturers from HCL
     if isinstance(pcie_slots, list):
@@ -1436,6 +1689,43 @@ def _enrich_single_host(
     if not isinstance(storage, list) and isinstance(host_data.get("storage"), dict):
         storage = host_data.get("storage", {}).get("controllers") or []
     if isinstance(storage, list):
+        # Defensive deduplication of drives per controller & boot controller normalization
+        for ctrl in storage:
+            if not isinstance(ctrl, dict):
+                continue
+            ctrl_drives = ctrl.get("drives")
+            if isinstance(ctrl_drives, list) and ctrl_drives:
+                deduped_drives = []
+                ctrl_seen_sns = set()
+                ctrl_seen_ids = set()
+                for d in ctrl_drives:
+                    if not isinstance(d, dict):
+                        continue
+                    sn = str(d.get("serial_number") or "").strip().upper()
+                    did = str(d.get("id") or "").strip().upper()
+                    if sn and sn not in ("UNKNOWN", "NONE", "N/A", "NOT AVAILABLE") and sn in ctrl_seen_sns:
+                        continue
+                    if did and did in ctrl_seen_ids:
+                        continue
+                    if sn and sn not in ("UNKNOWN", "NONE", "N/A", "NOT AVAILABLE"):
+                        ctrl_seen_sns.add(sn)
+                    if did:
+                        ctrl_seen_ids.add(did)
+                    deduped_drives.append(d)
+                ctrl["drives"] = deduped_drives
+
+            # Normalize is_boot_ctrl if matching keywords or all populated drives are boot devices
+            c_name = str(ctrl.get("name") or "").upper()
+            c_id = str(ctrl.get("id") or "").upper()
+            c_model = str(ctrl.get("ctrl_model") or "").upper()
+            c_ident = f"{c_id} {c_name} {c_model}"
+            if any(k in c_ident for k in ("BOSS", "NS204", "SATADOM", "IDSDM", "B545", "M.2 RAID", "M.2 BOOT", "M.2 ENABLEMENT", "M.2 ADAPTER")):
+                ctrl["is_boot_ctrl"] = True
+
+            pop_ctrl_drives = [d for d in (ctrl.get("drives") or []) if isinstance(d, dict) and d.get("populated", True)]
+            if pop_ctrl_drives and all(d.get("is_boot") or str(d.get("category") or "") == "Boot Device" for d in pop_ctrl_drives):
+                ctrl["is_boot_ctrl"] = True
+
         bios_checks = host_data.get("bios_checks") or {}
         storage = consolidate_direct_attached_nvme_controllers(storage, bios_checks)
         host_data["storage_subsystem"] = storage
@@ -1445,7 +1735,7 @@ def _enrich_single_host(
         cur_boot_tgt = str(system.get("boot_target") or "").strip()
         if not cur_boot_tgt or cur_boot_tgt.lower() in ("none", "n/a", "unknown", "null", "unavailable"):
             for ctrl in storage:
-                if isinstance(ctrl, dict) and (ctrl.get("is_boot_ctrl") or any(b in (ctrl.get("name") or "").upper() for b in ("BOSS", "NS204", "SATADOM"))):
+                if isinstance(ctrl, dict) and (ctrl.get("is_boot_ctrl") or any(b in (ctrl.get("name") or "").upper() for b in ("BOSS", "NS204", "SATADOM", "B545"))):
                     b_name = ctrl.get("name") or ctrl.get("ctrl_model") or ctrl.get("id")
                     if b_name:
                         system["boot_target"] = str(b_name).strip()

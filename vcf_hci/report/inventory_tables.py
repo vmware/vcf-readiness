@@ -90,7 +90,7 @@ def _is_boot_ctrl(ctrl: dict) -> bool:
     ctrl_name = str(ctrl.get("name") or "").upper()
     ctrl_model = str(ctrl.get("ctrl_model") or "").upper()
     ident = f"{ctrl_id} {ctrl_name} {ctrl_model}"
-    if any(k in ident for k in ("BOSS", "NS204", "SATADOM", "BOOT")):
+    if any(k in ident for k in ("BOSS", "NS204", "SATADOM", "BOOT", "B545", "M.2 RAID", "M.2 BOOT", "M.2 ENABLEMENT", "M.2 ADAPTER", "IDSDM")):
         return True
     drives = ctrl.get("drives") or []
     if drives:
