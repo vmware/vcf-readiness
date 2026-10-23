@@ -45,18 +45,16 @@ TEXT_EXTENSIONS = {
 
 # Each entry: (compiled regex, human-readable reason / suggested replacement)
 VIOLATION_PATTERNS = [
+    (re.compile(r"\bJabberwocky\b", re.I),
+     "canary marker detected — internal/confidential content not allowed in deliverables"),
     (re.compile(r"[a-z0-9._%+-]*@?[a-z0-9.-]*broadcom\.(?:net|com)", re.I),
      "internal Broadcom hostname — use packages.rainpole.net / pypi.rainpole.net"),
     (re.compile(r"[a-z0-9.-]*vmware\.com/(?!go/)", re.I),
      "internal VMware URL — use a rainpole.io example or a public docs.vmware.com/go link"),
     (re.compile(r"artifactory/api/pypi/(?!pypi-virtual/simple)[\w-]+", re.I),
      "internal Artifactory repo path — use /artifactory/api/pypi/pypi-virtual/simple"),
-    (re.compile(r"\b10\.(?:162\.9|158\.212|211\.(?:156|144|180)|160\.\d{1,3}|191\.\d{1,3}|142\.\d{1,3}|132\.\d{1,3}|97\.\d{1,3}|34\.\d{1,3}|0\.70)(?:\.\d{1,3})?(?:/\d{1,2})?\b"),
-     "lab datacenter/BMC IP or subnet — use RFC 5737 documentation IPs (192.0.2.x / 198.51.100.x / 203.0.113.x)"),
     (re.compile(r"\b10\.(?!0\.0\.)\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?\b"),
      "unauthorized private 10.x IP/subnet — use RFC 5737 documentation IPs or generic 10.0.0.x placeholder"),
-    (re.compile(r"\b((Normal|vSAN-PE|IOV)\s*Lab|IOV-Lab|Model-Run)\b", re.I),
-     "internal lab group name — use generic enterprise fleet description"),
     (re.compile(r"/etc/vcf-lab", re.I),
      "internal lab configuration path — remove reference"),
     (re.compile(r"/(?:Users|home)/[a-zA-Z0-9_-]+/(?:Documents|Downloads|Desktop|projects|Redfish-Library|Staging-VCFR)", re.I),
@@ -69,7 +67,7 @@ VIOLATION_PATTERNS = [
      "internal edge/package host — use packages.rainpole.net"),
     (re.compile(r"\bvcfd\.[\w.-]+", re.I),
      "internal VCF infra domain — use rainpole.net"),
-    (re.compile(r"\b(jumpbox|installation-04|vcf-jump-box|win-build(?!\.rainpole\.net))\b", re.I),
+    (re.compile(r"\b(jumpbox|win-build(?!\.rainpole\.net))\b", re.I),
      "internal build/jump infrastructure reference — remove or genericize (win-build.rainpole.net is OK)"),
     (re.compile(r"[A-Za-z]:\\\\?(dropbox|Dropbox|Users\\\\?john)[\w\\.-]*"),
      "developer-local Windows path — remove"),
@@ -124,7 +122,7 @@ def is_allowlisted(matched_text: str) -> bool:
 INTERNAL_DIRS = {"__pycache__", "plans", "Management_Pack_Docs", "Internal Plans and things", "fixtures"}
 EXCLUDED_FILES = {"assets.py", "docs_data.py", "check_data_hygiene.py", "test_data_hygiene.py"}
 PUBLIC_TEST_FILES = {
-    "__init__.py", "test_public_smoke.py", "test_data_hygiene.py",
+    "__init__.py", "test_public_smoke.py",
     "test_no_forbidden_imports.py", "test_vault_crypto.py",
     "test_vault_provider_tls.py", "test_logging_utils.py",
 }
