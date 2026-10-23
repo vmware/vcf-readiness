@@ -78,6 +78,30 @@ def generate_host_html_report(
     thermal = data.get("thermal_telemetry", {})
     nics = data.get("network_adapters", [])
     storage = data.get("storage_subsystem", [])
+    if isinstance(storage, list):
+        for ctrl in storage:
+            if not isinstance(ctrl, dict):
+                continue
+            ctrl_drives = ctrl.get("drives")
+            if isinstance(ctrl_drives, list) and ctrl_drives:
+                deduped_drives = []
+                ctrl_seen_sns = set()
+                ctrl_seen_ids = set()
+                for d in ctrl_drives:
+                    if not isinstance(d, dict):
+                        continue
+                    sn = str(d.get("serial_number") or "").strip().upper()
+                    did = str(d.get("id") or "").strip().upper()
+                    if sn and sn not in ("UNKNOWN", "NONE", "N/A", "NOT AVAILABLE") and sn in ctrl_seen_sns:
+                        continue
+                    if did and did in ctrl_seen_ids:
+                        continue
+                    if sn and sn not in ("UNKNOWN", "NONE", "N/A", "NOT AVAILABLE"):
+                        ctrl_seen_sns.add(sn)
+                    if did:
+                        ctrl_seen_ids.add(did)
+                    deduped_drives.append(d)
+                ctrl["drives"] = deduped_drives
     sel = data.get("sel_alarms") or data.get("sel") or data.get("system_event_log") or []
     gpus = data.get("gpu_accelerators", [])
     fc_hbas = data.get("fc_hbas", [])

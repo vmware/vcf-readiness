@@ -321,9 +321,18 @@ def import_hcl_bundle(bundle_zip_path: str) -> tuple:
                                 "rdma_supported": sanitized.get("rdma_supported", False),
                             }
 
+                            model_code = sanitized.get("model_code", "")
+                            part_number = sanitized.get("part_number", "")
+
                             if model:
                                 json_hcl["models"][model.upper()] = item
                                 json_hcl[model.upper()] = item
+                            if model_code:
+                                json_hcl["models"][model_code.upper()] = item
+                                json_hcl[model_code.upper()] = item
+                            if part_number:
+                                json_hcl["models"][part_number.upper()] = item
+                                json_hcl[part_number.upper()] = item
 
                             if vid and did:
                                 if svid and ssid:

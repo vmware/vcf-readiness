@@ -7,6 +7,7 @@ from vcf_hci.branding import MARK_SVG
 from vcf_hci.constants import MTAT_GITHUB_URL, VCF_OPS_DEMO_URL
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h, host_has_redfish_latency
+from vcf_hci.report.inventory_tables import _is_boot_ctrl
 
 
 def render_protocol_diagnostics_badges(
@@ -256,6 +257,7 @@ def render_header_and_banners(
         f'<span style="color:var(--text-muted)">Host: <strong>{_pii_host_label}</strong>'
         f'{(" &nbsp;|&nbsp; Target IP: <strong>" + _pii_ip_label + "</strong>") if (_ip and _ip not in host_display_label) else ""}'
         f' &nbsp;|&nbsp; Model: <strong>{_h(str(sys_info.get("vendor", "")))} {_h(str(sys_info.get("model", "")))}</strong>'
+        f'{(" &nbsp;|&nbsp; " + sys_info.get("liquid_cooling_badge")) if sys_info.get("liquid_cooling_badge") else ""}'
         f'{_chassis_span}'
         f' &nbsp;|&nbsp; {_sn_label}: <code>{_pii_serial}</code>'
         f'{(" &nbsp;|&nbsp; SKU: <code>" + _pii_sku + "</code>") if _has_sku else ""}</span>'
@@ -321,8 +323,8 @@ def render_header_and_banners(
         _sb = (data or {}).get("secure_boot") if isinstance((data or {}).get("secure_boot"), dict) else {}
         _fw_inv = (data or {}).get("firmware_inventory") or []
         _storage = (data or {}).get("storage_subsystem") or []
-        _boot_ctrls = [c for c in _storage if isinstance(c, dict) and c.get("is_boot_ctrl")]
-        _cap_ctrls = [c for c in _storage if isinstance(c, dict) and not c.get("is_boot_ctrl")]
+        _boot_ctrls = [c for c in _storage if isinstance(c, dict) and _is_boot_ctrl(c)]
+        _cap_ctrls = [c for c in _storage if isinstance(c, dict) and not _is_boot_ctrl(c)]
         _boot_bits = []
         for c in _boot_ctrls[:2]:
             vols = c.get("volumes") or []

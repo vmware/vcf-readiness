@@ -90,6 +90,31 @@ _TPM_INTERFACE_LABELS = {
     "TCM1_0": "TCM 1.0",
 }
 
+# Lenovo ThinkSystem 8-channel per socket DIMM slot to (Socket, Channel letter) mapping
+# Derived from published Lenovo hardware service documentation (SR650 V4 / SR630 V4 / SR650 V3):
+# CPU 1 (Socket 1): CH0->A (7,8), CH1->B (5,6), CH2->C (3,4), CH3->D (1,2),
+#                   CH4->E (9,10), CH5->F (11,12), CH6->G (13,14), CH7->H (15,16)
+# CPU 2 (Socket 2): CH0->A (23,24), CH1->B (21,22), CH2->C (19,20), CH3->D (17,18),
+#                   CH4->E (25,26), CH5->F (27,28), CH6->G (29,30), CH7->H (31,32)
+LENOVO_THINKSYSTEM_8CH_DIMM_MAP = {
+    1: (1, "D"), 2: (1, "D"),
+    3: (1, "C"), 4: (1, "C"),
+    5: (1, "B"), 6: (1, "B"),
+    7: (1, "A"), 8: (1, "A"),
+    9: (1, "E"), 10: (1, "E"),
+    11: (1, "F"), 12: (1, "F"),
+    13: (1, "G"), 14: (1, "G"),
+    15: (1, "H"), 16: (1, "H"),
+    17: (2, "D"), 18: (2, "D"),
+    19: (2, "C"), 20: (2, "C"),
+    21: (2, "B"), 22: (2, "B"),
+    23: (2, "A"), 24: (2, "A"),
+    25: (2, "E"), 26: (2, "E"),
+    27: (2, "F"), 28: (2, "F"),
+    29: (2, "G"), 30: (2, "G"),
+    31: (2, "H"), 32: (2, "H"),
+}
+
 
 def _present_text(value: Any) -> str:
     text = str(value or "").strip()
@@ -713,7 +738,12 @@ class _SystemMixin(_CollectorBase):
 
                 p_model = str(proc.get("Model") or "").strip()
                 p_max_speed = proc.get("MaxSpeedMHz")
-                p_op_speed = proc.get("OperatingSpeedMHz")
+                p_op_speed = (
+                    proc.get("OperatingSpeedMHz")
+                    or get_nested(proc, "Oem", "Lenovo", "CurrentClockSpeedMHz")
+                    or get_nested(proc, "Oem", "Dell", "DellProcessor", "CurrentClockSpeedMhz")
+                    or get_nested(proc, "Oem", "Hpe", "CurrentSpeedMHz")
+                )
                 p_cores = proc.get("TotalCores")
                 p_threads = proc.get("TotalThreads")
                 p_socket = str(proc.get("Socket", "") or "").strip()
@@ -1282,25 +1312,47 @@ class _SystemMixin(_CollectorBase):
             if bios_uri:
                 _bj = self._get(bios_uri, critical=False) or {}
                 _tpm_attrs = _bj.get("Attributes") if isinstance(_bj.get("Attributes"), dict) else {}
-            _tpm_pol = str(
-                _tpm_attrs.get("TPMSecurityPolicy")
-                or _tpm_attrs.get("TPM_KMSSupport")
-                or _tpm_attrs.get("SupermicroBIOS_BasedTPMProvisionSupport")
-                or ""
-            ).strip()
-            _txt = str(_tpm_attrs.get("TXTSupport") or "").strip()
-            _tme = str(_tpm_attrs.get("MemoryEncryption_TME_") or _tpm_attrs.get("MemoryEncryption") or "").strip()
-            if _tpm_pol or _txt or _tme:
-                tpm_posture_note = (
-                    f"TrustedModules not exposed by BMC; BIOS TPM policy={_tpm_pol or 'n/a'}, "
-                    f"TXT={_txt or 'n/a'}, TME={_tme or 'n/a'}"
-                )
-                tpm_badge = (
-                    "<span class='badge warning'>🟡 TPM Not Exposed "
-                    f"(BIOS {_tpm_pol or 'policy unknown'})</span>"
-                )
-                system_identity["tpm_state"] = "BiosPolicyOnly"
-                system_identity["tpm_status_badge"] = tpm_badge
+
+            # Lenovo ThinkSystem TCG TPM attributes
+            _lnv_tpm_dev = str(_tpm_attrs.get("TrustedComputingGroup_TPMDevice") or "").strip()
+            _lnv_tpm_stat = str(_tpm_attrs.get("TrustedComputingGroup_DeviceStatus") or "").strip()
+            if _lnv_tpm_dev.lower() == "enabled" and ("tpm2.0" in _lnv_tpm_stat.lower() or "tpm 2.0" in _lnv_tpm_stat.lower() or "present" in _lnv_tpm_stat.lower()):
+                system_identity["tpm_state"] = "Enabled"
+                system_identity["tpm_interface"] = "TPM 2.0"
+                system_identity["tpm_status_badge"] = "<span class='badge success'>🟢 Enabled (TPM 2.0 Active)</span>"
+                tpm_badge = system_identity["tpm_status_badge"]
+                tpm_posture_note = f"BIOS TCG: {_lnv_tpm_stat} (Device {_lnv_tpm_dev})"
+                if not data.get("TrustedModules"):
+                    data["TrustedModules"] = [{
+                        "InterfaceType": "TPM2_0",
+                        "Status": {"State": "Enabled", "Health": "OK"}
+                    }]
+            elif _lnv_tpm_dev.lower() in ("disabled", "disable"):
+                system_identity["tpm_state"] = "Disabled"
+                system_identity["tpm_interface"] = "TPM 2.0" if "tpm2.0" in _lnv_tpm_stat.lower() else "TPM"
+                system_identity["tpm_status_badge"] = "<span class='badge warning'>🟡 Disabled (TPM Disabled in BIOS)</span>"
+                tpm_badge = system_identity["tpm_status_badge"]
+                tpm_posture_note = f"BIOS TCG: {_lnv_tpm_stat} (Device {_lnv_tpm_dev})"
+            else:
+                _tpm_pol = str(
+                    _tpm_attrs.get("TPMSecurityPolicy")
+                    or _tpm_attrs.get("TPM_KMSSupport")
+                    or _tpm_attrs.get("SupermicroBIOS_BasedTPMProvisionSupport")
+                    or ""
+                ).strip()
+                _txt = str(_tpm_attrs.get("TXTSupport") or _tpm_attrs.get("Processors_TrustedExecutionTechnology") or "").strip()
+                _tme = str(_tpm_attrs.get("MemoryEncryption_TME_") or _tpm_attrs.get("MemoryEncryption") or "").strip()
+                if _tpm_pol or _txt or _tme:
+                    tpm_posture_note = (
+                        f"TrustedModules not exposed by BMC; BIOS TPM policy={_tpm_pol or 'n/a'}, "
+                        f"TXT={_txt or 'n/a'}, TME={_tme or 'n/a'}"
+                    )
+                    tpm_badge = (
+                        "<span class='badge warning'>🟡 TPM Not Exposed "
+                        f"(BIOS {_tpm_pol or 'policy unknown'})</span>"
+                    )
+                    system_identity["tpm_state"] = "BiosPolicyOnly"
+                    system_identity["tpm_status_badge"] = tpm_badge
 
         # FixedBootOrder OEM (ESXi proof when HostName/OS absent)
         fixed_boot_order = {}
@@ -1496,10 +1548,23 @@ class _SystemMixin(_CollectorBase):
                     cleaned_id = f"DIMM {m_dimm.group(1)}"
                     break
 
+            service_label = str(
+                (dimm.get("Location") or {}).get("PartLocation", {}).get("ServiceLabel")
+                or dimm.get("DeviceID") or ""
+            ).strip()
+
+            if cleaned_id.isdigit():
+                if service_label and "DIMM" in service_label.upper():
+                    cleaned_id = service_label
+                elif cleaned_name and "DIMM" in cleaned_name.upper():
+                    cleaned_id = cleaned_name
+                else:
+                    cleaned_id = f"DIMM {cleaned_id}"
+
             if locators_are_duplicate or has_devtype_pattern or not dev_locator:
-                slot = cleaned_id or cleaned_name or dev_locator or f"DIMM {dimm_idx}"
+                slot = service_label or cleaned_name or cleaned_id or dev_locator or f"DIMM {dimm_idx}"
             else:
-                slot = dev_locator or cleaned_id or cleaned_name or "Unknown"
+                slot = dev_locator or service_label or cleaned_name or cleaned_id or "Unknown"
 
             cap_mib = int(dimm.get("CapacityMiB") or 0)
 
@@ -1600,7 +1665,17 @@ class _SystemMixin(_CollectorBase):
                     elif loc.isdigit():
                         raw_slot = int(loc)
 
-                    if isinstance(raw_slot, int) and channels_per_socket > 0:
+                    is_lenovo_sys = (
+                        getattr(self, "vendor", "").lower() == "lenovo"
+                        or "LENOVO" in str((getattr(self, "sys_data", {}) or {}).get("Manufacturer") or "").upper()
+                        or "THINKSYSTEM" in str((getattr(self, "sys_data", {}) or {}).get("Model") or "").upper()
+                    )
+                    if is_lenovo_sys and channels_per_socket == 8 and raw_slot in LENOVO_THINKSYSTEM_8CH_DIMM_MAP:
+                        mapped_sock, mapped_chan = LENOVO_THINKSYSTEM_8CH_DIMM_MAP[raw_slot]
+                        final_chan = mapped_chan
+                        if ml_socket is None and parsed_sock is None:
+                            final_sock = mapped_sock
+                    elif isinstance(raw_slot, int) and channels_per_socket > 0:
                         # Map numeric slots (e.g. 1..32 on dual-socket Lenovo ThinkSystem SR650 V4)
                         # or 1-DPC slots (0..7 on AMD EPYC single socket)
                         if total_slots <= channels_per_socket * max(1, cpu_count):
@@ -2036,17 +2111,27 @@ class _SystemMixin(_CollectorBase):
             return empty
         enabled = sb.get("SecureBootEnable")
         current_boot = sb.get("SecureBootCurrentBoot")
-        if enabled is True and current_boot is True:
+        mode = sb.get("SecureBootMode") or sb.get("mode")
+
+        is_enabled = enabled is True or str(enabled).strip().lower() in ("true", "enabled", "1")
+        is_disabled = enabled is False or str(enabled).strip().lower() in ("false", "disabled", "0")
+        is_cur_active = current_boot is True or str(current_boot).strip().lower() in ("true", "enabled", "1")
+        is_cur_inactive = current_boot is False or str(current_boot).strip().lower() in ("false", "disabled", "0")
+
+        if is_enabled and is_cur_active:
             badge = "<span class='badge success'>🟢 Secure Boot: Enabled &amp; Active</span>"
-        elif enabled is True and current_boot is False:
+        elif is_enabled and is_cur_inactive:
             badge = "<span class='badge warning'>🟡 Secure Boot: Enabled but Inactive Last Boot — check DB/MOK keys</span>"
-        elif enabled is True and current_boot is None:
+        elif is_enabled and current_boot is None:
             badge = "<span class='badge success'>🟢 Secure Boot: Enabled</span>"
-        elif enabled is False:
+        elif is_disabled:
             badge = "<span class='badge warning'>🟡 Secure Boot: Disabled — enable for VCF 9.1 security baseline</span>"
         else:
             badge = "<span class='badge info'>ℹ️ Secure Boot: Unknown (check BMC firmware)</span>"
-        return {"enabled": enabled, "current_boot": current_boot, "badge": badge}
+        res = {"enabled": enabled, "current_boot": current_boot, "badge": badge}
+        if mode:
+            res["mode"] = mode
+        return res
 
 
     def collect_bmc_firmware(self) -> dict:

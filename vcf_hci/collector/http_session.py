@@ -423,10 +423,11 @@ def redfish_get(
                     collector._request_count = getattr(collector, "_request_count", 0) + 1
                     collector._last_active_time = time.time()
                     if status in (429, 500, 502, 503, 504):
-                        collector._consecutive_timeouts = getattr(collector, "_consecutive_timeouts", 0) + 1
+                        collector._consecutive_server_errors = getattr(collector, "_consecutive_server_errors", 0) + 1
                         collector._consecutive_successes = 0
                     else:
                         collector._consecutive_timeouts = 0
+                        collector._consecutive_server_errors = 0
                         collector._consecutive_successes = getattr(collector, "_consecutive_successes", 0) + 1
                 if callable(throttle_fn):
                     try:

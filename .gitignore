@@ -57,6 +57,7 @@ docs/plans/*.md
 docs/PRESENTATION_LESSONS_LEARNED.md
 
 # Internal operations runbooks, build guides, and specifications
+docs/OEM-feedback/
 docs/WINDOWS_AUTOMATION.md
 docs/OPERATIONS_RUNBOOK.md
 docs/report-customization.md

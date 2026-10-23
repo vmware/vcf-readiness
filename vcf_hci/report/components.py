@@ -133,8 +133,10 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps FC</span>"
         elif spd >= 25:
             badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps — ESA Qualified</span>"
+        elif spd >= 10:
+            badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps — ESA Small/Edge Qualified</span>"
         else:
-            badge_html = f"<span class='badge warning'>🟡 Port {pid}: {spd} Gbps — OSA Only</span>"
+            badge_html = f"<span class='badge warning'>🟡 Port {pid}: {spd} Gbps — OSA Only (&lt; 10 GbE)</span>"
         if p.get("is_management"):
             badge_html += " <small>(management)</small>"
         if p.get("speed_source"):
@@ -258,7 +260,11 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         pci_badge += f"<br><span class='badge info' style='font-size:.74rem;background:#0284c7;color:#fff;'>🔵 Cisco VIC Virtual Interfaces ({v_count} vNIC/vHBA)</span>"
     elif nic.get("is_npar"):
         n_count = len(nic.get("npar_partitions") or [])
-        pci_badge += f"<br><span class='badge warning' style='font-size:.74rem;'>🟡 NPAR Partitioned ({n_count} virtual functions)</span>"
+        pci_badge += f"<br><span class='badge warning' style='font-size:.74rem;'>🟡 NPAR Partitioned ({n_count} partitions)</span>"
+    if nic.get("virtual_functions_enabled") or nic.get("max_virtual_functions"):
+        v_count = nic.get("max_virtual_functions") or 0
+        v_label = f"{v_count} VFs" if v_count else "Enabled"
+        pci_badge += f"<br><span class='badge info' style='font-size:.72rem;' title='SR-IOV hardware virtualization'>⚡ SR-IOV ({v_label})</span>"
 
     pci_verdict_html = ""
     pci_eval = {}

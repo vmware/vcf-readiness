@@ -19,6 +19,10 @@ _LENOVO_RE = re.compile(
     r"(?<![A-Z])([A-Z]{3})\d*[A-Z]*-(\d+(?:\.\d+)+)",
     re.IGNORECASE,
 )
+_LENOVO_BUILD_RE = re.compile(
+    r"^([A-Z]{3})(\d{3})([A-Z]*)$",
+    re.IGNORECASE,
+)
 _X_BMC_RE = re.compile(r"^X(\d+(?:\.\d+)+)", re.IGNORECASE)
 _DOTTED_RE = re.compile(r"\d+(?:\.\d+)+")
 _DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
@@ -79,6 +83,10 @@ def parse_version(value: str) -> Tuple[Optional[str], Tuple[int, ...], str]:
     lenovo = _LENOVO_RE.search(text.upper())
     if lenovo:
         return lenovo.group(1).upper(), _nums(lenovo.group(2)), "family"
+    lenovo_bld = _LENOVO_BUILD_RE.match(text.upper())
+    if lenovo_bld:
+        rev_num = int(lenovo_bld.group(2))
+        return lenovo_bld.group(1).upper(), (rev_num,), "family"
     dotted = _DOTTED_RE.search(text)
     if dotted:
         return None, _nums(dotted.group(0)), "dotted"

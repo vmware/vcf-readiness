@@ -1153,7 +1153,11 @@ class _StorageMixin(_CollectorBase):
 
             is_boot_ctrl = any(
                 k in ctrl_id.upper() or k in ctrl_name.upper()
-                for k in ["BOSS", "NS204I", "AHCI.SLOT", "88NR2241", "MRVL", "MARVELL", "HA-RAID"]
+                for k in [
+                    "BOSS", "NS204I", "AHCI.SLOT", "88NR2241", "MRVL", "MARVELL", "HA-RAID",
+                    "B545I", "B545", "M.2 RAID", "M.2 BOOT", "M.2 ADAPTER", "M.2 ENABLEMENT",
+                    "SATADOM", "IDSDM", "SAS3808N",
+                ]
             )
 
             # Check for drive references before expanding enclosures or PCI cache
@@ -1161,7 +1165,17 @@ class _StorageMixin(_CollectorBase):
             if isinstance(raw_drives, dict) and (raw_drives.get("@odata.id") or raw_drives.get("href")):
                 raw_drives = self._get_members(raw_drives.get("@odata.id") or raw_drives.get("href"))
             elif isinstance(raw_drives, list) and raw_drives:
-                raw_drives = self._expand_odata_stubs(raw_drives)
+                deduped_raw = []
+                seen_raw_refs = set()
+                for rd in raw_drives:
+                    if isinstance(rd, dict):
+                        ref = rd.get("@odata.id") or rd.get("href")
+                        if ref:
+                            if ref in seen_raw_refs:
+                                continue
+                            seen_raw_refs.add(ref)
+                    deduped_raw.append(rd)
+                raw_drives = self._expand_odata_stubs(deduped_raw)
             if not raw_drives:
                 _pd_ref = (
                     ctrl.get("PhysicalDrives")
@@ -1193,7 +1207,16 @@ class _StorageMixin(_CollectorBase):
             drives = (raw_drives or ctrl.get("Devices", []))
             if isinstance(drives, list) and drives:
                 drives = self._expand_odata_stubs(drives)
-            drive_items = [dr for dr in drives if isinstance(dr, dict)]
+            drive_items = []
+            seen_dr_items = set()
+            for dr in (drives or []):
+                if isinstance(dr, dict):
+                    dr_ref = dr.get("@odata.id") or dr.get("href") or dr.get("Id")
+                    if dr_ref:
+                        if dr_ref in seen_dr_items:
+                            continue
+                        seen_dr_items.add(dr_ref)
+                    drive_items.append(dr)
 
             # Bypass PCI matching and enclosure expansion for unused 0-drive storage controllers
             if not drive_items and not has_lv and not is_boot_ctrl:
@@ -1442,7 +1465,11 @@ class _StorageMixin(_CollectorBase):
                 # Flag them so bay-count logic and Drive Bay UI can exclude them.
                 "is_boot_ctrl":        any(
                     k in ctrl_id.upper() or k in ctrl_name.upper()
-                    for k in ["BOSS", "NS204I", "AHCI.SLOT", "88NR2241", "MRVL", "MARVELL", "HA-RAID"]
+                    for k in [
+                        "BOSS", "NS204I", "AHCI.SLOT", "88NR2241", "MRVL", "MARVELL", "HA-RAID",
+                        "B545I", "B545", "M.2 RAID", "M.2 BOOT", "M.2 ADAPTER", "M.2 ENABLEMENT",
+                        "SATADOM", "IDSDM", "SAS3808N",
+                    ]
                 ),
                 "vendor_id":           ctrl_pci["vendor_id"],
                 "device_id":           ctrl_pci["device_id"],
@@ -1536,6 +1563,8 @@ class _StorageMixin(_CollectorBase):
                 if sc_nm:
                     sc_by_port[sc_nm] = sc_item
 
+            ctrl_seen_drive_sns: set = set()
+            ctrl_seen_drive_ids: set = set()
             for dr_data in drive_jsons:
                 if isinstance(dr_data, dict):
                     matched_sc = None
@@ -1574,8 +1603,30 @@ class _StorageMixin(_CollectorBase):
                         ctrl_pcie=drv_ctrl_pcie, pcie_cache=pcie_cache,
                         controller_json=matched_sc)
                     if parsed:
+                        p_sn = str(parsed.get("serial_number") or "").strip().upper()
+                        p_id = str(parsed.get("id") or "").strip().upper()
+                        if p_sn and p_sn not in ("UNKNOWN", "NONE", "N/A", "NOT AVAILABLE") and p_sn in ctrl_seen_drive_sns:
+                            logger.debug(
+                                "Skipping duplicate drive in controller %s (serial %s)",
+                                ctrl_id, p_sn,
+                            )
+                            continue
+                        if p_id and p_id in ctrl_seen_drive_ids:
+                            logger.debug(
+                                "Skipping duplicate drive in controller %s (ID %s)",
+                                ctrl_id, p_id,
+                            )
+                            continue
+                        if p_sn and p_sn not in ("UNKNOWN", "NONE", "N/A", "NOT AVAILABLE"):
+                            ctrl_seen_drive_sns.add(p_sn)
+                        if p_id:
+                            ctrl_seen_drive_ids.add(p_id)
                         parsed["controller_name"] = drv_ctrl_name
                         ctrl_info["drives"].append(parsed)
+
+            pop_ctrl_drives = [d for d in ctrl_info["drives"] if isinstance(d, dict) and d.get("populated", True)]
+            if pop_ctrl_drives and all(d.get("is_boot") or str(d.get("category") or "") == "Boot Device" for d in pop_ctrl_drives):
+                ctrl_info["is_boot_ctrl"] = True
 
             # Record seen controller identifiers
             seen_ctrl_ids.add(ctrl_id)
