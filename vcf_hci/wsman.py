@@ -27,6 +27,18 @@ from vcf_hci.tls_utils import (
 
 logger = logging.getLogger("vcf_assess")
 
+
+def _safe_xml_fromstring(xml_text: str) -> Optional[ET.Element]:
+    """Parse XML defensively, rejecting DTD/ENTITY declarations (XXE mitigation for Python < 3.11)."""
+    if not xml_text or not isinstance(xml_text, str):
+        return None
+    upper = xml_text.upper()
+    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+        logger.warning("Rejected XML payload containing prohibited DTD / ENTITY declaration")
+        return None
+    return ET.fromstring(xml_text)
+
+
 _READ_ONLY_WSMAN_ACTIONS = frozenset({
     "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate",
     "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull",
@@ -195,7 +207,9 @@ class WsManCollector:
         try:
             with self._opener.open(req, timeout=10) as r:
                 raw = r.read().decode("utf-8", errors="replace")
-                root = ET.fromstring(raw)
+                root = _safe_xml_fromstring(raw)
+                if root is None:
+                    return None
                 # Return the Body child element for convenience
                 body = root.find("{http://www.w3.org/2003/05/soap-envelope}Body")
                 return body if body is not None else root

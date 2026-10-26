@@ -583,6 +583,43 @@ def render_alert_rollup(
             "Marginal or degraded optical signal detected on transceiver(s) — check fiber links.",
         ))
 
+    # Fibre Channel HBAs
+    _fc_hbas_list = (data.get("fc_hbas") or []) if data else []
+    if _fc_hbas_list:
+        _fc_down = [h for h in _fc_hbas_list if str(h.get("link_status", "")).lower() in ("down", "nolink")]
+        _fc_downgraded = [h for h in _fc_hbas_list if h.get("downgraded")]
+        _fc_up = [h for h in _fc_hbas_list if str(h.get("link_status", "")).lower() == "up"]
+        if _fc_downgraded:
+            _rollup_items.append((
+                "warning",
+                f"⚠️ {len(_fc_downgraded)} FC HBA port{'s' if len(_fc_downgraded)>1 else ''} PCIe downgraded",
+                "tab-hba",
+                "One or more Fibre Channel HBAs running below maximum PCIe link width or generation.",
+            ))
+        elif _fc_down and not _fc_up:
+            _rollup_items.append((
+                "warning",
+                f"⚠️ {len(_fc_down)} FC HBA port{'s' if len(_fc_down)>1 else ''} link-down",
+                "tab-hba",
+                "All detected Fibre Channel ports are link-down or disconnected from SAN fabric.",
+            ))
+        elif _fc_up:
+            _speeds = sorted({f"{h['speed_gbps']} Gbps" for h in _fc_up if h.get("speed_gbps") and h.get("speed_gbps") != "N/A"})
+            _spd_str = f" ({', '.join(_speeds)})" if _speeds else ""
+            _rollup_items.append((
+                "success",
+                f"✅ FC HBA: {len(_fc_up)} Port{'s' if len(_fc_up)>1 else ''} Linked{_spd_str}",
+                "tab-hba",
+                "Fibre Channel SAN connectivity established.",
+            ))
+        else:
+            _rollup_items.append((
+                "info",
+                f"ℹ️ FC HBA: {len(_fc_hbas_list)} Port{'s' if len(_fc_hbas_list)>1 else ''} Discovered",
+                "tab-hba",
+                "Fibre Channel host bus adapters detected.",
+            ))
+
     # Multi-Socket / NUMA Topology & BIOS checks
     _mst = (data or {}).get("multi_socket_telemetry") or (data or {}).get("bios_checks", {}).get("multi_socket_telemetry") or {}
     if _mst.get("node_interleave_warning"):
@@ -744,7 +781,7 @@ def render_alert_rollup(
         _rollup_items.append(("success", "✅ Job Queue: Clean", "tab-health", "No failed or stale jobs in Lifecycle Controller queue."))
 
     # Tab dots
-    _tab_ids = ["tab-overview", "tab-cpu", "tab-bios", "tab-memory", "tab-storage", "tab-pcie", "tab-network", "tab-health", "tab-security", "tab-firmware"]
+    _tab_ids = ["tab-overview", "tab-cpu", "tab-bios", "tab-memory", "tab-storage", "tab-pcie", "tab-network", "tab-health", "tab-security", "tab-hba", "tab-firmware"]
     if gpus:
         _tab_ids.insert(_tab_ids.index("tab-pcie") + 1, "tab-gpu")
     _sev_rank = {"danger": 3, "warning": 2, "success": 1, "info": 0}
@@ -801,7 +838,7 @@ def render_alert_rollup(
             "tab-overview": "Overview", "tab-cpu": "CPU", "tab-bios": "BIOS",
             "tab-memory": "Memory", "tab-storage": "Storage", "tab-pcie": "PCIe",
             "tab-gpu": "GPU", "tab-network": "Networking", "tab-health": "Health",
-            "tab-security": "Security", "tab-firmware": "Firmware Inventory",
+            "tab-security": "Security", "tab-hba": "HBA", "tab-firmware": "Firmware Inventory",
         }.get(_tid, _tid)
         _detail_rows.append(
             f"<div style='{_row_cls};padding:.5rem .75rem;border-radius:4px;margin-bottom:.35rem;"

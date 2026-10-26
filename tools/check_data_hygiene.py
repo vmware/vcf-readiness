@@ -10,6 +10,7 @@ Usage:
     python tools/check_data_hygiene.py PATH ...   # scan specific files/dirs
 """
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -112,6 +113,13 @@ ALLOWLIST = [
     "techzone.vmware.com",
     "developer.vmware.com",
 ]
+
+# Development-only signatures are deliberately excluded from public exports.
+# The release exporter uses this source checker as well as the public checker.
+_private_rules = REPO_ROOT / "tools" / "_private_hygiene_rules.json"
+if _private_rules.exists():
+    for _rule in json.loads(_private_rules.read_text(encoding="utf-8")):
+        VIOLATION_PATTERNS.append((re.compile(_rule["pattern"], re.I), _rule["reason"]))
 
 
 def is_allowlisted(matched_text: str) -> bool:

@@ -29,6 +29,7 @@ from vcf_hci.report.sections.firmware_os import (
     render_os_card,
     render_warranty_card,
 )
+from vcf_hci.report.sections.hba import render_hba_tab
 from vcf_hci.report.sections.health import (
     render_bmc_diagnostics_section,
     render_job_queue_card_and_health_section,
@@ -169,6 +170,7 @@ def generate_host_html_report(
     _tor_switch_map_html, network_section_html, _fc_hba_card_html = render_network_section(
         nics, lldp_neighbors, fc_hbas, _page_salt, quick_mode=quick_mode, bmc_lic=bmc_lic, data_src=_data_src, wsman_proto_label=_wsman_proto_label, data=data, json_hcl=json_hcl
     )
+    _hba_tab_html = render_hba_tab(fc_hbas, json_hcl=json_hcl, page_salt=_page_salt, data=data)
 
     psu_card_html, _psu_health_section = render_psu_card_and_health_section(psu)
     thermal_section_html, key_sensor_str = render_thermal_health_section(thermal)
@@ -366,6 +368,7 @@ def generate_host_html_report(
         <button class="tab-btn" data-tab="tab-network"><span class="tab-dot dot-{_tab_dots['tab-network']}"></span>Networking</button>
         <button class="tab-btn" data-tab="tab-health"><span class="tab-dot dot-{_tab_dots['tab-health']}"></span>Health</button>
         <button class="tab-btn" data-tab="tab-security"><span class="tab-dot dot-{_tab_dots['tab-security']}"></span>Security</button>
+        <button class="tab-btn" data-tab="tab-hba"><span class="tab-dot dot-{_tab_dots['tab-hba']}"></span>HBA</button>
         <button class="tab-btn" data-tab="tab-firmware"><span class="tab-dot dot-{_tab_dots['tab-firmware']}"></span>Firmware Inventory</button>
         {_exp_nav_btn}
     </div>
@@ -444,6 +447,10 @@ def generate_host_html_report(
 
     <div id="tab-security" class="tab-pane">
         {_security_accordion}
+    </div>
+
+    <div id="tab-hba" class="tab-pane">
+        {_hba_tab_html}
     </div>
 
     <div id="tab-firmware" class="tab-pane">

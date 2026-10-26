@@ -84,6 +84,28 @@ function showChassisBayInfo(el){
 }
 </script>"""
 
+# Shared Hosts / Network Topology / Fibre Channel controls for both fleet reports.
+_FLEET_DETAIL_CSS = (
+    ".fleet-detail-seg{--fleet-seg-border:#94a3b8;--fleet-seg-hover:#eff6ff;"
+    "--fleet-seg-active-bg:#2563eb;--fleet-seg-active-text:#fff;--fleet-seg-active-border:#2563eb;"
+    "display:inline-flex;flex-wrap:wrap;gap:.35rem;margin:.35rem 0 .75rem;padding:.3rem;"
+    "background:var(--bg);border:1px solid var(--border);border-radius:8px}"
+    "[data-theme='dark'] .fleet-detail-seg{--fleet-seg-border:#64748b;--fleet-seg-hover:#263548;"
+    "--fleet-seg-active-border:#60a5fa}"
+    "@media(prefers-color-scheme:dark){:root:not([data-theme='light']) .fleet-detail-seg{"
+    "--fleet-seg-border:#64748b;--fleet-seg-hover:#263548;--fleet-seg-active-border:#60a5fa}}"
+    ".fleet-detail-seg button{font-family:inherit;font-size:.875rem;font-weight:600;"
+    "padding:.5rem 1rem;border:1px solid var(--fleet-seg-border);border-radius:5px;"
+    "background:var(--card);color:var(--text);cursor:pointer;"
+    "transition:background-color .12s,border-color .12s,color .12s}"
+    ".fleet-detail-seg button:hover{background:var(--fleet-seg-hover);border-color:var(--primary)}"
+    ".fleet-detail-seg button.active{background:var(--fleet-seg-active-bg);"
+    "color:var(--fleet-seg-active-text);border-color:var(--fleet-seg-active-border);"
+    "box-shadow:0 1px 3px rgba(0,0,0,.2)}"
+    ".fleet-detail-seg button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}"
+    ".fleet-detail-pane{display:none}.fleet-detail-pane.active{display:block}"
+)
+
 # ── Host report CSS ───────────────────────────────────────────────────────────
 # Injected as: f"<style>{HOST_REPORT_CSS}</style>"
 # All braces are single (plain CSS syntax).
@@ -337,17 +359,7 @@ FLEET_EXTRA_CSS = (
     "@media(prefers-color-scheme:dark){:root:not([data-theme='light']) .resource-metric-sub{color:#94a3b8}}"
     "@media(prefers-color-scheme:dark){:root:not([data-theme='light']) .resource-guidance-box{background:rgba(15,23,42,.65);border-color:#334155;color:#cbd5e1}}"
     "@media(prefers-color-scheme:dark){:root:not([data-theme='light']) .resource-guidance-box strong{color:#f1f5f9}}"
-    # Hosts | Network Topology segment (fleet summary / combined)
-    ".fleet-detail-seg{display:inline-flex;gap:0;margin:0.35rem 0 0.75rem}"
-    ".fleet-detail-seg button{font-size:.82rem;padding:.35rem .85rem;border:1px solid var(--border,#334155);"
-    "background:var(--bg,#0f172a);color:var(--text-muted,#94a3b8);cursor:pointer;transition:all .12s}"
-    ".fleet-detail-seg button.active{background:var(--card,#1e293b);color:var(--text,#f1f5f9);"
-    "border-color:var(--primary,#3b82f6);font-weight:600}"
-    ".fleet-detail-seg button:first-child{border-radius:4px 0 0 4px}"
-    ".fleet-detail-seg button:last-child{border-radius:0 4px 4px 0}"
-    ".fleet-detail-pane{display:none}.fleet-detail-pane.active{display:block}"
-    "[data-theme='light'] .fleet-detail-seg button{background:var(--bg,#f8fafc);color:var(--text-muted,#64748b);border-color:var(--border,#cbd5e1)}"
-    "[data-theme='light'] .fleet-detail-seg button.active{background:var(--card,#ffffff);color:var(--text,#0f172a);border-color:var(--primary,#2563eb)}"
+    + _FLEET_DETAIL_CSS
 )
 
 # ── Fleet page CSS (standalone fleet_summary.html) ────────────────────────────
@@ -443,12 +455,5 @@ FLEET_PAGE_CSS = (
     "#themeToggle{background:none;border:1px solid var(--border);color:var(--text-muted);"
     "border-radius:4px;padding:.2rem .55rem;font-size:.78rem;cursor:pointer;transition:background .12s}"
     "#themeToggle:hover{background:var(--th-bg)}"
-    ".fleet-detail-seg{display:inline-flex;gap:0;margin:0.35rem 0 0.75rem}"
-    ".fleet-detail-seg button{font-size:.82rem;padding:.35rem .85rem;border:1px solid var(--border);"
-    "background:var(--card);color:var(--text-muted);cursor:pointer;transition:all .12s}"
-    ".fleet-detail-seg button.active{background:var(--th-bg);color:var(--text);"
-    "border-color:var(--primary);font-weight:600}"
-    ".fleet-detail-seg button:first-child{border-radius:4px 0 0 4px}"
-    ".fleet-detail-seg button:last-child{border-radius:0 4px 4px 0}"
-    ".fleet-detail-pane{display:none}.fleet-detail-pane.active{display:block}"
+    + _FLEET_DETAIL_CSS
 )

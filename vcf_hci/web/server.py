@@ -264,12 +264,16 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         logger.debug(msg)
 
     def send_header(self, keyword: str, value: str) -> None:
-        low = keyword.lower()
+        clean_key = str(keyword).replace("\r", "").replace("\n", "")
+        clean_val = str(value).replace("\r", "").replace("\n", "")
+        low = clean_key.lower()
         if low == "referrer-policy":
             self._sent_referrer = True
         elif low == "cache-control":
             self._sent_cache = True
-        super().send_header(keyword, value)
+        elif low == "x-content-type-options":
+            self._sent_nosniff = True
+        super().send_header(clean_key, clean_val)
 
     def end_headers(self) -> None:
         # Cover send_error and other paths that never set these. Do not override
@@ -280,6 +284,9 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         if not getattr(self, "_sent_cache", False):
             self._sent_cache = True
             super().send_header("Cache-Control", "no-store")
+        if not getattr(self, "_sent_nosniff", False):
+            self._sent_nosniff = True
+            super().send_header("X-Content-Type-Options", "nosniff")
         super().end_headers()
 
     # ── Response / Request helpers ───────────────────────────────────────────
@@ -292,9 +299,12 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Content-Type-Options", "nosniff")
         if extra_headers:
             for k, v in extra_headers.items():
-                self.send_header(k, v)
+                clean_k = str(k).replace("\r", "").replace("\n", "")
+                clean_v = str(v).replace("\r", "").replace("\n", "")
+                self.send_header(clean_k, clean_v)
         self._cors_headers()
         self.end_headers()
         self.wfile.write(body)
@@ -307,10 +317,13 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data:; connect-src 'self';")
         if extra_headers:
             for k, v in extra_headers.items():
-                self.send_header(k, v)
+                clean_k = str(k).replace("\r", "").replace("\n", "")
+                clean_v = str(v).replace("\r", "").replace("\n", "")
+                self.send_header(clean_k, clean_v)
         self._cors_headers()
         self.end_headers()
         self.wfile.write(body)
@@ -372,6 +385,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         self.send_header("Pragma", "no-cache")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
 
@@ -447,6 +461,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
 
     def _cors_headers(self) -> None:
         origin = self.headers.get("Origin", "").strip() if hasattr(self, "headers") and self.headers else ""
+        origin = origin.replace("\r", "").replace("\n", "")
         if self._is_allowed_origin(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Credentials", "true")
@@ -597,9 +612,8 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
 
         elif path == "/docs" or path.startswith("/docs/"):
             from vcf_hci.web.docs_html import build_docs_html
-            doc_id = "readme"
-            if path.startswith("/docs/"):
-                doc_id = urllib.parse.unquote(path[6:]).strip("/") or "readme"
+            raw_id = urllib.parse.unquote(path[6:]).strip("/") if path.startswith("/docs/") else ""
+            doc_id = raw_id if re.match(r"^[a-zA-Z0-9_-]+$", raw_id) else "readme"
             self._send_html(build_docs_html(doc_id, TOOL_VERSION))
 
         elif path in ("/favicon.ico", "/favicon.svg"):

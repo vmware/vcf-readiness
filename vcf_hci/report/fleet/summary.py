@@ -9,6 +9,7 @@ from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.gpu_label import format_gpu_count_label
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
+from vcf_hci.report.fleet.fc_matrix import build_fleet_fc_matrix_html
 from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
 from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
 from vcf_hci.report.fleet.vendor import normalize_oem_vendor
@@ -379,6 +380,7 @@ def generate_summary_html(
     )
     tiles_block = build_fleet_tiles_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt)
     switch_matrix_block = build_fleet_switch_matrix_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt, obfuscated=obfuscated)
+    fc_matrix_block = build_fleet_fc_matrix_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt, obfuscated=obfuscated)
 
     dark_site_banner = ""
     if hcl_bundle_metadata:
@@ -416,18 +418,21 @@ def generate_summary_html(
 
     os_th_cell = '<th title="Click to sort">Host OS<span class="sort-ind">⇅</span></th>\n    ' if has_any_host_os else ""
     has_topology = bool(switch_matrix_block and switch_matrix_block.strip())
+    has_fc = bool(fc_matrix_block and fc_matrix_block.strip())
+    has_sub_panes = has_topology or has_fc
+
+    fleet_detail_buttons = ['<button type="button" class="active" data-action="fleet-detail-view" data-fleet-view="hosts">Hosts</button>']
+    if has_topology:
+        fleet_detail_buttons.append('<button type="button" data-action="fleet-detail-view" data-fleet-view="topology">Network Topology</button>')
+    if has_fc:
+        fleet_detail_buttons.append('<button type="button" data-action="fleet-detail-view" data-fleet-view="fc">Fibre Channel</button>')
+
     fleet_detail_seg = (
-        '<div class="fleet-detail-seg" role="tablist" aria-label="Fleet detail view">'
-        '<button type="button" class="active" data-action="fleet-detail-view" data-fleet-view="hosts">Hosts</button>'
-        '<button type="button" data-action="fleet-detail-view" data-fleet-view="topology">Network Topology</button>'
-        "</div>"
-    ) if has_topology else ""
-    hosts_pane_open = ' class="fleet-detail-pane active" id="fleet-detail-hosts"' if has_topology else ' id="fleet-detail-hosts"'
-    topology_pane = (
-        f'<div class="fleet-detail-pane" id="fleet-detail-topology">{switch_matrix_block}</div>'
-        if has_topology
-        else switch_matrix_block
-    )
+        f'<div class="fleet-detail-seg" role="tablist" aria-label="Fleet detail view">{"".join(fleet_detail_buttons)}</div>'
+    ) if has_sub_panes else ""
+    hosts_pane_open = ' class="fleet-detail-pane active" id="fleet-detail-hosts"' if has_sub_panes else ' id="fleet-detail-hosts"'
+    topology_pane = f'<div class="fleet-detail-pane" id="fleet-detail-topology">{switch_matrix_block}</div>' if has_topology else ""
+    fc_pane = f'<div class="fleet-detail-pane" id="fleet-detail-fc">{fc_matrix_block}</div>' if has_fc else ""
     html_content = f"""<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -488,6 +493,7 @@ def generate_summary_html(
 {failed_table_html}
 </div>
 {topology_pane}
+{fc_pane}
 
 </div>
 <script>

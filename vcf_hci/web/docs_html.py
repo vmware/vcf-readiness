@@ -3,7 +3,9 @@ VCF Readiness Tool — Documentation viewer HTML builder.
 Renders packed DOCS_DATA into a Clarity-styled interactive documentation portal.
 """
 
+import html
 import json
+import re
 from typing import Dict
 
 from vcf_hci.branding import FAVICON_DATA_URI, render_nav_brand
@@ -19,10 +21,12 @@ except ImportError:
 
 def build_docs_html(initial_doc_id: str = "readme", tool_version: str = TOOL_VERSION) -> str:
     """Build a standalone, single-page documentation app with tab switching and search."""
-    if not initial_doc_id or initial_doc_id not in DOCS_DATA:
+    if not initial_doc_id or not re.match(r"^[a-zA-Z0-9_-]+$", str(initial_doc_id)) or initial_doc_id not in DOCS_DATA:
         initial_doc_id = "readme"
 
+    safe_version = html.escape(str(tool_version))
     docs_json = json.dumps(DOCS_DATA, ensure_ascii=False).replace("</script", "<\\/script")
+    initial_doc_id_json = json.dumps(initial_doc_id)
 
     return f"""<!DOCTYPE html>
 <html lang="en" cds-base-font="16" data-theme="dark">
@@ -39,7 +43,7 @@ def build_docs_html(initial_doc_id: str = "readme", tool_version: str = TOOL_VER
 
 <header class="nav-header">
   {render_nav_brand("Documentation &amp; Help")}
-  <span class="nav-version">v{tool_version}</span>
+  <span class="nav-version">v{safe_version}</span>
   <a href="/" class="nav-btn">← Back to Scanner</a>
   <button class="nav-btn" id="themeToggle">🌙 Dark</button>
 </header>
@@ -82,7 +86,7 @@ def build_docs_html(initial_doc_id: str = "readme", tool_version: str = TOOL_VER
   "use strict";
 
   var DOCS_DATA = {docs_json};
-  var currentDocId = "{initial_doc_id}";
+  var currentDocId = {initial_doc_id_json};
 {DOCS_JS}
 }})();
 </script>

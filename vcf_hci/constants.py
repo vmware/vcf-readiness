@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.9.7"
+TOOL_VERSION = "9.10.0"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -236,7 +236,9 @@ OS_EOL_TABLE: list = [
 ]
 
 GENERIC_NAME_BLOCKLIST = [
-    "network adapter view", "network adapter", "adapter", "unknown",
+    "network adapter view", "network device view", "network interface view",
+    "network view", "adapter view", "device view",
+    "network adapter", "adapter", "unknown",
     "pcie device", "ethernet controller", "device", "none", "n/a",
     "system ethernet interface",   # Dell iDRAC BMC virtual port — not a real data NIC
     "host ethernet interface",     # Supermicro BMC USB-to-host virtual interface (ToManager)
@@ -266,6 +268,8 @@ def is_generic_name(name: Optional[str]) -> bool:
     if re.search(r"^(?:a|an|the)\s+ethernetinterface\b.*(?:represents|contains|defines)\b", sl):
         return True
     if re.search(r"\b(?:schema\s+)?represents\s+(?:the\s+)?(?:physical\s+)?network\b", sl):
+        return True
+    if re.search(r"\b(?:network|ethernet)\s*(?:adapter|device|interface)?\s*view\b", sl):
         return True
     if re.match(r"^network\s*adapter(?:\s*[0-9]+)?$", sl):
         return True

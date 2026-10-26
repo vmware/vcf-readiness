@@ -803,20 +803,25 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         host_count_badge = '<span style="color:var(--text-muted,#64748b);font-size:.72rem">No hosts</span>'
         host_count_note = '<span style="color:var(--text-muted,#64748b)">0 hosts scanned</span>'
 
-    # ── JS (Hosts | Network Topology pane switcher used by ToR tile + fleet detail segment) ──
+    # ── JS (Hosts | Network Topology | Fibre Channel pane switcher) ──
     _js = (
         "window.showFleetDetailView=function(name){\n"
         "  var hosts=document.getElementById('fleet-detail-hosts');\n"
         "  var topo=document.getElementById('fleet-detail-topology');\n"
-        "  if(!hosts&&!topo){return;}\n"
-        "  var showTopo=(name==='topology')&&!!topo;\n"
-        "  if(hosts){hosts.classList.toggle('active',!showTopo);}\n"
-        "  if(topo){topo.classList.toggle('active',showTopo);}\n"
+        "  var fc=document.getElementById('fleet-detail-fc');\n"
+        "  if(!hosts&&!topo&&!fc){return;}\n"
+        "  var target=name||'hosts';\n"
+        "  if(hosts){hosts.classList.toggle('active',target==='hosts');}\n"
+        "  if(topo){topo.classList.toggle('active',target==='topology');}\n"
+        "  if(fc){fc.classList.toggle('active',target==='fc');}\n"
         "  document.querySelectorAll('.fleet-detail-seg button').forEach(function(b){\n"
-        "    b.classList.toggle('active',b.getAttribute('data-fleet-view')===(showTopo?'topology':'hosts'));\n"
+        "    b.classList.toggle('active',b.getAttribute('data-fleet-view')===target);\n"
         "  });\n"
-        "  if(showTopo){\n"
+        "  if(target==='topology'){\n"
         "    var anchor=document.getElementById('switch-fabric-topology');\n"
+        "    if(anchor){try{anchor.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){anchor.scrollIntoView(true);}}\n"
+        "  }else if(target==='fc'){\n"
+        "    var anchor=document.getElementById('switch-fabric-fc');\n"
         "    if(anchor){try{anchor.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){anchor.scrollIntoView(true);}}\n"
         "  }\n"
         "};\n"

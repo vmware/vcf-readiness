@@ -482,6 +482,36 @@ class TestCloudMetadataPin(unittest.TestCase):
         self.assertFalse(blocked["ok"])
         self.assertEqual(blocked["category"], "security")
 
+    def test_is_root_user_sanitizes_sudo_user(self):
+        from vcf_hci.logging_utils import is_root_user
+
+        with mock.patch("os.geteuid", return_value=0):
+            # Normal username is accepted
+            with mock.patch.dict("os.environ", {"SUDO_USER": "valid_user123"}):
+                is_root, user = is_root_user()
+                self.assertTrue(is_root)
+                self.assertEqual(user, "valid_user123")
+
+            # Username with traversal characters is rejected to prevent directory escape
+            with mock.patch.dict("os.environ", {"SUDO_USER": "../../../root"}):
+                is_root, user = is_root_user()
+                self.assertTrue(is_root)
+                self.assertIsNone(user)
+
+    def test_get_default_output_dir_sanitizes_redfish_library_dir(self, tmp_path=None):
+        from vcf_hci.logging_utils import get_default_output_dir
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with mock.patch.dict("os.environ", {"REDFISH_LIBRARY_DIR": tmp_dir}):
+                res = get_default_output_dir()
+                self.assertEqual(os.path.realpath(res), os.path.realpath(tmp_dir))
+
+            # Nonexistent or invalid directory should fall back safely
+            with mock.patch.dict("os.environ", {"REDFISH_LIBRARY_DIR": "/path/that/does/not/exist/9999"}):
+                res = get_default_output_dir()
+                self.assertNotEqual(res, "/path/that/does/not/exist/9999")
+                self.assertTrue(res.endswith("VCF-Scans"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,10 +3,8 @@ VCF Readiness Tool — networking, LLDP & FC HBA report section builders (Layer 
 """
 from typing import Any, Dict, List, Optional, Tuple
 
-from vcf_hci.bcg_links import BCGLinkGenerator
 from vcf_hci.collector.fc_plus import classify_fc_plus
 from vcf_hci.compat_engine import evaluate_npar
-from vcf_hci.constants import normalize_component_manufacturer
 from vcf_hci.hcl import lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.components import (
@@ -69,15 +67,15 @@ def render_fc_hba_card(
             f"<div class='card'>"
             f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
             f"<h3 style='margin:0'>Broadcom Emulex FC HBA</h3>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Networking section'>Details &rarr;</a>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
             f"<div>{_e_badge}</div>"
             f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
             f"{len(_emulex_hbas)} Prism / Prism+ {_e_port_s} detected.<br>"
             f"<span style='font-size:.8rem'>{_h(_e_names)}</span></p>"
             f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-            f"Full details in Networking tab &#8599;</a></div>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.78rem'>"
+            f"Full details in HBA tab &#8599;</a></div>"
             f"</div>"
         )
     if _marvell_hbas:
@@ -92,15 +90,15 @@ def render_fc_hba_card(
             f"<div class='card'>"
             f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
             f"<h3 style='margin:0'>Marvell QLogic FC HBA</h3>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Networking section'>Details &rarr;</a>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
             f"<div>{_m_badge}</div>"
             f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
             f"{len(_marvell_hbas)} QLE-series {_m_port_s} detected.<br>"
             f"<span style='font-size:.8rem'>{_h(_m_names)}</span></p>"
             f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-            f"Full details in Networking tab &#8599;</a></div>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.78rem'>"
+            f"Full details in HBA tab &#8599;</a></div>"
             f"</div>"
         )
     if _vic_hbas:
@@ -117,15 +115,15 @@ def render_fc_hba_card(
             f"<div class='card'>"
             f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
             f"<h3 style='margin:0'>Cisco VIC FC (vHBA)</h3>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Networking section'>Details &rarr;</a>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
             f"<div>{_v_badge}</div>"
             f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
             f"{len(_vic_hbas)} virtual FC {_v_port_s}{_v_speed_str} (fnic) detected.<br>"
             f"<span style='font-size:.8rem'>{_h(_v_names)}</span></p>"
             f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-            f"Full details in Networking tab &#8599;</a></div>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.78rem'>"
+            f"Full details in HBA tab &#8599;</a></div>"
             f"</div>"
         )
     if _other_cna_hbas:
@@ -144,15 +142,15 @@ def render_fc_hba_card(
             f"<div class='card'>"
             f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
             f"<h3 style='margin:0'>Converged Network Adapter (vHBA)</h3>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Networking section'>Details &rarr;</a>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
             f"<div>{_c_badge}</div>"
             f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
             f"{len(_other_cna_hbas)} CNA vHBA {_c_port_s}{_c_speed_str}{_c_drv_str} detected.<br>"
             f"<span style='font-size:.8rem'>{_h(_c_names)}</span></p>"
             f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-            f"Full details in Networking tab &#8599;</a></div>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.78rem'>"
+            f"Full details in HBA tab &#8599;</a></div>"
             f"</div>"
         )
     if _other_fc_hbas:
@@ -169,15 +167,15 @@ def render_fc_hba_card(
             f"<div class='card'>"
             f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
             f"<h3 style='margin:0'>Fibre Channel HBA</h3>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Networking section'>Details &rarr;</a>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
             f"<div>{_o_badge}</div>"
             f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
             f"{len(_other_fc_hbas)} FC {_o_port_s}{_o_speed_str} detected.<br>"
             f"<span style='font-size:.8rem'>{_h(_o_names)}</span></p>"
             f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-            f"Full details in Networking tab &#8599;</a></div>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.78rem'>"
+            f"Full details in HBA tab &#8599;</a></div>"
             f"</div>"
         )
     return _fc_hba_card_html
@@ -218,136 +216,30 @@ def render_network_section(
             f"<tbody>{linkdown_rows}</tbody></table></div>"
         )
 
-    hba_rows = ""
-    for hba in (fc_hbas or []):
-        hba_fw = hba.get("firmware_version", "N/A")
-        hba_fw_cell = (
-            f"<code style='font-size:.82rem'>{_h(str(hba_fw))}</code>"
-            if hba_fw and hba_fw != "N/A"
-            else "<span style='color:var(--text-muted)'>N/A</span>"
+    if fc_hbas:
+        _hba_summary_chips = []
+        for h in fc_hbas:
+            _plus = _fc_plus_badge(h, json_hcl)
+            _v_badge = ""
+            if _plus == "E+":
+                _v_badge = " <span style='background:#CC092F;color:#fff;font-size:.68rem;font-weight:700;padding:.1rem .35rem;border-radius:3px;vertical-align:middle'>E+</span>"
+            elif _plus == "M+":
+                _v_badge = " <span style='background:#0072CE;color:#fff;font-size:.68rem;font-weight:700;padding:.1rem .35rem;border-radius:3px;vertical-align:middle'>M+</span>"
+            _hba_summary_chips.append(f"<strong>{_h(h.get('adapter_name', 'FC HBA'))}</strong>{_v_badge}")
+        _chip_str = ", ".join(_hba_summary_chips)
+        _hba_port_s = "port" if len(fc_hbas) == 1 else "ports"
+        hba_section = (
+            f"<div class='alert alert-info' style='margin-top:1.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem'>"
+            f"<div>"
+            f"<strong>🌐 Fibre Channel HBAs ({len(fc_hbas)} {_hba_port_s} detected):</strong> {_chip_str} &mdash; "
+            f"Detailed WWPN/WWNN addressing, speed generation, SAN fabric link, and SAN boot targets are consolidated in the HBA Tab."
+            f"</div>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.82rem;font-weight:600;white-space:nowrap;text-decoration:none'>"
+            f"View FC HBAs in HBA Tab &rarr;</a>"
+            f"</div>"
         )
-        hba_vid = hba.get("vendor_id", "")
-        hba_did = hba.get("device_id", "")
-        hba_svid = hba.get("subsystem_vendor_id", "")
-        hba_ssid = hba.get("subsystem_id", "")
-        hba_quad = hba.get("pci_quad") or (f"{hba_vid}:{hba_did}:{hba_svid}:{hba_ssid}" if (hba_vid and hba_did and hba_svid and hba_ssid) else f"{hba_vid}:{hba_did}" if (hba_vid and hba_did) else "")
-
-        _unique_hba = lookup_unique_hcl_device(
-            vid=hba_vid, did=hba_did, svid=hba_svid, ssid=hba_ssid, json_hcl=json_hcl, model_name=hba.get("adapter_name", "")
-        ) if json_hcl else None
-        _hba_pid = _unique_hba.get("product_id", "") if _unique_hba else ""
-        _hba_prog = _unique_hba.get("hcl_program", "") if _unique_hba else "io"
-
-        if _hba_pid:
-            bcg_hba = BCGLinkGenerator.device_detail(_hba_pid, _hba_prog)
-        elif hba_vid and hba_did:
-            bcg_hba = BCGLinkGenerator.pci_exact(hba_vid, hba_did, hba_svid, hba_ssid, program="io")
-        else:
-            bcg_hba = BCGLinkGenerator.fc_hba(hba.get("adapter_name", ""))
-
-        hba_pci_badge = f"<br><code style='font-size:.76rem;background:var(--pci-bg);color:var(--pci-color);padding:1px 4px;border-radius:3px;'>PCI: {_h(hba_quad)}</code>" if hba_quad else ""
-        cur_hba_gen = hba.get("current_pcie_type")
-        cur_hba_width = hba.get("current_pcie_width")
-        if cur_hba_gen or cur_hba_width:
-            link_str = f"{cur_hba_gen or ''} x{cur_hba_width}" if cur_hba_width else f"{cur_hba_gen}"
-            hba_pci_badge += f"<br><small style='color:var(--text-muted);font-size:.74rem;'>PCIe Link: <code>{_h(link_str.strip())}</code></small>"
-        if hba.get("downgraded") and hba.get("downgrade_badge"):
-            hba_pci_badge += f"<br>{hba['downgrade_badge']}"
-        if hba.get("is_cna"):
-            fam_l = hba.get("cna_family_label") or "Unified Fabric"
-            hba_pci_badge += f"<br><span class='badge info' style='font-size:.72rem;background:#4f46e5;color:#fff;'>🟣 CNA vHBA ({_h(fam_l)})</span>"
-
-        _wwnn_raw  = hba.get("wwnn", "")
-        _wwpn_raw  = hba.get("wwpn", "N/A")
-        wwnn_cell = (
-            f"<code style='font-size:.8rem'>{_pii_span(page_salt, _wwnn_raw, 'wwn')}</code>"
-            if _wwnn_raw else
-            "<span style='color:var(--text-muted)'>—</span>"
-        )
-
-        _plus = _fc_plus_badge(hba, json_hcl)
-        if _plus == "E+":
-            _vendor_badge = (
-                " <span style='background:#CC092F;color:#fff;font-size:.68rem;"
-                "font-weight:700;padding:.1rem .35rem;border-radius:3px;"
-                "vertical-align:middle'>E+</span>"
-            )
-        elif _plus == "M+":
-            _vendor_badge = (
-                " <span style='background:#0072CE;color:#fff;font-size:.68rem;"
-                "font-weight:700;padding:.1rem .35rem;border-radius:3px;"
-                "vertical-align:middle'>M+</span>"
-            )
-        else:
-            _vendor_badge = ""
-
-        _ls = hba.get("link_status", "Unknown")
-        if _ls == "Up":
-            _link_cell = "<span class='badge success' style='font-size:.75rem'>🟢 Up</span>"
-        elif _ls in ("Down", "NoLink"):
-            _link_cell = f"<span class='badge danger' style='font-size:.75rem'>🔴 {_h(_ls)}</span>"
-        elif _ls == "Unknown":
-            _link_cell = "<span style='color:var(--text-muted);font-size:.82rem'>—</span>"
-        else:
-            _link_cell = f"<span class='badge info' style='font-size:.75rem'>{_h(_ls)}</span>"
-
-        _sw_wwpn = hba.get("remote_switch_wwpn", "")
-        _sw_vend = hba.get("remote_switch_vendor", "")
-        _sw_vend_html = f"<br><small style='color:var(--text-muted);font-size:.72rem;'>{_h(_sw_vend)}</small>" if _sw_vend else ""
-        _sw_cell = (
-            f"<code style='font-size:.78rem'>"
-            f"{_pii_span(page_salt, _sw_wwpn, 'wwn')}</code>{_sw_vend_html}"
-            if _sw_wwpn else
-            "<span style='color:var(--text-muted)'>—</span>"
-        )
-
-        boot_html = ""
-        for bt in (hba.get("boot_targets") or []):
-            prio_label = "Primary" if bt["priority"] == 0 else f"Alt {bt['priority']}"
-            _tgt_wwpn_pii = _pii_span(page_salt, bt['target_wwpn'], 'wwn')
-            arr_v = bt.get("target_array_vendor")
-            arr_fam = bt.get("target_array_family", "")
-            fam_str = f" ({_h(arr_fam)})" if arr_fam else ""
-            arr_badge = (
-                f"<br><span class='badge info' style='font-size:.7rem;margin-top:2px;'>💾 {_h(arr_v)}{fam_str}</span>"
-                if arr_v and arr_v != "Unknown Array" else ""
-            )
-            boot_html += (
-                f"<div style='margin-top:.3rem'>"
-                f"<span class='badge success' style='font-size:.72rem'>"
-                f"SAN Boot · {prio_label}</span>{arr_badge}"
-                f"<br><code style='font-size:.8rem'>{_tgt_wwpn_pii}</code>"
-                f"&nbsp; LUN <strong>{bt['lun']}</strong></div>"
-            )
-        if not boot_html:
-            boot_html = "<span style='color:var(--text-muted)'>—</span>"
-        _hba_mfr = normalize_component_manufacturer(hba.get("manufacturer", "Unknown"))
-        hba_rows += (
-            f"<tr>"
-            f"<td><strong>{_h(hba['adapter_name'])}</strong>{hba_pci_badge}</td>"
-            f"<td>{_h(_hba_mfr)}{_vendor_badge}</td>"
-            f"<td>{hba_fw_cell}</td>"
-            f"<td>{wwnn_cell}</td>"
-            f"<td><code>{_pii_span(page_salt, _wwpn_raw, 'wwn')}</code></td>"
-            f"<td>{hba['speed_gbps']} Gbps</td>"
-            f"<td>{_link_cell}</td>"
-            f"<td>{_sw_cell}</td>"
-            f"<td>{boot_html}</td>"
-            f"<td><a href='{bcg_hba}' target='_blank' class='btn-link'>BCG 9.1 ↗</a></td>"
-            f"</tr>"
-        )
-    hba_section = (
-        f"<h2>Fibre Channel HBAs (SAN Connectivity)</h2>"
-        f"<table><thead><tr>"
-        f"<th>Adapter</th><th>Manufacturer</th><th>Firmware</th>"
-        f"<th>WWNN</th><th>WWPN</th><th>Speed</th>"
-        f"<th>Link</th><th>Switch Port</th>"
-        f"<th>SAN Boot Target</th><th>BCG 9.1 Check</th>"
-        f"</tr></thead><tbody>{hba_rows}</tbody></table>"
-        f"<p style='color:var(--text-muted);font-size:.82rem;margin:.6rem 0 1.25rem'>"
-        f"ℹ️ <strong>Out-of-Band (OOB) Redfish Discovery Boundary:</strong> Surfaces HBA BIOS-configured SAN Boot Targets, Target WWPNs, Boot LUN IDs, and fabric switch WWPNs. "
-        f"Full in-band SAN storage volume discovery (all non-boot SAN LUN volumes, volume capacity in TB, VMFS/RDM datastores, and ALUA multipath topologies) operates inside the host ESXi kernel storage stack and is reported when in-band agents (Dell iSM / HPE AMS) or ESXi vCenter integrations are present.</p>"
-    ) if fc_hbas else ""
+    else:
+        hba_section = ""
 
     lldp_rows = ""
     for n in (lldp_neighbors or []):
