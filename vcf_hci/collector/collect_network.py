@@ -1996,10 +1996,19 @@ class _NetworkMixin(_CollectorBase):
                     if any(t in name_lower for t in ("ethernet", "10gbe", "25gbe", "100gbe", "gigabit", "i350", "x710", "e810", "connectx", "tg3", "bnxt")):
                         continue
 
-                resolved_hba_name = (
-                    model_str if is_generic_name(raw_name) and model_str
-                    else (raw_name or model_str or adapter_id or "FC HBA")
-                )
+                mfg_raw = str(adapter.get("Manufacturer") or "").strip()
+                mfg_clean = normalize_component_manufacturer(mfg_raw) if mfg_raw else ""
+                if mfg_clean.lower() in ("unknown", "n/a", "none"):
+                    mfg_clean = ""
+
+                if model_str and not is_generic_name(model_str):
+                    resolved_hba_name = model_str
+                elif raw_name and not is_generic_name(raw_name):
+                    resolved_hba_name = raw_name
+                elif mfg_clean:
+                    resolved_hba_name = f"{mfg_clean} FC HBA"
+                else:
+                    resolved_hba_name = "Fibre Channel HBA"
 
                 # ── Firmware: adapter-level, shared across all ports ──────────
                 # Try progressively broader fallback paths so Emulex, QLogic,

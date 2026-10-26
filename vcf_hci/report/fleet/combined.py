@@ -11,6 +11,7 @@ from vcf_hci.branding import FAVICON_DATA_URI, MARK_SVG
 from vcf_hci.constants import COMBINED_HTML_DEFAULT_MAX_HOSTS, TOOL_VERSION
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.report.fleet.escape import _xe
+from vcf_hci.report.fleet.fc_matrix import build_fleet_fc_matrix_html
 from vcf_hci.report.fleet.inventory_panel import build_detailed_inventory_html
 from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
 from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
@@ -119,6 +120,7 @@ def _generate_combined_html(
 
     tiles_html = build_fleet_tiles_html(all_results, report_prefix="", page_salt=_page_salt)
     switch_matrix_block = build_fleet_switch_matrix_html(all_results, report_prefix="", page_salt=_page_salt, obfuscated=obfuscated)
+    fc_matrix_block = build_fleet_fc_matrix_html(all_results, report_prefix="", page_salt=_page_salt, obfuscated=obfuscated)
 
     sum_rows = ""
     _oem_set = set()
@@ -330,17 +332,28 @@ def _generate_combined_html(
         )
 
     has_topology = bool(switch_matrix_block and switch_matrix_block.strip())
+    has_fc = bool(fc_matrix_block and fc_matrix_block.strip())
+    has_sub_panes = has_topology or has_fc
+
+    fleet_detail_buttons = ['<button type="button" class="active" data-action="fleet-detail-view" data-fleet-view="hosts">Hosts</button>']
+    if has_topology:
+        fleet_detail_buttons.append('<button type="button" data-action="fleet-detail-view" data-fleet-view="topology">Network Topology</button>')
+    if has_fc:
+        fleet_detail_buttons.append('<button type="button" data-action="fleet-detail-view" data-fleet-view="fc">Fibre Channel</button>')
+
     fleet_detail_seg = (
-        '<div class="fleet-detail-seg" role="tablist" aria-label="Fleet detail view">'
-        '<button type="button" class="active" data-action="fleet-detail-view" data-fleet-view="hosts">Hosts</button>'
-        '<button type="button" data-action="fleet-detail-view" data-fleet-view="topology">Network Topology</button>'
-        "</div>"
-    ) if has_topology else ""
-    hosts_pane_open = ' class="fleet-detail-pane active" id="fleet-detail-hosts"' if has_topology else ' id="fleet-detail-hosts"'
+        f'<div class="fleet-detail-seg" role="tablist" aria-label="Fleet detail view">{"".join(fleet_detail_buttons)}</div>'
+    ) if has_sub_panes else ""
+    hosts_pane_open = ' class="fleet-detail-pane active" id="fleet-detail-hosts"' if has_sub_panes else ' id="fleet-detail-hosts"'
     topology_pane = (
         f'<div class="fleet-detail-pane" id="fleet-detail-topology">{switch_matrix_block}</div>'
         if has_topology
         else switch_matrix_block
+    )
+    fc_pane = (
+        f'<div class="fleet-detail-pane" id="fleet-detail-fc">{fc_matrix_block}</div>'
+        if has_fc
+        else ""
     )
     summary_tab = f"""<div class="container" style="padding-top:2rem">
 {header_controls}
@@ -394,6 +407,7 @@ def _generate_combined_html(
 </tr></thead><tbody>{sum_rows}</tbody></table>
 </div>
 {topology_pane}
+{fc_pane}
 </div>"""
 
     sibling_xlsx = None
@@ -558,14 +572,36 @@ def _generate_combined_html(
         ]
         tab_btns = "\n".join(fixed_btns) + "\n" + picker_html
 
+    # Pre-build lookup dictionaries for defensive report path resolution
+    _rp_by_ip = {}
+    _rp_by_host_idx = {}
+    if isinstance(report_paths, (list, tuple)):
+        for p in report_paths:
+            if not p:
+                continue
+            bn = os.path.basename(p)
+            m_ip = re.search(r"vsphere_vsan_report_(\d+\.\d+\.\d+\.\d+)", bn)
+            if m_ip:
+                _rp_by_ip[m_ip.group(1)] = p
+            m_obf = re.search(r"OBFUSCATED_Host-(\d+)", bn, re.I)
+            if m_obf:
+                _rp_by_host_idx[int(m_obf.group(1))] = p
+
     def _resolve_rel_report(i, d_sys):
         rp = None
-        if isinstance(report_paths, (list, tuple)):
-            if 0 <= i < len(report_paths):
-                rp = report_paths[i]
-        elif isinstance(report_paths, dict):
-            target_key = d_sys.get("ip") or d_sys.get("hostname") or f"Host-{i+1}"
-            rp = report_paths.get(target_key) or report_paths.get(i)
+        target_ip = str(d_sys.get("ip") or "").strip()
+        if obfuscated:
+            rp = _rp_by_host_idx.get(i + 1)
+        elif target_ip and target_ip in _rp_by_ip:
+            rp = _rp_by_ip[target_ip]
+
+        if not rp:
+            if isinstance(report_paths, (list, tuple)):
+                if 0 <= i < len(report_paths):
+                    rp = report_paths[i]
+            elif isinstance(report_paths, dict):
+                target_key = d_sys.get("ip") or d_sys.get("hostname") or f"Host-{i+1}"
+                rp = report_paths.get(target_key) or report_paths.get(i)
 
         if obfuscated:
             if rp and "obfuscated" in os.path.basename(rp).lower():
@@ -845,7 +881,7 @@ function setHostViewMode(n, mode, subTab) {{
     if (subTab) {{
       var targetSecId = null;
       if (subTab === 'tab-storage') targetSecId = 'host-drives-sec-' + n;
-      else if (subTab === 'tab-network') targetSecId = 'host-nics-sec-' + n;
+      else if (subTab === 'tab-network' || subTab === 'tab-hba') targetSecId = 'host-nics-sec-' + n;
       else if (subTab === 'tab-health') targetSecId = 'host-health-sec-' + n;
       else if (subTab === 'tab-cpu' || subTab === 'tab-security') targetSecId = 'host-specs-grid-' + n;
       if (targetSecId) {{

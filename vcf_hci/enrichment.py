@@ -759,7 +759,7 @@ def synthesize_pcie_slots(
     for hba in (host_data.get("fc_hbas") or []):
         if not isinstance(hba, dict):
             continue
-        h_name = hba.get("model") or hba.get("name") or "FC HBA"
+        h_name = hba.get("adapter_name") or hba.get("model") or hba.get("name") or "FC HBA"
         h_slot = hba.get("slot") or f"PCIe FC HBA Slot {len(slots)+1}"
         slots.append({
             "slot_label":          h_slot,
@@ -949,6 +949,131 @@ def correlate_direct_attached_nvme_pcie(
         return (2, 999, label)
 
     pcie_slots.sort(key=_slot_sort_key)
+
+
+def enrich_fc_hbas(host_data: Dict[str, Any]) -> None:
+    """Enrich Fibre Channel HBAs by correlating generic names with firmware inventory and PCIe devices."""
+    fc_hbas = host_data.get("fc_hbas")
+    if not isinstance(fc_hbas, list) or not fc_hbas:
+        return
+
+    fw_inv = host_data.get("firmware_inventory") or []
+    pcie_devs = host_data.get("pcie_devices") or []
+
+    # Map existing non-generic HBA names by slot base to share among siblings
+    slot_name_map = {}
+    for hba in fc_hbas:
+        if not isinstance(hba, dict):
+            continue
+        aname = str(hba.get("adapter_name") or "").strip()
+        port_id = str(hba.get("port_id") or "").strip()
+        slot_base = port_id.split("-")[0] if "-" in port_id else port_id
+        if slot_base and aname and not is_generic_name(aname) and "view" not in aname.lower():
+            slot_name_map[slot_base] = aname
+
+    for hba in fc_hbas:
+        if not isinstance(hba, dict):
+            continue
+        cur_name = str(hba.get("adapter_name") or "").strip()
+        port_id = str(hba.get("port_id") or "").strip()
+        slot_base = port_id.split("-")[0] if "-" in port_id else port_id
+
+        needs_better_name = (
+            not cur_name
+            or is_generic_name(cur_name)
+            or cur_name.lower() in ("fc hba", "fibre channel hba", "fibre channel")
+            or "view" in cur_name.lower()
+        )
+
+        matched_name = ""
+        matched_fw_ver = ""
+        matched_pci_dev = None
+
+        # 1. Match against firmware_inventory
+        if needs_better_name or not hba.get("firmware_version") or hba.get("firmware_version") in ("00.00.00", "N/A", ""):
+            for fw in fw_inv:
+                fid = str(fw.get("id") or "")
+                fname = str(fw.get("name") or "").strip()
+                if not fname or is_generic_name(fname) or "firmware inventory" in fname.lower():
+                    continue
+                is_fc = any(t in fname.lower() or t in fid.lower() for t in ("fibre channel", "fc", "lpe", "qle", "emulex", "qlogic", "marvell", "sn1700", "sn1600"))
+                if not is_fc:
+                    continue
+                is_match = False
+                if (port_id and (fid.endswith(f"__{port_id}") or f"__{port_id}" in fid or fid == port_id)) or (slot_base and (fid.endswith(f"__{slot_base}") or f"__{slot_base}" in fid or f"__{slot_base}-" in fid or f"__{slot_base}." in fid)):
+                    is_match = True
+                if is_match:
+                    c_name = re.sub(r"\s*-\s*(?:FC|[0-9A-Fa-f]{16})\s*$", "", fname).strip()
+                    if c_name.endswith(" Adapt"):
+                        c_name += "er"
+                    matched_name = c_name
+                    if fw.get("version") and fw.get("version") not in ("00.00.00", "N/A"):
+                        matched_fw_ver = str(fw.get("version"))
+                    break
+
+        # 2. Match against pcie_devices
+        for pdev in pcie_devs:
+            if not isinstance(pdev, dict):
+                continue
+            pd_name = str(pdev.get("name") or "").strip()
+            pd_match = False
+            for func in pdev.get("functions") or []:
+                fid = str(func.get("id") or func.get("function_id") or "")
+                raw_func = func.get("_raw") or {}
+                oem_dell_id = ((raw_func.get("Oem") or {}).get("Dell") or {}).get("DellPCIeFunction", {}).get("Id", "")
+                if port_id and (port_id in fid or port_id == oem_dell_id):
+                    pd_match = True
+                    break
+                if slot_base and (slot_base in fid or slot_base in oem_dell_id):
+                    pd_match = True
+                    break
+            if not pd_match and slot_base:
+                slot_num = re.search(r"slot[._\s]*(\d+)", slot_base, re.I)
+                pdev_slot_num = re.search(r"slot[._\s]*(\d+)", str(pdev.get("slot_label") or ""), re.I)
+                if slot_num and pdev_slot_num and slot_num.group(1) == pdev_slot_num.group(1):
+                    if any(t in pd_name.lower() for t in ("fibre channel", "fc", "lpe", "qle", "emulex", "qlogic")):
+                        pd_match = True
+            if pd_match:
+                matched_pci_dev = pdev
+                if needs_better_name and not matched_name and pd_name and not is_generic_name(pd_name):
+                    matched_name = pd_name
+                break
+
+        if needs_better_name and matched_name:
+            hba["adapter_name"] = matched_name
+        elif needs_better_name and slot_base in slot_name_map:
+            hba["adapter_name"] = slot_name_map[slot_base]
+        elif needs_better_name:
+            mfg = normalize_component_manufacturer(hba.get("manufacturer"))
+            if mfg and mfg not in ("Unknown", "N/A"):
+                hba["adapter_name"] = f"{mfg} FC HBA"
+            else:
+                hba["adapter_name"] = "Fibre Channel HBA"
+
+        if matched_fw_ver and (not hba.get("firmware_version") or hba.get("firmware_version") in ("00.00.00", "N/A", "")):
+            hba["firmware_version"] = matched_fw_ver
+
+        if matched_pci_dev:
+            for k in ("pci_quad", "pci_pair", "vendor_id", "device_id", "subsystem_vendor_id", "subsystem_id"):
+                if not hba.get(k) and matched_pci_dev.get(k):
+                    hba[k] = matched_pci_dev.get(k)
+            for k in ("current_pcie_type", "max_pcie_type", "current_pcie_width", "max_pcie_width"):
+                if not hba.get(k) and matched_pci_dev.get(k):
+                    hba[k] = matched_pci_dev.get(k)
+
+        # Normalize manufacturer
+        if not hba.get("manufacturer") or hba.get("manufacturer") in ("Unknown", "N/A", ""):
+            cur_a = hba.get("adapter_name", "")
+            if "emulex" in cur_a.lower() or re.search(r"\bLPe\d+", cur_a, re.I):
+                hba["manufacturer"] = "Emulex"
+            elif "qlogic" in cur_a.lower() or "marvell" in cur_a.lower() or re.search(r"\bQLE\d+", cur_a, re.I):
+                hba["manufacturer"] = "QLogic / Marvell"
+            elif "broadcom" in cur_a.lower():
+                hba["manufacturer"] = "Broadcom"
+            elif "cisco" in cur_a.lower() or "vic" in cur_a.lower():
+                hba["manufacturer"] = "Cisco"
+        elif hba.get("manufacturer"):
+            hba["manufacturer"] = normalize_component_manufacturer(hba.get("manufacturer"))
 
 
 def _enrich_single_host(
@@ -1193,6 +1318,11 @@ def _enrich_single_host(
         logger.debug("Failed evaluating memory topology: %s", exc)
         if "memory_topology" not in host_data:
             host_data["memory_topology"] = {}
+
+    try:
+        enrich_fc_hbas(host_data)
+    except Exception as exc:
+        logger.debug("Failed enriching FC HBAs: %s", exc)
 
     # 6. PCIe Lane Budget Evaluation
     pcie_slots = host_data.get("pcie_slots") or []

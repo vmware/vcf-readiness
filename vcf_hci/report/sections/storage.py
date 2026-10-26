@@ -735,8 +735,8 @@ def render_storage_subsystem_section(
             f"<strong>🌐 Fibre Channel / SAN Storage Connectivity Detected</strong> — "
             f"{len(_fc_hbas)} FC {_hba_port_s}{_speed_txt} ({_h(_hba_names)}) discovered for external SAN / VMFS storage integration."
             f"</div>"
-            f"<a href='#tab-network' data-jump-tab='tab-network' class='btn-link tab-jump-link' style='font-size:.82rem;font-weight:600;white-space:nowrap;text-decoration:none'>"
-            f"View FC HBAs in Networking Tab &rarr;</a>"
+            f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.82rem;font-weight:600;white-space:nowrap;text-decoration:none'>"
+            f"View FC HBAs in HBA Tab &rarr;</a>"
             f"</div>"
         )
 

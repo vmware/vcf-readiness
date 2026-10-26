@@ -509,8 +509,11 @@ def is_root_user() -> Tuple[bool, Optional[str]]:
     try:
         euid_fn = getattr(os, "geteuid", None)
         if euid_fn is not None and euid_fn() == 0:
-            sudo_user = os.environ.get("SUDO_USER")
-            return True, sudo_user
+            raw_user = os.environ.get("SUDO_USER")
+            # Sanitize username: validate against standard POSIX username characters to prevent path traversal
+            if raw_user and re.match(r"^[a-zA-Z0-9_.-]+$", raw_user) and not any(p == ".." for p in raw_user.split("/")):
+                return True, raw_user
+            return True, None
     except Exception:
         pass
     return False, None
@@ -544,9 +547,14 @@ def get_default_output_dir() -> str:
     When running as root (or via sudo), attempts to find the real user's Desktop, `/Users/Shared`,
     or fallback to current working directory, appended with `VCF-Scans`.
     """
-    env_dir = os.environ.get("REDFISH_LIBRARY_DIR")
-    if env_dir and os.path.isdir(os.path.expanduser(env_dir)):
-        return os.path.abspath(os.path.expanduser(env_dir))
+    raw_env_dir = os.environ.get("REDFISH_LIBRARY_DIR")
+    if raw_env_dir and str(raw_env_dir).strip():
+        try:
+            resolved_env_dir = os.path.realpath(os.path.expanduser(str(raw_env_dir).strip()))
+            if os.path.isdir(resolved_env_dir):
+                return resolved_env_dir
+        except Exception:
+            pass
 
     is_root, sudo_user = is_root_user()
 

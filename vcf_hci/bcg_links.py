@@ -670,7 +670,7 @@ class BCGLinkGenerator:
         )
 
     @staticmethod
-    def fc_hba(name: str) -> str:
+    def fc_hba(name: str, manufacturer: str = "") -> str:
         """BCG IO search for a Fibre Channel HBA using only the core model number.
 
         Verbose Redfish adapter strings (e.g. "Emulex LPe35000-M Dual-Port 32Gb
@@ -683,6 +683,8 @@ class BCGLinkGenerator:
           Broadcom / Emulex Prism+ : LPe37000, LPe38000
           Marvell / QLogic 32G     : QLE2770, QLE2772, QLE2774
           Marvell / QLogic 64G     : QLE2870, QLE2872, QLE2874
+          Marvell / QLogic Gen5    : QLE51002
+          HPE StoreFabric / SN     : SN1700Q, SN1700E, SN1610Q, SN1610E
         """
         n = (name or "").strip()
         # Emulex/Broadcom Prism / Prism+ family (LPe35xxx–LPe38xxx)
@@ -693,16 +695,41 @@ class BCGLinkGenerator:
                 f"{BCG_BASE_URL}&program=io&keyword={BCGLinkGenerator._enc(kw)}"
                 f"{BCGLinkGenerator._IO_V9_RELEASES}"
             )
-        # Marvell QLogic: QLE2770–QLE2774 (32G) and QLE2870–QLE2874 (64G)
-        qle_fc = re.search(r"\b(QLE2[78]7[024][A-Z0-9\-]*)", n, re.I)
+        # Marvell QLogic: QLE2770–QLE2774 (32G), QLE2870–QLE2874 (64G), QLE51002 (Gen5)
+        qle_fc = re.search(r"\b(QLE\d{4,5}[A-Z0-9\-]*)", n, re.I)
         if qle_fc:
             kw = qle_fc.group(1).upper()
             return (
                 f"{BCG_BASE_URL}&program=io&keyword={BCGLinkGenerator._enc(kw)}"
                 f"{BCGLinkGenerator._IO_V9_RELEASES}"
             )
-        # Generic fallback: clean the name and use standard io_device
-        return BCGLinkGenerator.io_device(BCGLinkGenerator._clean_nic_name(n))
+        # HPE StoreFabric SN-series: SN1700Q, SN1700E, SN1610Q, SN1600Q, etc.
+        sn_fc = re.search(r"\b(SN1[67]\d{2}[A-Z0-9\-]*)", n, re.I)
+        if sn_fc:
+            kw = sn_fc.group(1).upper()
+            return (
+                f"{BCG_BASE_URL}&program=io&keyword={BCGLinkGenerator._enc(kw)}"
+                f"{BCGLinkGenerator._IO_V9_RELEASES}"
+            )
+
+        # Fallback: clean the name and verify it produces a valid search keyword
+        clean = BCGLinkGenerator._clean_nic_name(n)
+        if not clean or clean.lower() in ("view", "device", "adapter", "network", "controller", "card", "nic", "hba", "fc", "unknown"):
+            mfg = str(manufacturer or "").strip()
+            if not mfg or mfg.lower() in ("unknown", "n/a", "none"):
+                for v in ["Broadcom", "Emulex", "QLogic", "Marvell", "HPE", "Cisco"]:
+                    if re.search(rf"\b{v}\b", n, re.I):
+                        mfg = v
+                        break
+            if mfg and mfg.lower() not in ("unknown", "n/a", "none"):
+                clean = f"{mfg} Fibre Channel"
+            else:
+                clean = "Fibre Channel"
+
+        return (
+            f"{BCG_BASE_URL}&program=io&keyword={BCGLinkGenerator._enc(clean)}"
+            f"{BCGLinkGenerator._IO_V9_RELEASES}"
+        )
 
     @staticmethod
     def cna_ethernet(name: str, driver: str = "") -> str:
@@ -803,14 +830,13 @@ class BCGLinkGenerator:
         #   • dual-speed tokens: 10/25Gb, 1/10GbE, etc.  (must precede single-speed strip)
         #   • HPE / Hpe vendor prefix
         #   • Abbreviated "Eth" (Ethernet) and "Adptr"/"Adpt" (Adapter)
+        # If n is a partition/slice description, keep as-is
+        if re.search(r"\bpartition\s+\d+\b", n, re.I):
+            return n
+
         cleaned_symbols = re.sub(r"[\[\]\(\)]", " ", n)
         cleaned_symbols = re.sub(
             r"(?i)\b(?:inc|incorporated|and\s+subsidiaries|subsidiaries|corp|corporation|llc|ltd|limited|co|company|technologies|technology)\b\.?",
-            " ",
-            cleaned_symbols
-        )
-        cleaned_symbols = re.sub(
-            r"(?i)\b(?:embedded|integrated|slot|partition)\b|\b(?:partition|port)\s*\d+\b",
             " ",
             cleaned_symbols
         )
@@ -819,15 +845,18 @@ class BCGLinkGenerator:
             r"|\b(mlnx|mellanox|intel|broadcom|brcm|qlogic|chelsio|solarflare|marvell|emulex|oce|infiniband|hpe)\b"
             r"|\b\d+[\-\s]*(?:port|p)\b"                                      # 2-port, 4-port, 2p, 4p
             r"|\b\d+\s*[Gg][Bb][Ee]?\b|\b\d+\s*[Gg]\b"                        # 10Gb, 25G
-            r"|(?<![A-Za-z0-9\-])\b(?:q?sfp(?:\+|\d+)?|pcie|ocp|rndc|rdma|adapter|adptr|adpt|network|ethernet|eth|flexfabric|gigabit|controller|card|nic)\b",
+            r"|(?<![A-Za-z0-9\-])\b(?:q?sfp(?:\+|\d+)?|pcie|ocp|rndc|rdma|adapter|adptr|adpt|network|ethernet|eth|flexfabric|gigabit|controller|card|nic|view|device)\b",
             "", cleaned_symbols, flags=re.I
         ).strip()
         cleaned = " ".join(stripped.split())
-        if cleaned and re.search(r"[A-Za-z]", cleaned):
-            return cleaned
+        if cleaned and re.search(r"[A-Za-z0-9]", cleaned):
+            if cleaned.lower() not in ("view", "device", "adapter", "network", "controller", "card", "nic", "hba", "fc"):
+                return cleaned
         for v in ["Broadcom", "Mellanox", "Intel", "QLogic", "Chelsio", "Solarflare", "Marvell", "Emulex", "HPE", "Cisco"]:
             if re.search(rf"\b{v}\b", n, re.I):
                 return v
+        if not cleaned or cleaned.lower() in ("view", "device", "adapter", "network", "controller", "card", "nic", "hba", "fc"):
+            return ""
         return n
 
     @staticmethod

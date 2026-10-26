@@ -142,6 +142,12 @@ class CiscoCollector(GenericCollector):
                 raw = resp.read()
                 if isinstance(raw, bytes):
                     raw = raw.decode("utf-8", errors="replace")
+                if not raw or not isinstance(raw, str):
+                    return None
+                upper = raw.upper()
+                if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+                    logger.warning("Rejected Cisco XML payload containing prohibited DTD / ENTITY declaration")
+                    return None
                 return ET.fromstring(raw)
         except Exception as exc:
             logger.debug("Cisco XML query for %s failed on %s: %s", class_id, url, exc)

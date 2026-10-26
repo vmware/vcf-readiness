@@ -11,6 +11,7 @@ Inject ``ssh_run`` in tests. The default runner is subprocess.
 
 import json
 import os
+import re
 import select
 import shlex
 import shutil
@@ -708,21 +709,37 @@ def probe_jump_host_key(
 
 
 def _member_is_safe(dest_dir: str, name: str) -> None:
-    if not name or name.startswith("/") or any(part == ".." for part in name.split("/")):
+    if not name:
+        raise RemoteExecError("archive member escapes the output directory")
+    # Normalize Windows/POSIX path separators and reject absolute / drive paths
+    clean_name = name.replace("\\", "/")
+    if (
+        clean_name.startswith(("/", "\\"))
+        or bool(re.match(r"^[a-zA-Z]:", clean_name))
+        or clean_name.startswith("//")
+    ):
+        raise RemoteExecError("archive member escapes the output directory")
+    parts = [part for part in clean_name.split("/") if part and part != "."]
+    if not parts or any(part == ".." for part in parts):
         raise RemoteExecError("archive member escapes the output directory")
     dest_real = os.path.realpath(dest_dir)
-    target = os.path.realpath(os.path.join(dest_dir, name))
+    target = os.path.realpath(os.path.join(dest_dir, *parts))
     if target != dest_real and not target.startswith(dest_real + os.sep):
         raise RemoteExecError("archive member escapes the output directory")
 
 
 def _extract_tar_members_no_links(archive: tarfile.TarFile, dest_dir: str) -> None:
-    """Extract members, skipping symlinks and hardlinks safely on all Python versions."""
+    """Extract members, skipping symlinks, hardlinks, and special device files safely."""
+    filter_kwargs = {}
+    if hasattr(tarfile, "data_filter"):
+        filter_kwargs["filter"] = "data"
+
     for member in archive.getmembers():
-        if member.issym() or member.islnk():
+        # Only extract regular files and directories (reject symlinks, hardlinks, FIFOs, devices)
+        if member.issym() or member.islnk() or not (member.isreg() or member.isdir()):
             continue
         _member_is_safe(dest_dir, member.name)
-        archive.extract(member, dest_dir)
+        archive.extract(member, dest_dir, **filter_kwargs)
 
 
 def _extract_tar(blob: bytes, dest_dir: str) -> None:
