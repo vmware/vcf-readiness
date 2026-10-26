@@ -485,7 +485,7 @@ class TestCloudMetadataPin(unittest.TestCase):
     def test_is_root_user_sanitizes_sudo_user(self):
         from vcf_hci.logging_utils import is_root_user
 
-        with mock.patch("os.geteuid", return_value=0):
+        with mock.patch("os.geteuid", return_value=0, create=True):
             # Normal username is accepted
             with mock.patch.dict("os.environ", {"SUDO_USER": "valid_user123"}):
                 is_root, user = is_root_user()
