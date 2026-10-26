@@ -983,8 +983,16 @@ def _find_free_port(preferred: int = 7182, host: str = "127.0.0.1") -> int:
         return s.getsockname()[1]
 
 
+def _configure_console_output() -> None:
+    """Keep startup diagnostics usable with legacy Windows redirected streams."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
+
+
 def main() -> None:
     """Main entry point for the VCF Readiness Browser UI server."""
+    _configure_console_output()
     parser = argparse.ArgumentParser(
         description="VCF Readiness Assessment Tool — Browser UI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
