@@ -15,6 +15,7 @@ import zipfile
 from typing import Any, Dict, List, Optional, Set, Union
 
 from vcf_hci.constants import TOOL_VERSION
+from vcf_hci.logging_utils import scan_contains_original_artifacts
 from vcf_hci.summary_io import load_summary
 
 logger = logging.getLogger(__name__)
@@ -46,15 +47,22 @@ def write_scan_manifest(
     manifest_path = os.path.join(outdir, "MANIFEST.json")
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    offline = str(scan_profile or "").startswith("offline") or scan_profile in ("assembled", "imported")
+    contains_originals = scan_contains_original_artifacts(outdir)
     manifest: Dict[str, Any] = {
         "tool_version": str(tool_version or TOOL_VERSION),
-        "scanned_at": str(scanned_at or now_iso),
+        "scanned_at": str(scanned_at or ("Unknown" if offline else now_iso)),
         "host_count": int(host_count),
         "collector_id": str(collector_id or ""),
         "site": str(site or ""),
         "scan_profile": str(scan_profile or ""),
-        "obfuscated": bool(obfuscated),
+        "obfuscated": bool(obfuscated) and not contains_originals,
     }
+
+    if offline:
+        manifest["report_generated_at"] = now_iso
+    if contains_originals:
+        manifest["contains_original_data"] = True
 
     if extra_meta and isinstance(extra_meta, dict):
         for k, v in extra_meta.items():

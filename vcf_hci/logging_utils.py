@@ -16,6 +16,25 @@ from typing import Optional, Tuple
 logger = logging.getLogger("vcf_assess")
 
 
+def scan_contains_original_artifacts(outdir: str) -> bool:
+    """Detect conventional original deliverables before labelling a package sanitized.
+
+    This is a conservative naming check, not content sanitization or certification.
+    """
+    for subdir in ("", "reports", "data"):
+        directory = os.path.join(outdir, subdir)
+        if not os.path.isdir(directory):
+            continue
+        for name in os.listdir(directory):
+            if name.startswith(("00_OBFUSCATED_", "OBFUSCATED_", "redfish_explorer_Host-", "vcf_summary_Host-")):
+                continue
+            if name.startswith(("00_", "vcf_summary_", "redfish_mockup_", "redfish_explorer_")):
+                return True
+            if name.endswith((".xlsx", ".log")) or (subdir == "reports" and name.endswith(".html")):
+                return True
+    return False
+
+
 def configure_logging(debug: bool = False, log_file: Optional[str] = None, mode: str = "w"):
     level = logging.DEBUG if debug else logging.WARNING
     fmt = logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
@@ -894,6 +913,7 @@ def create_obfuscated_scan_zip_archive(
     if isinstance(manifest_data, dict):
         manifest_data = dict(manifest_data)
         manifest_data["obfuscated"] = True
+        manifest_data.pop("contains_original_data", None)
     else:
         rep_dir = os.path.join(scan_dir, "reports")
         n_hosts = len(obf_results) if obf_results else 0
@@ -924,6 +944,7 @@ def create_obfuscated_scan_zip_archive(
             obfuscated=True,
             tool_version=manifest_data.get("tool_version", TOOL_VERSION),
             failed_count=len(failed_hosts) if failed_hosts else 0,
+            sanitized_archive=True,
         )
     except Exception:
         readme_content = OBFUSCATED_PACKAGE_README

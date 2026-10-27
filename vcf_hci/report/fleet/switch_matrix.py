@@ -2,6 +2,7 @@
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.components import render_switch_chassis_svg, render_switch_leaf_svg
+from vcf_hci.report.disclosures import evidence_controls_html
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.switch_topology import build_fleet_switch_topology
 
@@ -184,7 +185,7 @@ def build_fleet_switch_matrix_html(
           </div>
 
           <!-- Connected Hosts Accordion -->
-          <details style="margin-top:0.5rem">
+          <details class="report-evidence" data-report-evidence="supporting" style="margin-top:0.5rem">
             <summary style="cursor:pointer;font-size:0.83rem;font-weight:600;color:var(--primary);padding:0.3rem 0">
               🔍 View Connected Hosts &amp; Port Mapping ({len(pair['all_hosts'])} servers)
             </summary>
@@ -235,7 +236,7 @@ def build_fleet_switch_matrix_html(
           <div style="font-size:0.76rem;color:var(--text-muted);margin:0.3rem 0 0.5rem">
             {_render_sw_meta(sw)} | Connected: <b>{len(sw['connected_hosts'])} host(s)</b>
           </div>
-          <details>
+          <details class="report-evidence" data-report-evidence="supporting">
             <summary style="cursor:pointer;font-size:0.78rem;font-weight:600;color:var(--primary)">View Connected Hosts ({len(sw['connected_hosts'])})</summary>
             <div style="overflow-x:auto;margin-top:0.4rem">
               <table style="width:100%;font-size:0.76rem;border-collapse:collapse;margin:0">
@@ -305,6 +306,7 @@ def build_fleet_switch_matrix_html(
 
     return f"""
     <div id="switch-fabric-topology" style="margin-top:2rem;margin-bottom:2rem">
+    {evidence_controls_html()}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
         <h2 style="margin:0;display:flex;align-items:center;gap:0.5rem">
           <span>🔀</span> Fleet Top-of-Rack (ToR) Switch Fabric &amp; Topology Matrix

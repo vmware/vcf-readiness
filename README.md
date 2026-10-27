@@ -8,7 +8,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
-[![Download v9.10.0](https://img.shields.io/badge/Download-v9.10.0-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.10.0)
+[![Download v9.11.0](https://img.shields.io/badge/Download-v9.11.0-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.11.0)
 
 ---
 
@@ -40,8 +40,8 @@ Watch short step-by-step video guides to get up and running, launch on macOS, an
 The recommended and verified installation runs directly from source using the Python 3.9+ standard library (zero external dependencies).
 
 <p align="center">
-  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.10.0/Distribution-VCF-Readiness.zip" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.10.0_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
+  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.11.0/Distribution-VCF-Readiness.zip" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.11.0_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
   </a>
 </p>
 <p align="center">
@@ -51,10 +51,10 @@ The recommended and verified installation runs directly from source using the Py
 <details>
 <summary><strong>Alternative: Pre-compiled standalone binaries (unsigned developer builds)</strong></summary>
 
-If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.10.0 page](https://github.com/vmware/vcf-readiness/releases/tag/9.10.0):
+If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.11.0 page](https://github.com/vmware/vcf-readiness/releases/tag/9.11.0):
 
-- **Windows:** `VCF-Readiness-Web-v9.10.0-win.zip` (double-click executable; may show Windows SmartScreen notice).
-- **macOS:** `VCF-Readiness-Web-v9.10.0-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
+- **Windows:** `VCF-Readiness-Web-v9.11.0-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
+- **macOS:** `VCF-Readiness-Web-v9.11.0-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
 
 *Note: These are unsigned community convenience builds. To avoid operating system security prompts, running directly from source with Python 3.9+ is strongly recommended.*
 
@@ -107,7 +107,13 @@ Windows:
 python vcfr_web.py
 ```
 
+Source bundles built with the Windows launcher also support double-clicking `Launch-VCF-Readiness-Web.bat` after extracting the complete ZIP. It finds Python 3.9 or newer using `python`, `py -3`, or `python3`. The standalone Windows ZIP launcher runs its bundled executable and does not require Python.
+
+Launching through `python3` or `python` needs no executable permission and no `chmod`. See [installation guidance](docs/INSTALL.md#start-the-web-ui) for direct execution on macOS/Linux.
+
 The server binds to loopback and opens a one-time launch URL in your browser. If no browser opens, use the URL printed in the terminal. The preferred port is `7182`; the server selects a nearby free port if it is occupied.
+
+At launch, the browser scanner checks the public GitHub release metadata in the background. A small **Update available** link appears beside the version only when a newer stable release exists. It opens the release page; nothing is downloaded or installed automatically. Offline and rate-limit failures stay quiet. Set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable the check; see [offline operation](docs/INSTALL.md#offline-and-air-gapped-operation).
 
 ### 2. Enter one target
 
@@ -176,7 +182,7 @@ Every assessment run generates rich, standalone HTML deliverables (an aggregated
 > 🎥 **Video Tour:** Watch the [**Report Overview Video (8:20) →**](https://www.youtube.com/watch?v=tQkxyRHZu4M) for a guided walkthrough of the fleet summary, status badges, BIOS drift scorecard, and per-host sub-reports.
 
 ### 1. Fleet Dashboard & Resource Headroom
-Aggregates compute vCPU, RAM, and direct-attached NVMe storage across your entire server inventory, modeling resource headroom against VCF 9.1 management domain sizing profiles.
+Start with Server Readiness, storage readiness and BMC security beside fleet raw-resource totals and sizing caveats. Server Readiness combines existing chassis qualification with CPU support and keeps vendor-support qualifications distinct from unsupported assessments. Click a count to inspect matching hosts, including unassessed results.
 
 ![Fleet Health and Management Headroom Tiles](docs/images/01-fleet-health-tiles.png)
 
@@ -189,7 +195,7 @@ Fleet-wide power redundancy tracking, chassis power cap warnings, vSAN readiness
 ---
 
 ### 2. Interactive Per-Host Assessment Matrix
-Sort, search, and filter servers by OEM vendor, CPU support tier, TPM 2.0 status, and vSAN ESA readiness with direct links into individual host sub-reports.
+Sort, search, and filter servers by OEM vendor, CPU support tier, TPM 2.0 status, and vSAN ESA readiness with direct links into individual host sub-reports. Detailed Inventory offers Comfortable and Compact density, a Columns chooser and Reset view. Layout choices retain complete export data. Keyboard navigation and focus management support report tabs and reference help.
 
 ![Per-Host Assessment Table](docs/images/03-per-host-table.png)
 

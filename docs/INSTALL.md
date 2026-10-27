@@ -52,6 +52,10 @@ Windows:
 python vcfr_web.py
 ```
 
+In source bundles that include it, double-click `Launch-VCF-Readiness-Web.bat` to find Python 3.9+ and start the UI. Extract the entire ZIP first and keep the launcher beside `vcfr_web.py`. In standalone Windows bundles, the same launcher runs the included EXE without Python. Windows does not use `chmod`.
+
+The Python commands above work without executable permissions. The source ZIP stores Unix executable permissions, which some extractors may discard. If you choose to launch directly with `./vcfr_web.py` on macOS/Linux and get a permission error, run `chmod +x vcfr_web.py` first.
+
 The UI binds to loopback and prints a one-time launch URL. It normally opens that URL in the default browser. Stop it with `Ctrl-C` or the Quit control.
 
 Check all web-server options:
@@ -109,6 +113,19 @@ Do not expose the UI on a reachable interface merely to avoid SSH forwarding. No
 ## Offline and air-gapped operation
 
 Ordinary scans use packaged or existing local compatibility data and do not download HCL data automatically.
+
+The browser scanner separately checks public GitHub release metadata once per launch in a background thread. A newer stable release adds an **Update available** link beside the version. The check does not send scan targets, credentials or results, and it does not install updates. Network failures do not delay scanning. To suppress this optional request on an offline host, set `VCF_READINESS_CHECK_UPDATES=0` before starting the scanner:
+
+```bash
+VCF_READINESS_CHECK_UPDATES=0 python3 vcfr_web.py
+```
+
+On Windows Command Prompt:
+
+```cmd
+set VCF_READINESS_CHECK_UPDATES=0
+python vcfr_web.py
+```
 
 To import an approved offline bundle:
 

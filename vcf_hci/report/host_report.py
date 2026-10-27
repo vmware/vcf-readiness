@@ -9,13 +9,17 @@ import os
 from typing import Optional
 
 from vcf_hci.branding import FAVICON_DATA_URI
+from vcf_hci.fc_inventory import normalize_fc_ports
+from vcf_hci.report.evidence_inventory import render_evidence_inventory
 
 logger = logging.getLogger("vcf_assess")
 
 from vcf_hci.bcg_links import BCGLinkGenerator
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.hcl import load_optional_vsan_csv, load_vsan_hcl_json
+from vcf_hci.report.disclosures import evidence_controls_html, supporting_evidence_html
 from vcf_hci.report.helpers import _h, html_escape
+from vcf_hci.report.presentation import REPORT_UI_JS
 from vcf_hci.report.sections.bios_security import (
     render_bios_perf_card_and_accordion,
     render_boot_order_card,
@@ -105,7 +109,8 @@ def generate_host_html_report(
                 ctrl["drives"] = deduped_drives
     sel = data.get("sel_alarms") or data.get("sel") or data.get("system_event_log") or []
     gpus = data.get("gpu_accelerators", [])
-    fc_hbas = data.get("fc_hbas", [])
+    data = dict(data, fc_hbas=normalize_fc_ports(data.get("fc_hbas", [])))
+    fc_hbas = data["fc_hbas"]
     lldp_neighbors = data.get("lldp_neighbors", [])
     psu = data.get("psu_status", {})
     bmc_lic = data.get("bmc_license", {})
@@ -237,6 +242,11 @@ def generate_host_html_report(
     real_nics = [n for n in nics if not n.get("unsupported_license")]
     _driver_fw_alignment_card_html = render_driver_fw_alignment_card(real_nics, storage, json_hcl=json_hcl)
     _firmware_inv_section = render_firmware_inventory_section(data, sys_info, json_hcl=json_hcl)
+    _firmware_count = len(data.get("firmware_inventory") or [])
+    if _firmware_count >= 12:
+        _firmware_inv_section = evidence_controls_html() + supporting_evidence_html(
+            "Firmware component evidence", _firmware_inv_section, _firmware_count, "firmware-evidence"
+        )
 
     _wsman_extra_cards = ""
     if _data_src.startswith("wsman"):
@@ -276,10 +286,10 @@ def generate_host_html_report(
         "PCIe root complex bandwidth utilization. "
         "Hardware counters at each PCIe root port are summed to measure all PCIe bus traffic — "
         "NVMe drives, NICs, and GPUs. This is NOT OS-level disk or network I/O. "
-        "The BMC samples at 5-second intervals; the value shown is the 1-minute rolling average at scan time."
+        "Sampling intervals and aggregation windows depend on the reported metric source."
     )
 
-    if data.get("ilo_advanced_license_required") or data.get("dcms_license_required"):
+    if not has_telemetry and (data.get("ilo_advanced_license_required") or data.get("dcms_license_required")):
         tel_cards = (
             "<div class='card'><h3>Telemetry Metrics</h3>"
             "<div><span class='badge warning'>🔒 License Upgrade Required</span></div>"
@@ -287,7 +297,7 @@ def generate_host_html_report(
             "HPE iLO Advanced or Supermicro DCMS License required to collect live CPU/Memory telemetry.</p></div>"
         )
         tel_section = (
-            "<h2>Live Telemetry Metrics (1-Min Rolling Average)</h2>"
+            "<h2>Hardware Telemetry at Capture</h2>"
             "<p style='color:#7f1d1d;padding:.5rem 0'>"
             "🔒 Telemetry collection requires a license upgrade on this BMC. "
             "HPE iLO Advanced or Supermicro DCMS license needed.</p>"
@@ -298,22 +308,22 @@ def generate_host_html_report(
             f"<div><span class='badge success'>🟢 Live Counters</span></div>"
             f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>"
             f"CPU: <b>{cpu_curr}</b> (Peak <b>{cpu_peak}</b>) &nbsp;|&nbsp; "
-            f"RAM: <b>{mem_curr}</b> (Peak <b>{mem_peak}</b>)<br>"
+            f"Memory bandwidth: <b>{mem_curr}</b> (Peak <b>{mem_peak}</b>)<br>"
             f"<span title='{_io_tooltip}'>PCIe I/O ℹ️: <b>{io_curr}</b> (Peak <b>{io_peak}</b>)</span></p></div>"
         )
         tel_section = (
-            f"<h2>Live Telemetry Metrics (1-Min Rolling Average)</h2>"
-            f"<table><thead><tr><th>Metric</th><th>Current Utilization</th><th>1-Min Historical Peak</th><th>Source Endpoint</th></tr></thead>"
+            f"<h2>Hardware Telemetry at Capture</h2>"
+            f"<table><thead><tr><th>Metric</th><th>Current Utilization</th><th>Reported Peak</th><th>Source Endpoint</th></tr></thead>"
             f"<tbody>"
             f"<tr><td><b>CPU Utilization</b></td><td>{cpu_curr}</td><td>{cpu_peak}</td><td>Redfish TelemetryService / SystemUsage</td></tr>"
-            f"<tr><td><b>Memory Utilization</b></td><td>{mem_curr}</td><td>{mem_peak}</td><td>Redfish TelemetryService / SystemUsage</td></tr>"
+            f"<tr><td><b>Memory Bus/Bandwidth Utilization</b></td><td>{mem_curr}</td><td>{mem_peak}</td><td>Redfish TelemetryService / SystemUsage</td></tr>"
             f"<tr><td><b title='{_io_tooltip}'>PCIe Root Complex I/O ℹ️</b></td><td>{io_curr}</td><td>{io_peak}</td><td>Redfish TelemetryService / SystemUsage</td></tr>"
             f"</tbody></table>"
         )
     else:
         tel_cards = ""
         tel_section = (
-            "<h2>Live Telemetry Metrics (1-Min Rolling Average)</h2>"
+            "<h2>Hardware Telemetry at Capture</h2>"
             "<p style='color:var(--text-muted);padding:.5rem 0'>Telemetry endpoints not populated on this BMC platform.</p>"
         )
 
@@ -431,18 +441,21 @@ def generate_host_html_report(
     {'<div id="tab-gpu" class="tab-pane">' + gpu_section + '</div>' if gpus else ''}
 
     <div id="tab-network" class="tab-pane">
+        {evidence_controls_html() if _tor_switch_map_html else ""}
         {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=network" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Network Adapters in Redfish Explorer">🧭 Inspect NICs in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_tor_switch_map_html}
         {network_section_html}
     </div>
 
     <div id="tab-health" class="tab-pane">
+        {evidence_controls_html()}
         {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=power" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Power & Thermals in Redfish Explorer">🧭 Inspect Power &amp; Thermal in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_jobq_health_section}
         {thermal_section_html}
         {_psu_health_section}
         {_smart_health_section}
         {_bmc_health_section}
+        {render_evidence_inventory(data)}
     </div>
 
     <div id="tab-security" class="tab-pane">
@@ -513,12 +526,14 @@ def generate_host_html_report(
       }}, 30);
     }}
     function activate(id, doScroll){{
-      var targetBtn = nav.querySelector('[data-tab="'+id+'"]');
-      var targetPane = scope.querySelector('#'+id);
-      if(!targetBtn || !targetPane) return false;
+      var targetBtn = Array.from(btns).find(function(button){{return button.dataset.tab===id;}});
+      var targetPane = document.getElementById(id);
+      if(!targetBtn || !targetPane || !scope.contains(targetPane)) return false;
       btns.forEach(function(b){{ b.classList.toggle('active', b.dataset.tab===id); }});
       scope.querySelectorAll('.tab-pane').forEach(function(p){{ p.classList.toggle('active', p.id===id); }});
-      if(history.replaceState) history.replaceState(null,'','#'+id);
+      // Inline srcdoc reports may have an opaque file origin; keep tab state
+      // usable when the browser disallows replacing their inherited base URL.
+      if(history.replaceState){{try{{history.replaceState(null,'','#'+id);}}catch(e){{}}}}
       if(doScroll) scrollToNav(true);
       return true;
     }}
@@ -595,6 +610,7 @@ def generate_host_html_report(
 }})();
 </script>
 {THEME_TOGGLE_JS}
+{REPORT_UI_JS}
 </body>
 </html>"""
 

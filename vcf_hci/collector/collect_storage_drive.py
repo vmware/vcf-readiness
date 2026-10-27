@@ -14,6 +14,11 @@ from vcf_hci.hcl import detect_consumer_drive, detect_qlc_nvme
 from vcf_hci.logging_utils import get_nested
 
 
+def _first_present(*values):
+    """Select a known value without discarding zero counters or false flags."""
+    return next((value for value in values if value is not None), None)
+
+
 def sanitize_endurance_pct(val: Any) -> Optional[Union[int, float]]:
     """Sanitize SSD endurance / media life percentage.
 
@@ -681,36 +686,43 @@ def parse_drive_details(
         )
 
     # SMART Telemetry (20 Metrics)
-    temp_c = (
-        drive_json.get("TemperatureCelsius")
-        or drive_json.get("CurrentTemperatureCelsius")
-        or metrics.get("TemperatureCelsius")
-        or oem_metrics.get("temperature_c")
-        or dell_oem.get("TemperatureCelsius")
-        or hpe_oem.get("CurrentTemperatureCelsius")
-        or lnv_oem.get("Temperature")
-        or smc_oem.get("TemperatureCelsius")
-        or smc_oem.get("Temperature")
+    temp_c = _first_present(
+        drive_json.get("TemperatureCelsius"),
+        drive_json.get("CurrentTemperatureCelsius"),
+        metrics.get("TemperatureCelsius"),
+        oem_metrics.get("temperature_c"),
+        dell_oem.get("TemperatureCelsius"),
+        hpe_oem.get("CurrentTemperatureCelsius"),
+        lnv_oem.get("Temperature"),
+        smc_oem.get("TemperatureCelsius"),
+        smc_oem.get("Temperature"),
     )
     if temp_c is not None:
         try:
             temp_c = float(temp_c)
         except (ValueError, TypeError):
             temp_c = None
-    poh = (
-        drive_json.get("PowerOnHours")
-        or metrics.get("PowerOnHours")
-        or oem_metrics.get("power_on_hours")
-        or dell_oem.get("PowerOnHours") or dell_oem.get("OperationHours") or dell_oem.get("PowerOnHoursCount")
-        or hpe_oem.get("PowerOnHours")
-        or lnv_oem.get("PowerOnHours") or lnv_oem.get("OperationHours")
-        or smc_oem.get("PowerOnHours") or smc_oem.get("OperationHours")
-        or cisco_oem.get("PowerOnHours") or cisco_oem.get("OperationHours")
+    poh = _first_present(
+        drive_json.get("PowerOnHours"),
+        metrics.get("PowerOnHours"),
+        oem_metrics.get("power_on_hours"),
+        dell_oem.get("PowerOnHours"),
+        dell_oem.get("OperationHours"),
+        dell_oem.get("PowerOnHoursCount"),
+        hpe_oem.get("PowerOnHours"),
+        lnv_oem.get("PowerOnHours"),
+        lnv_oem.get("OperationHours"),
+        smc_oem.get("PowerOnHours"),
+        smc_oem.get("OperationHours"),
+        cisco_oem.get("PowerOnHours"),
+        cisco_oem.get("OperationHours"),
     )
-    critical_warnings = (
-        oem_metrics.get("critical_warnings")
-        or drive_json.get("CriticalWarnings") or drive_json.get("CriticalWarningsCount")
-        or metrics.get("CriticalWarnings") or metrics.get("CriticalWarningsCount")
+    critical_warnings = _first_present(
+        oem_metrics.get("critical_warnings"),
+        drive_json.get("CriticalWarnings"),
+        drive_json.get("CriticalWarningsCount"),
+        metrics.get("CriticalWarnings"),
+        metrics.get("CriticalWarningsCount"),
     )
 
     failure_predicted = bool(
@@ -725,29 +737,34 @@ def parse_drive_details(
         or (isinstance(critical_warnings, (int, float)) and critical_warnings > 0)
     )
 
-    unsafe_shutdowns = (
-        drive_json.get("UnsafeShutdowns")
-        or metrics.get("UnsafeShutdowns")
-        or oem_metrics.get("unsafe_shutdowns")
-        or dell_oem.get("UnsafeShutdowns") or dell_oem.get("AbruptPowerOffCount")
-        or hpe_oem.get("UnsafeShutdowns")
-        or lnv_oem.get("UnsafeShutdowns")
-        or cisco_oem.get("UnsafeShutdowns")
+    unsafe_shutdowns = _first_present(
+        drive_json.get("UnsafeShutdowns"),
+        metrics.get("UnsafeShutdowns"),
+        oem_metrics.get("unsafe_shutdowns"),
+        dell_oem.get("UnsafeShutdowns"),
+        dell_oem.get("AbruptPowerOffCount"),
+        hpe_oem.get("UnsafeShutdowns"),
+        lnv_oem.get("UnsafeShutdowns"),
+        cisco_oem.get("UnsafeShutdowns"),
     )
-    media_errors = (
-        drive_json.get("MediaAndDataIntegrityErrors") or drive_json.get("MediaErrors")
-        or metrics.get("MediaAndDataIntegrityErrors") or metrics.get("LifeTimeErrorCount")
-        or oem_metrics.get("media_errors")
-        or dell_oem.get("MediaAndDataIntegrityErrors") or dell_oem.get("MediaErrorCount")
-        or hpe_oem.get("UncorrectableReadErrors") or hpe_oem.get("MediaErrors")
-        or lnv_oem.get("DriveErrorCount")
-        or cisco_oem.get("MediaErrors")
+    media_errors = _first_present(
+        drive_json.get("MediaAndDataIntegrityErrors"),
+        drive_json.get("MediaErrors"),
+        metrics.get("MediaAndDataIntegrityErrors"),
+        metrics.get("LifeTimeErrorCount"),
+        oem_metrics.get("media_errors"),
+        dell_oem.get("MediaAndDataIntegrityErrors"),
+        dell_oem.get("MediaErrorCount"),
+        hpe_oem.get("UncorrectableReadErrors"),
+        hpe_oem.get("MediaErrors"),
+        lnv_oem.get("DriveErrorCount"),
+        cisco_oem.get("MediaErrors"),
     )
-    thermal_throttled_raw = (
-        drive_json.get("ThermalThrottling")
-        or metrics.get("ThermalThrottling")
-        or dell_oem.get("ThermalThrottled")
-        or hpe_oem.get("ThermalThrottled")
+    thermal_throttled_raw = _first_present(
+        drive_json.get("ThermalThrottling"),
+        metrics.get("ThermalThrottling"),
+        dell_oem.get("ThermalThrottled"),
+        hpe_oem.get("ThermalThrottled"),
     )
     thermal_throttled = None
     if thermal_throttled_raw is not None:
@@ -767,13 +784,16 @@ def parse_drive_details(
 
     tbw_val = oem_metrics.get("tbw_written")
     if tbw_val is None:
-        raw_tbw = (
-            drive_json.get("DataUnitsWritten") or drive_json.get("BytesWritten") or drive_json.get("LifetimeWritesBytes")
-            or metrics.get("DataUnitsWritten") or metrics.get("BytesWritten")
-            or dell_oem.get("DataUnitsWritten")
-            or hpe_oem.get("TotalBytesWritten")
+        raw_tbw = _first_present(
+            drive_json.get("DataUnitsWritten"),
+            drive_json.get("BytesWritten"),
+            drive_json.get("LifetimeWritesBytes"),
+            metrics.get("DataUnitsWritten"),
+            metrics.get("BytesWritten"),
+            dell_oem.get("DataUnitsWritten"),
+            hpe_oem.get("TotalBytesWritten"),
         )
-        if isinstance(raw_tbw, (int, float)) and raw_tbw > 0:
+        if isinstance(raw_tbw, (int, float)) and raw_tbw >= 0:
             if raw_tbw > 1_000_000_000_000:
                 tbw_val = round(raw_tbw / (1024 ** 4), 2)
             elif raw_tbw > 100_000_000:
@@ -783,13 +803,16 @@ def parse_drive_details(
 
     tbr_val = oem_metrics.get("tbr_read")
     if tbr_val is None:
-        raw_tbr = (
-            drive_json.get("DataUnitsRead") or drive_json.get("BytesRead") or drive_json.get("LifetimeReadsBytes")
-            or metrics.get("DataUnitsRead") or metrics.get("BytesRead")
-            or dell_oem.get("DataUnitsRead")
-            or hpe_oem.get("TotalBytesRead")
+        raw_tbr = _first_present(
+            drive_json.get("DataUnitsRead"),
+            drive_json.get("BytesRead"),
+            drive_json.get("LifetimeReadsBytes"),
+            metrics.get("DataUnitsRead"),
+            metrics.get("BytesRead"),
+            dell_oem.get("DataUnitsRead"),
+            hpe_oem.get("TotalBytesRead"),
         )
-        if isinstance(raw_tbr, (int, float)) and raw_tbr > 0:
+        if isinstance(raw_tbr, (int, float)) and raw_tbr >= 0:
             if raw_tbr > 1_000_000_000_000:
                 tbr_val = round(raw_tbr / (1024 ** 4), 2)
             elif raw_tbr > 100_000_000:
@@ -797,45 +820,54 @@ def parse_drive_details(
             else:
                 tbr_val = round(raw_tbr, 2)
 
-    power_cycles = (
-        oem_metrics.get("power_cycles")
-        or drive_json.get("PowerCycleCount") or drive_json.get("PowerCycles")
-        or metrics.get("PowerCycles") or metrics.get("PowerCycleCount")
-        or dell_oem.get("PowerCycleCount")
+    power_cycles = _first_present(
+        oem_metrics.get("power_cycles"),
+        drive_json.get("PowerCycleCount"),
+        drive_json.get("PowerCycles"),
+        metrics.get("PowerCycles"),
+        metrics.get("PowerCycleCount"),
+        dell_oem.get("PowerCycleCount"),
     )
-    controller_busy_time = (
-        oem_metrics.get("controller_busy_time")
-        or drive_json.get("ControllerBusyTimeMinutes") or drive_json.get("ControllerBusyTime")
-        or metrics.get("ControllerBusyTime") or metrics.get("ControllerBusyTimeMinutes")
+    controller_busy_time = _first_present(
+        oem_metrics.get("controller_busy_time"),
+        drive_json.get("ControllerBusyTimeMinutes"),
+        drive_json.get("ControllerBusyTime"),
+        metrics.get("ControllerBusyTime"),
+        metrics.get("ControllerBusyTimeMinutes"),
     )
     controller_duty_cycle_pct = None
     if isinstance(controller_busy_time, (int, float)) and isinstance(poh, (int, float)) and poh > 0:
         controller_duty_cycle_pct = round(min(100.0, max(0.0, (float(controller_busy_time) / (float(poh) * 60.0)) * 100.0)), 1)
 
-    host_read_commands = (
-        oem_metrics.get("host_read_commands")
-        or drive_json.get("HostReadCommandsCount") or drive_json.get("HostReadCommands")
-        or metrics.get("HostReadCommands")
+    host_read_commands = _first_present(
+        oem_metrics.get("host_read_commands"),
+        drive_json.get("HostReadCommandsCount"),
+        drive_json.get("HostReadCommands"),
+        metrics.get("HostReadCommands"),
     )
-    host_write_commands = (
-        oem_metrics.get("host_write_commands")
-        or drive_json.get("HostWriteCommandsCount") or drive_json.get("HostWriteCommands")
-        or metrics.get("HostWriteCommands")
+    host_write_commands = _first_present(
+        oem_metrics.get("host_write_commands"),
+        drive_json.get("HostWriteCommandsCount"),
+        drive_json.get("HostWriteCommands"),
+        metrics.get("HostWriteCommands"),
     )
-    avail_spare_thresh = (
-        oem_metrics.get("available_spare_threshold")
-        or drive_json.get("AvailableSpareThresholdPercent") or drive_json.get("AvailableSpareThreshold")
-        or metrics.get("AvailableSpareThresholdPercent") or metrics.get("AvailableSpareThreshold")
+    avail_spare_thresh = _first_present(
+        oem_metrics.get("available_spare_threshold"),
+        drive_json.get("AvailableSpareThresholdPercent"),
+        drive_json.get("AvailableSpareThreshold"),
+        metrics.get("AvailableSpareThresholdPercent"),
+        metrics.get("AvailableSpareThreshold"),
     )
-    error_log_entries = (
-        oem_metrics.get("error_log_entries")
-        or drive_json.get("ErrorInfoCount") or drive_json.get("NumOfErrorInfoLogEntries")
-        or metrics.get("NumOfErrorInfoLogEntries")
+    error_log_entries = _first_present(
+        oem_metrics.get("error_log_entries"),
+        drive_json.get("ErrorInfoCount"),
+        drive_json.get("NumOfErrorInfoLogEntries"),
+        metrics.get("NumOfErrorInfoLogEntries"),
     )
-    max_temp_c = (
-        oem_metrics.get("max_temp_c")
-        or drive_json.get("MaximumTemperatureCelsius")
-        or hpe_oem.get("MaximumTemperatureCelsius")
+    max_temp_c = _first_present(
+        oem_metrics.get("max_temp_c"),
+        drive_json.get("MaximumTemperatureCelsius"),
+        hpe_oem.get("MaximumTemperatureCelsius"),
     )
 
     pcie_raw = None
@@ -858,34 +890,42 @@ def parse_drive_details(
     pcie_errs = pcie_errors_dict.get("total_errors") if pcie_errors_dict else (
         int(pcie_raw) if isinstance(pcie_raw, (int, float)) else None
     )
-    waf_val = (
-        drive_json.get("WriteAmplificationFactor")
-        or metrics.get("WriteAmplificationFactor")
+    waf_val = _first_present(
+        drive_json.get("WriteAmplificationFactor"),
+        metrics.get("WriteAmplificationFactor"),
     )
-    bad_nand = (
-        drive_json.get("BadUserNANDBlocks") or drive_json.get("BadNANDBlockCount") or drive_json.get("RetiredBlockCount")
-        or metrics.get("BadNANDBlockCount")
-        or dell_oem.get("BadNANDBlockCount") or dell_oem.get("RetiredBlockCount")
+    bad_nand = _first_present(
+        drive_json.get("BadUserNANDBlocks"),
+        drive_json.get("BadNANDBlockCount"),
+        drive_json.get("RetiredBlockCount"),
+        metrics.get("BadNANDBlockCount"),
+        dell_oem.get("BadNANDBlockCount"),
+        dell_oem.get("RetiredBlockCount"),
     )
-    uncorr_reads = (
-        drive_json.get("UncorrectableReadErrors")
-        or metrics.get("UncorrectableReadErrors")
-        or hpe_oem.get("UncorrectableReadErrors")
-        or oem_metrics.get("uncorrectable_read_errors")
+    uncorr_reads = _first_present(
+        drive_json.get("UncorrectableReadErrors"),
+        metrics.get("UncorrectableReadErrors"),
+        hpe_oem.get("UncorrectableReadErrors"),
+        oem_metrics.get("uncorrectable_read_errors"),
     )
-    e2e_crc = (
-        drive_json.get("EndToEndCorrectionCounts") or drive_json.get("EndToEndErrors")
-        or metrics.get("EndToEndErrors")
+    e2e_crc = _first_present(
+        drive_json.get("EndToEndCorrectionCounts"),
+        drive_json.get("EndToEndErrors"),
+        metrics.get("EndToEndErrors"),
     )
-    avail_spare = (
-        drive_json.get("AvailableSparePercent") or drive_json.get("PercentFreeBlocks")
-        or metrics.get("AvailableSparePercent")
-        or dell_oem.get("AvailableSparePercent")
-        or oem_metrics.get("available_spare_pct")
+    avail_spare = _first_present(
+        drive_json.get("AvailableSparePercent"),
+        drive_json.get("PercentFreeBlocks"),
+        metrics.get("AvailableSparePercent"),
+        dell_oem.get("AvailableSparePercent"),
+        oem_metrics.get("available_spare_pct"),
     )
-    plp_starts = (
-        drive_json.get("PLPStartCount")
-        or metrics.get("PLPStartCount")
+    avail_spare_raw = avail_spare
+    if not isinstance(avail_spare, (int, float)) or isinstance(avail_spare, bool) or not 0 <= avail_spare <= 100:
+        avail_spare = None
+    plp_starts = _first_present(
+        drive_json.get("PLPStartCount"),
+        metrics.get("PLPStartCount"),
     )
     sec_status = str(
         drive_json.get("SecurityStatus") or drive_json.get("EncryptionStatus")
@@ -1033,6 +1073,8 @@ def parse_drive_details(
         "behind_vmd":           behind_vmd,
         "single_lane_alert":    single_lane_alert,
         "pcie_lanes_in_use": pcie_lanes,
+        "pcie_lanes_source": "drive" if drive_pcie_if.get("LanesInUse") is not None else "controller" if pcie_lanes is not None else "Unknown",
+        "pcie_gen_source": "drive" if drive_pcie_if.get("PCIeType") else "controller" if pcie_gen else "Unknown",
         "pcie_max_lanes":    pcie_max,
         "pcie_gen":          pcie_gen,
         "is_qlc":            is_qlc,
@@ -1067,6 +1109,7 @@ def parse_drive_details(
         "uncorrectable_read_errors": uncorr_reads,
         "end_to_end_crc_errors":     e2e_crc,
         "available_spare_pct":       avail_spare,
+        "available_spare_pct_raw":   avail_spare_raw,
         "plp_start_count":           plp_starts,
         "security_status":           sec_status,
         "usage_role":                usage_role,

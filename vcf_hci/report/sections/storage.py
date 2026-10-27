@@ -620,8 +620,8 @@ def render_storage_subsystem_section(
     _plb_slots = pcie_lane_budget.get("populated_slot_count", 0)
     if _plb_over and _plb_bud:
         storage_topology_alerts += (
-            f"<div class='alert alert-danger' style='margin-bottom:1rem'>"
-            f"<strong>🔴 CPU PCIe Lane Budget Exceeded: {_plb_obs} observed vs {_plb_bud} max</strong> "
+            f"<div class='alert alert-warning' style='margin-bottom:1rem'>"
+            f"<strong>PCIe Topology Needs Verification: {_plb_obs} observed vs {_plb_bud} CPU lanes</strong> "
             f"({_plb_pct}% utilization across {_plb_slots} populated slot(s)) — "
             f"{_h(_plb_note)}"
             f"</div>"
@@ -633,6 +633,9 @@ def render_storage_subsystem_section(
             f"across {_plb_slots} populated slot(s) — {_h(_plb_note)}"
             f"</div>"
         )
+
+    if pcie_lane_budget.get("unknown_width_count") and not (_plb_over or _plb_near):
+        storage_topology_alerts += f"<div class='alert alert-info'>{_h(_plb_note)}</div>"
 
     storage_cards = ""
     for ctrl in populated_ctrls:

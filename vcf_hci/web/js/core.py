@@ -343,6 +343,25 @@ JS_CORE = """
   }
   get('/api/session').then(restoreSession).catch(function(){});
 
+  // The scanner checks GitHub once in a daemon thread; these reads are local.
+  function checkReleaseNotice(attempt) {
+    get('/api/update').then(function(info) {
+      var notice = document.getElementById('updateAvailable');
+      if (!notice || !info) return;
+      var releasePrefix = 'https://github.com/vmware/vcf-readiness/releases/tag/';
+      var releaseUrl = typeof info.release_url === 'string' ? info.release_url : '';
+      if (info.update_available && releaseUrl.indexOf(releasePrefix) === 0 && /^[vV]?[0-9]+[.][0-9]+[.][0-9]+$/.test(releaseUrl.slice(releasePrefix.length))) {
+        notice.href = releaseUrl;
+        notice.title = 'Version ' + info.latest_version + ' is available on GitHub';
+        notice.setAttribute('aria-label', 'Update available: version ' + info.latest_version + ' on GitHub (opens in a new tab)');
+        notice.classList.remove('hidden');
+      } else if (!info.checked && attempt < 10) {
+        setTimeout(function() { checkReleaseNotice(attempt + 1); }, 1000);
+      }
+    }).catch(function(){});
+  }
+  checkReleaseNotice(0);
+
   get('/api/version').then(function(v) {
     if (v) {
       var outInp = document.getElementById('outdirInput');

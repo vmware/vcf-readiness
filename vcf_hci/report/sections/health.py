@@ -85,13 +85,13 @@ def render_thermal_health_section(thermal: Dict[str, Any]) -> Tuple[str, str]:
     _default_thermal_badge = '<span class="badge info">ℹ️ N/A</span>'
     thermal_section_html = (
         f"<h2>Thermal &amp; Environmental Health</h2>"
-        f"<details class='accordion'>"
+        f"<details class='accordion' data-report-evidence='supporting'>"
         f"    <summary>"
         f"        <div>🌡️ Thermal: {thermal.get('overall_status_badge', _default_thermal_badge)} &nbsp;"
         f"        <span style='font-size:.85rem;color:var(--text-muted)'>{key_sensor_str}</span></div>"
         f"        <span style='font-size:.85rem;color:var(--primary)'>Expand Sensor Matrix ▾</span>"
         f"    </summary>"
-        f"    <div class='accordion-body'><table><thead><tr><th>Sensor</th><th>Reading (°C)</th><th>Warn (°C)</th><th>Critical (°C)</th><th>Status</th></tr></thead><tbody>{thermal_rows}</tbody></table></div>"
+        f"    <div class='accordion-body' id='thermal-sensor-evidence'><table><thead><tr><th>Sensor</th><th>Reading (°C)</th><th>Warn (°C)</th><th>Critical (°C)</th><th>Status</th></tr></thead><tbody>{thermal_rows}</tbody></table></div>"
         f"</details>"
     )
     return thermal_section_html, key_sensor_str
@@ -264,13 +264,11 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         else:
             _us_str = "<span style='color:var(--text-muted)'>N/A</span>"
 
-        _me = _d.get("media_errors") or (_d.get("oem_metrics") or {}).get("drive_error_count")
+        _me = next((v for v in (_d.get("media_errors"), (_d.get("oem_metrics") or {}).get("media_errors"), (_d.get("oem_metrics") or {}).get("drive_error_count")) if v is not None), None)
         if isinstance(_me, (int, float)) and _me > 0:
             _me_str = f"<strong style='color:#dc2626'>⚠️ {_me}</strong>"
         elif isinstance(_me, (int, float)):
             _me_str = f"<span style='color:#16a34a'>{_me}</span>"
-        elif _is_healthy:
-            _me_str = "<span style='color:#16a34a'>0</span>"
         else:
             _me_str = "<span style='color:var(--text-muted)'>N/A</span>"
 
@@ -280,14 +278,14 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         _bad_n  = _d.get("bad_nand_blocks")
         _e_log  = _d.get("error_log_entries")
         _extra_parts = []
-        if isinstance(_spare, (int, float)):
+        if isinstance(_spare, (int, float)) and 0 <= _spare <= 100:
             _th_str = f" <small style='color:var(--text-muted)'>(Min {_thresh}%)</small>" if isinstance(_thresh, (int, float)) else ""
             if _spare < 10 or (isinstance(_thresh, (int, float)) and _spare <= _thresh):
                 _extra_parts.append(f"Spare: <strong style='color:#dc2626'>{_spare}%</strong>{_th_str}")
             else:
                 _extra_parts.append(f"Spare: <strong>{_spare}%</strong>{_th_str}")
-        elif _is_healthy and not _d.get("is_magnetic"):
-            _extra_parts.append("Spare: <strong style='color:#16a34a'>OK</strong>")
+        else:
+            _extra_parts.append("Spare: unavailable")
 
         if isinstance(_c_warn, (int, float)) and _c_warn > 0:
             _extra_parts.append(f"<span class='badge danger' style='font-size:.7rem;'>🔴 NVMe Alert ({_c_warn})</span>")
@@ -410,13 +408,13 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
 
     return (
         f"<h2>💾 NVMe SMART &amp; Drive Health Summary</h2>"
-        f"<details class='accordion' open>"
+        f"<details class='accordion' data-report-evidence='supporting' {'open' if (_sh_critical_count or _sh_warning_count) else ''}>"
         f"  <summary>"
         f"    <div>💾 Drive SMART Telemetry: {_sh_rollup_badge} &nbsp;"
         f"    <span style='font-size:.85rem;color:var(--text-muted)'>{len(_pop_drives)} drive(s) scanned</span></div>"
         f"    <span style='font-size:.85rem;color:var(--primary)'>Toggle Details ▾</span>"
         f"  </summary>"
-        f"  <div class='accordion-body'>"
+        f"  <div class='accordion-body' id='drive-smart-evidence'>"
         f"    <table><thead><tr>"
         f"      <th>Drive / Model</th><th>Protocol &amp; Role</th><th>Health</th><th>Endurance</th>"
         f"      <th>Temp / Throttling</th><th>Unsafe Shutdowns</th><th>Media Errors</th>"
@@ -497,7 +495,7 @@ def render_bmc_diagnostics_section(data: Optional[Dict[str, Any]]) -> str:
         unsupp_str = ", ".join(f"<code>{_h(str(u))}</code>" for u in unsupp) if unsupp else "None (all collections expanded)"
 
         parts.append(
-            f"<details class='accordion' style='margin-bottom:1.25rem'>"
+            f"<details class='accordion' data-report-evidence='supporting' style='margin-bottom:1.25rem'>"
             f"<summary>"
             f"<div>📶 Redfish Protocol Capabilities &amp; Optimization Telemetry &nbsp;"
             f"{exp_badge} {pipe_badge} {pacing_badge}</div>"

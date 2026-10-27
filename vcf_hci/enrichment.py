@@ -42,6 +42,7 @@ from vcf_hci.constants import (
     is_unfriendly_nic_name,
     normalize_component_manufacturer,
 )
+from vcf_hci.fc_inventory import normalize_fc_ports
 from vcf_hci.hcl import evaluate_drive_hcl_tier, is_consumer_drive, lookup_unique_hcl_device
 from vcf_hci.security.contract import empty_security_evidence
 from vcf_hci.security.evaluation import evaluate_security_controls
@@ -463,7 +464,6 @@ def synthesize_pcie_slots(
 
     slots: List[Dict[str, Any]] = []
     seen_quads = set()
-    seen_drives = set()
 
     # Source A: pcie_devices (populated during Phase 1)
     pcie_devs = host_data.get("pcie_devices") or []
@@ -681,47 +681,7 @@ def synthesize_pcie_slots(
         if quad:
             seen_quads.add(quad)
 
-    # 2. Storage NVMe SSDs
-    for c in (host_data.get("storage_subsystem") or []):
-        if not isinstance(c, dict):
-            continue
-        for drv in c.get("drives", []):
-            if not isinstance(drv, dict):
-                continue
-            model = str(drv.get("model") or "")
-            name = str(drv.get("name") or "")
-            proto = str(drv.get("protocol") or drv.get("bus_protocol") or "")
-            drv_id = str(drv.get("serial_number") or drv.get("name") or drv.get("id") or "")
-            if "nvme" in proto.lower() or "nvme" in name.lower() or "nvme" in model.lower() or drv.get("category") == "vSAN ESA/OSA NVMe":
-                if drv_id and drv_id in seen_drives:
-                    continue
-                if drv_id:
-                    seen_drives.add(drv_id)
-                slots.append({
-                    "slot_label":          f"NVMe Slot ({name})" if name else f"NVMe Slot {len(slots)+1}",
-                    "lanes":               4,
-                    "pcie_type":           "Gen4",
-                    "slot_type":           "M2",
-                    "hot_pluggable":       True,
-                    "state":               "Enabled",
-                    "populated":           True,
-                    "device_name":         model or name or "NVMe Solid State Drive",
-                    "device_manufacturer": drv.get("manufacturer") or "NVMe SSD",
-                    "device_part_number":  drv.get("part_number") or "",
-                    "device_serial":       drv.get("serial_number") or "",
-                    "device_health":       "OK",
-                    "functions":           [{"function_id": 0}],
-                    "function_count":      1,
-                    "vendor_id":           "",
-                    "device_id":           "",
-                    "subsystem_vendor_id": "",
-                    "subsystem_id":        "",
-                    "pci_quad":            "",
-                    "pci_pair":            "",
-                    "downgraded":          False,
-                    "downgrade_reason":    "",
-                    "downgrade_badge":     "",
-                })
+    # Storage NVMe rows are rebuilt by correlate_direct_attached_nvme_pcie.
 
     # 3. GPUs
     for gpu in (host_data.get("gpu_accelerators") or []):
@@ -800,6 +760,16 @@ def correlate_direct_attached_nvme_pcie(
         pcie_slots = []
         host_data["pcie_slots"] = pcie_slots
 
+    # Historical derived rows had no provenance marker. Their exact label/type
+    # signature distinguishes them from collected physical slot inventory.
+    pcie_slots[:] = [s for s in pcie_slots if isinstance(s, dict) and not (
+        s.get("source") == "storage_nvme"
+        or (str(s.get("slot_label") or "").startswith(("NVMe Drive Bay ", "NVMe Bay ("))
+            and s.get("slot_type") == "U.3 / U.2 NVMe")
+        or (str(s.get("slot_label") or "").startswith("NVMe Slot")
+            and s.get("slot_type") == "M2" and s.get("functions") == [{"function_id": 0}])
+    )]
+    seen_identities = set()
     seen_serials = {
         str(s.get("device_serial") or "").strip().lower()
         for s in pcie_slots if s.get("device_serial")
@@ -818,7 +788,9 @@ def correlate_direct_attached_nvme_pcie(
         if not isinstance(ctrl, dict):
             continue
         c_name = str(ctrl.get("name") or ctrl.get("ctrl_model") or "")
-        is_direct = "direct" in c_name.lower() or not ctrl.get("is_boot_ctrl")
+        is_direct = "direct" in c_name.lower() or ctrl.get("direct_attached") is True
+        is_raid = any(t in c_name.lower() for t in ("raid", "perc", "smart array")) and not any(
+            t in c_name.lower() for t in ("hba", "pass-through", "passthrough"))
         for drv in ctrl.get("drives") or []:
             if not isinstance(drv, dict):
                 continue
@@ -828,9 +800,20 @@ def correlate_direct_attached_nvme_pcie(
             d_model = str(drv.get("model") or "")
             d_serial = str(drv.get("serial_number") or "").strip()
 
-            is_nvme = "nvme" in proto or "nvme" in cat or "nvme" in d_name.lower() or "nvme" in d_model.lower()
-            if not is_nvme and not is_direct:
+            is_nvme = ("nvme" in proto or "pcie" in proto) if proto else (
+                "nvme" in cat or "nvme" in d_name.lower() or "nvme" in d_model.lower())
+            if d_serial.lower() in ("n/a", "unknown", "none", "not available"):
+                d_serial = ""
+            absent = str(drv.get("state") or "").lower() == "absent" or str(drv.get("category") or "").lower() == "empty"
+            if absent or drv.get("populated") is False or "empty bay" in d_name.lower():
                 continue
+            # Protocol alone does not establish direct CPU attachment.
+            if not is_nvme or is_raid or drv.get("behind_trimode") or not (is_direct or drv.get("direct_attached") is True):
+                continue
+            identity = (str(ctrl.get("id") or c_name), str(drv.get("id") or drv.get("odata_id") or d_name))
+            if not d_serial and (not identity[1] or identity in seen_identities):
+                continue
+            seen_identities.add(identity)
 
             if d_serial and d_serial.lower() in seen_serials:
                 continue
@@ -853,23 +836,29 @@ def correlate_direct_attached_nvme_pcie(
                 seen_serials.add(d_serial.lower())
 
             # Speed / lanes
-            neg_speed = drv.get("negotiated_speed_gbs") or drv.get("speed_gbs") or 64.0
-            pcie_gen = "Gen5" if neg_speed >= 128 else ("Gen4" if neg_speed >= 64 else "Gen3")
+            # Drive transfer rate is not PCIe link generation or lane width.
+            # The parser may retain a controller's uplink as context. It must
+            # never become a per-drive lane width and be counted repeatedly.
+            pcie_gen = drv.get("current_pcie_type") or (
+                drv.get("pcie_gen") if drv.get("pcie_gen_source") == "drive" else None) or "Unknown"
+            lanes = drv.get("current_pcie_width") or (
+                drv.get("pcie_lanes_in_use") if drv.get("pcie_lanes_source") == "drive" else None)
             bcg_link = drv.get("bcg_url") or ""
 
             pcie_slots.append({
                 "slot_label": slot_label,
-                "lanes": 4,
+                "source": "storage_nvme",
+                "lanes": lanes,
                 "pcie_type": pcie_gen,
                 "slot_type": "U.3 / U.2 NVMe",
-                "hot_pluggable": True,
-                "state": "Enabled",
+                "hot_pluggable": drv.get("hot_pluggable"),
+                "state": drv.get("state") or "Unknown",
                 "populated": True,
                 "device_name": d_model or d_name or "NVMe Solid State Drive",
                 "device_manufacturer": drv.get("manufacturer") or "NVMe SSD",
                 "device_part_number": drv.get("part_number") or "",
                 "device_serial": d_serial,
-                "device_health": str(drv.get("health") or "OK").strip(),
+                "device_health": str(drv.get("drive_health") or drv.get("health") or "Unknown").strip(),
                 "functions": [{"function_id": 0}],
                 "function_count": 1,
                 "vendor_id": drv.get("vendor_id", ""),
@@ -879,7 +868,7 @@ def correlate_direct_attached_nvme_pcie(
                 "pci_quad": drv.get("pci_quad", ""),
                 "pci_pair": drv.get("pci_pair", ""),
                 "current_pcie_type": pcie_gen,
-                "current_pcie_width": 4,
+                "current_pcie_width": lanes,
                 "downgraded": False,
                 "downgrade_reason": "",
                 "downgrade_badge": "",
@@ -957,6 +946,8 @@ def enrich_fc_hbas(host_data: Dict[str, Any]) -> None:
     if not isinstance(fc_hbas, list) or not fc_hbas:
         return
 
+    fc_hbas = normalize_fc_ports(fc_hbas)
+    host_data["fc_hbas"] = fc_hbas
     fw_inv = host_data.get("firmware_inventory") or []
     pcie_devs = host_data.get("pcie_devices") or []
 
@@ -1087,6 +1078,32 @@ def _enrich_single_host(
         return
 
     retain_collected_pcie(host_data)
+    # Old saved summaries must receive the same semantic fixes as new captures.
+    psu = host_data.get("psu_status") or {}
+    if psu and not psu.get("power_limit_evidence"):
+        psu["power_limit_enforced"] = None
+        psu["power_limit_evidence"] = "Unknown"
+        watts = psu.get("power_limit_watts")
+        threshold = f"configured ({watts} W)" if isinstance(watts, (int, float)) and watts > 0 else "threshold unknown"
+        psu["power_cap_badge"] = f"<span class='badge info'>Power cap {threshold}; enforcement unknown</span>"
+    memory_telemetry = host_data.get("memory_telemetry") or {}
+    if memory_telemetry:
+        memory_telemetry["current_utilization_gb"] = "N/A"
+        memory_telemetry["historical_peak_gb"] = "N/A"
+        memory_telemetry["metric_label"] = "Memory Bus/Bandwidth Utilization"
+    for controller in host_data.get("storage_subsystem") or []:
+        for drive in controller.get("drives") or []:
+            oem_metrics = drive.get("oem_metrics") or {}
+            for field in ("media_errors", "power_cycles", "unsafe_shutdowns", "thermal_throttled"):
+                if drive.get(field) is None and oem_metrics.get(field) is not None:
+                    drive[field] = oem_metrics[field]
+            spare = drive.get("available_spare_pct")
+            if spare is None:
+                spare = oem_metrics.get("available_spare_pct")
+            if spare is not None:
+                drive.setdefault("available_spare_pct_raw", spare)
+                drive["available_spare_pct"] = spare if isinstance(spare, (int, float)) and not isinstance(spare, bool) and 0 <= spare <= 100 else None
+
 
     if json_hcl is None:
         try:

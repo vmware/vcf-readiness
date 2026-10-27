@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from vcf_hci.bcg_links import BCGLinkGenerator
 from vcf_hci.collector.fc_plus import classify_fc_plus
 from vcf_hci.constants import normalize_component_manufacturer
+from vcf_hci.fc_inventory import fc_adapter_count, normalize_fc_ports
 from vcf_hci.hcl import lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h
@@ -62,7 +63,7 @@ def render_hba_tab(
 ) -> str:
     """Render the comprehensive Host Detailed HBA tab."""
     data = data or {}
-    hbas = [h for h in (fc_hbas or []) if isinstance(h, dict)]
+    hbas = normalize_fc_ports(fc_hbas)
 
     if not hbas:
         return (
@@ -87,8 +88,10 @@ def render_hba_tab(
 
     # ── Calculate KPI aggregates ──────────────────────────────────────────────
     total_ports = len(hbas)
-    unique_adapters = len({h.get("adapter_name") or h.get("model") or h.get("name") or "HBA" for h in hbas})
-    adapter_s = "Adapter" if unique_adapters == 1 else "Adapters"
+    unique_adapters = fc_adapter_count(hbas)
+    adapter_s = "adapter" if unique_adapters == 1 else "adapters"
+    adapter_label = f"{unique_adapters} physical {adapter_s}" if unique_adapters is not None else "Physical adapter count not reported"
+    adapter_footer = f" across {unique_adapters} physical {adapter_s}" if unique_adapters is not None else " (physical adapter count not reported)"
     port_s = "Port" if total_ports == 1 else "Ports"
 
     # Speeds & Generation
@@ -175,7 +178,7 @@ def render_hba_tab(
         <div class="card" style="padding:1rem;background:var(--card,#ffffff);border:1px solid var(--border,#e2e8f0);border-radius:6px">
             <div style="font-size:.74rem;font-weight:700;color:var(--text-muted,#64748b);text-transform:uppercase;letter-spacing:.03em">HBA Hardware</div>
             <div style="font-size:1.35rem;font-weight:700;margin:.3rem 0 .15rem;color:var(--text,#0f172a)">{total_ports} {port_s}</div>
-            <div style="font-size:.82rem;color:var(--text-muted,#64748b)">{unique_adapters} physical {adapter_s.lower()}</div>
+            <div style="font-size:.82rem;color:var(--text-muted,#64748b)">{adapter_label}</div>
             {badges_html}
         </div>
         <div class="card" style="padding:1rem;background:var(--card,#ffffff);border:1px solid var(--border,#e2e8f0);border-radius:6px">
@@ -374,7 +377,7 @@ def render_hba_tab(
         f"<div style='margin-bottom:1.5rem'>"
         f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem'>"
         f"<h2 style='margin:0'>Fibre Channel Host Bus Adapters (SAN Connectivity)</h2>"
-        f"<span style='font-size:.82rem;color:var(--text-muted,#64748b)'>{total_ports} port(s) detected across {unique_adapters} adapter(s)</span>"
+        f"<span style='font-size:.82rem;color:var(--text-muted,#64748b)'>{total_ports} port(s) detected{adapter_footer}</span>"
         f"</div>"
         f"{kpi_strip_html}"
         f"{table_html}"

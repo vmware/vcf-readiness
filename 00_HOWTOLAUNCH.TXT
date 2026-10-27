@@ -18,7 +18,15 @@ macOS / Linux:
   python3 vcfr_web.py
 
 Windows:
-  python vcfr_web.py
+  Double-click Launch-VCF-Readiness-Web.bat after extracting the complete ZIP.
+  Or run: python vcfr_web.py
+
+The Python commands above do not require executable permissions. The source ZIP
+stores Unix executable permissions, but some extractors may discard them. Only
+if using ./vcfr_web.py directly on macOS/Linux, restore them if needed with:
+  chmod +x vcfr_web.py
+Windows does not need chmod. The standalone Windows ZIP has a launcher with the
+same name that runs its bundled EXE; that package does not need Python.
 
 The server binds to loopback and prints a one-time browser URL. Stop it with
 Ctrl-C or the Quit control.
@@ -42,7 +50,9 @@ Security notes
 --------------
 - Collection is strict read-only. It does not change power, firmware, BIOS,
   accounts, boot settings, or managed-system configuration.
-- Ordinary scans are offline except for the BMC targets you provide.
+- The browser scanner checks GitHub for updates in the background at launch.
+  Set VCF_READINESS_CHECK_UPDATES=0 to disable this optional check.
+- Collection contacts only the BMC targets you provide.
 - Public HCL downloads require an explicit --refresh-hcl or --bundle-hcl.
 - BMC certificate verification is off by default for self-signed controllers;
   use --verify-ssl and --ca-bundle where an enterprise CA is available.

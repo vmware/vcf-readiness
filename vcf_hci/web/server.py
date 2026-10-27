@@ -79,6 +79,7 @@ from vcf_hci.web.session_store import (  # noqa: F401
     _save_session,
     _SecretStore,
 )
+from vcf_hci.web.update_check import ReleaseUpdateChecker
 
 _COLLECTOR_OK = True
 
@@ -236,6 +237,7 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         self.allow_remote = allow_remote
         self.allow_hosts = allow_hosts or set()
         self.tls_enabled = False
+        self.update_checker = ReleaseUpdateChecker(TOOL_VERSION)
         super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
     def handle_error(self, request, client_address):
@@ -729,6 +731,9 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         elif path == "/api/vault/jump-hosts":
             self._api_jump_hosts_list()
 
+        elif path == "/api/update":
+            self._send_json(self.server.update_checker.snapshot())
+
         elif path == "/api/version":
             is_root, sudo_user = is_root_user()
             default_outdir = get_default_output_dir()
@@ -1100,6 +1105,7 @@ def main() -> None:
     # Serve in a daemon thread so Ctrl-C stops it immediately
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
+    server.update_checker.start()
 
     print("\n  VCF Readiness Assessment")
     print("  ─────────────────────────────────────────────────────")
@@ -1120,7 +1126,7 @@ def main() -> None:
     print("  The launch URL works once. After the browser loads, the session cookie takes over.")
     if args.bind != "127.0.0.1":
         print(f"  Bound   →  {args.bind}:{port}")
-    print("  Press Ctrl-C or click Quit in the browser to exit.")
+    print("  Press Ctrl-C or click Quit in the browser to exit.", flush=True)
     print()
 
     # Do not auto-open an exposed listener: that would consume the one-time URL

@@ -14,6 +14,7 @@ from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
 from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
 from vcf_hci.report.fleet.vendor import normalize_oem_vendor
 from vcf_hci.report.helpers import _h
+from vcf_hci.report.presentation import REPORT_UI_JS
 from vcf_hci.report.styles import FLEET_PAGE_CSS, THEME_TOGGLE_JS
 from vcf_hci.security.scoring import score_host_security
 
@@ -357,7 +358,7 @@ def generate_summary_html(
         )
 
         rows += (
-            f"<tr data-vendor='{_h(_vendor_norm)}' data-unsupported='{_row_unsupported}'>"
+            f"<tr data-host-idx='{idx}' data-vendor='{_h(_vendor_norm)}' data-unsupported='{_row_unsupported}'>"
             f"<td data-sort='{_h(link_label)}'>"
             f"<a href='{_h(report_file)}' class='btn-link'><strong>{_pii_link_label}</strong></a>"
             f"<br><small style='color:#64748b'>{_pii_ip}</small></td>"
@@ -454,7 +455,7 @@ def generate_summary_html(
 
 {dark_site_banner}
 
-<h2>Fleet Health Tiles</h2>
+
 {tiles_block}
 
 {fleet_detail_seg}
@@ -475,6 +476,7 @@ def generate_summary_html(
 </div>
 {remediated_banner_html}
 {partial_banner_html}
+<div class="report-scroll-region" role="region" aria-label="Per-host assessments" tabindex="0">
 <table class="sortable-table">
   <thead><tr>
     <th title="Click to sort">Host / IP<span class="sort-ind">⇅</span></th>
@@ -490,6 +492,7 @@ def generate_summary_html(
   </tr></thead>
   <tbody>{rows}</tbody>
 </table>
+</div>
 {failed_table_html}
 </div>
 {topology_pane}
@@ -649,12 +652,13 @@ def generate_summary_html(
     Array.from(tbody.querySelectorAll('tr')).forEach(function(row) {{
       var vendor = row.getAttribute('data-vendor') || '';
       var unsup  = row.getAttribute('data-unsupported') === '1';
-      var show = true;
+      var show = !window.VCFReportUI || window.VCFReportUI.matchesHost(row);
       if (oem !== 'all' && vendor !== oem) show = false;
       if (hideUnsup && unsup) show = false;
       row.style.display = show ? '' : 'none';
     }});
   }}
+  window.addEventListener('vcf-overview-filter', applyTableFilters);
   var oemSel = document.getElementById('oem-filter');
   var hideChk = document.getElementById('hide-unsupported');
   if (oemSel) oemSel.addEventListener('change', applyTableFilters);
@@ -662,6 +666,7 @@ def generate_summary_html(
 }})();
 </script>
 {THEME_TOGGLE_JS}
+{REPORT_UI_JS}
 </body>
 </html>"""
     html_safe = html_content.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")

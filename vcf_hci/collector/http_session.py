@@ -18,6 +18,41 @@ from vcf_hci.tls_utils import build_bmc_opener, build_pinned_opener, url_is_allo
 
 logger = logging.getLogger("vcf_assess")
 
+def _record_telemetry_evidence(collector, endpoint, status=None, body=None, timed_out=False):
+    """Keep only status and message identifiers when HTTP returns no payload."""
+    if "/TelemetryService" not in endpoint and "/MetricReports" not in endpoint:
+        return
+    parsed = {}
+    if body:
+        try:
+            parsed = json.loads(body)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {}
+    parsed = parsed if isinstance(parsed, dict) else {}
+    error = parsed.get("error")
+    error = error if isinstance(error, dict) else {}
+    extended = error.get("@Message.ExtendedInfo") or parsed.get("@Message.ExtendedInfo") or []
+    if isinstance(extended, dict):
+        extended = [extended]
+    ids = [str(item.get("MessageId") or "") for item in extended if isinstance(item, dict)][:8]
+    tokens = " ".join(ids + [str(error.get("code") or "")]).lower()
+    reason = "unknown"
+    if any(token in tokens for token in ("licensenotpassed", "licenserequired", "licensemissing", "licenseexpired")):
+        reason = "explicitly_license_blocked"
+    elif timed_out or status in (408, 504):
+        reason = "timed_out"
+    elif parsed.get("ServiceEnabled") is False:
+        reason = "disabled"
+    elif "notsupported" in tokens or status == 501:
+        reason = "unsupported"
+    evidence = getattr(collector, "_telemetry_endpoint_evidence", None)
+    if not isinstance(evidence, dict):
+        evidence = {}
+        collector._telemetry_endpoint_evidence = evidence
+    if len(evidence) < 64 or endpoint in evidence:
+        evidence[endpoint] = {"status": reason, "http_status": status, "message_ids": ids}
+
+
 # Peak concurrent Redfish connections to a single BMC per scan phase.
 # Keeps BMC load low while still parallelising BIOS/SEL/license/storage/NICs.
 _BMC_INNER_WORKERS = 3
@@ -393,6 +428,7 @@ def redfish_get(
                     stage_fn(getattr(collector, "_current_stage", "Scanning…"))
                 try:
                     data = json.loads(raw)
+                    _record_telemetry_evidence(collector, endpoint, status=status, body=raw)
                     # OEM retry hook (e.g., HPE iLO ResourceNotReadyRetry)
                     if callable(retry_hook) and retry_hook(data, endpoint):
                         if attempt == 0 and _retry and not (callable(is_cancelled_fn) and is_cancelled_fn()):
@@ -499,6 +535,7 @@ def redfish_get(
                         if neg_endpoints is not None:
                             neg_endpoints.add(path_suffix)
                             logger.debug("Added negative endpoint pattern: %s (after %d 404s)", path_suffix, neg_counts[path_suffix])
+                _record_telemetry_evidence(collector, endpoint, status=status, body=raw)
                 if "/TelemetryService" in url:
                     if status in (403, 404, 500, 502, 503, 504):
                         collector._telemetry_service_supported = False
@@ -531,6 +568,8 @@ def redfish_get(
                 err_body = e.read().decode("utf-8", errors="replace")
             except Exception:
                 pass
+
+            _record_telemetry_evidence(collector, endpoint, status=e.code, body=err_body)
 
             # Transient server error retry
             if e.code in (500, 502, 503, 504) and attempt < max_attempts - 1 and _retry and not (callable(is_cancelled_fn) and is_cancelled_fn()):
@@ -600,6 +639,7 @@ def redfish_get(
                     collector._telemetry_service_supported = False
             return None
         except (TimeoutError, socket.timeout, ssl.SSLError) as e:
+            _record_telemetry_evidence(collector, endpoint, timed_out=isinstance(e, (TimeoutError, socket.timeout)))
             # Catch TLS certificate validation errors immediately without retrying
             is_cert_err = isinstance(e, (ssl.SSLCertVerificationError, ssl.CertificateError)) or (
                 isinstance(e, ssl.SSLError) and any(kw in str(e).lower() for kw in ("certificate verify failed", "self-signed", "certificate has expired", "hostname"))
@@ -648,6 +688,7 @@ def redfish_get(
                 continue
             return None
         except URLError as e:
+            _record_telemetry_evidence(collector, endpoint, timed_out=isinstance(getattr(e, "reason", None), (TimeoutError, socket.timeout)))
             # Catch wrapped SSL certificate verification errors in URLError
             if isinstance(getattr(e, "reason", None), (ssl.SSLCertVerificationError, ssl.CertificateError, ssl.SSLError)):
                 reason_str = str(e.reason).lower()

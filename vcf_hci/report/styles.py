@@ -11,6 +11,8 @@ THEME_TOGGLE_JS adds a small script that persists the user's choice to
 localStorage, inserted once per report just before </body>.
 """
 
+from vcf_hci.report.presentation import REPORT_UI_CSS
+
 # ── Theme toggle JavaScript ───────────────────────────────────────────────────
 # Injected once per page, just before </body>.
 THEME_TOGGLE_JS = """\
@@ -32,6 +34,7 @@ THEME_TOGGLE_JS = """\
     try{localStorage.setItem('vcf-report-theme',t);}catch(e){}
     cur=t;
     if (notifyParent !== false) {
+      if(window.parent&&window.parent!==window)window.parent.postMessage({type:'vcf-report-theme-change',theme:t},'*');
       try {
         if (window.parent && window.parent !== window && window.parent.document) {
           var pRoot = window.parent.document.documentElement;
@@ -44,8 +47,9 @@ THEME_TOGGLE_JS = """\
       } catch(ex) {}
     }
   }
+  window.addEventListener('vcf-report-theme',function(e){if(e.detail==='light'||e.detail==='dark')apply(e.detail,false);});
   apply(cur, false);
-  if(btn)btn.addEventListener('click',function(){apply(cur==='dark'?'light':'dark', true);});
+  if(btn)btn.addEventListener('click',function(){apply(root.getAttribute('data-theme')==='dark'?'light':'dark', true);});
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
     var s;try{s=localStorage.getItem('vcf-report-theme');}catch(ex){}
     if(!s && !parentTheme)apply(e.matches?'dark':'light', true);
@@ -457,3 +461,7 @@ FLEET_PAGE_CSS = (
     "#themeToggle:hover{background:var(--th-bg)}"
     + _FLEET_DETAIL_CSS
 )
+
+# Explicit shared report primitives follow each surface's legacy domain rules.
+HOST_REPORT_CSS += REPORT_UI_CSS
+FLEET_PAGE_CSS += REPORT_UI_CSS

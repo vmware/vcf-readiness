@@ -169,10 +169,9 @@ def evaluate_pci_compatibility(
 def evaluate_pcie_lane_budget(pcie_slots: list, cpu_lane_budget_per_socket: int, socket_count: int = 1) -> dict:
     """Compare the sum of populated slot lane widths against the CPU root-complex lane budget.
 
-    This catches CPU-side bifurcation and hidden PCIe switches: if more PCIe lane-width
-    is visible in populated slots than the CPU silicon can physically provide, a switch
-    or lane-splitter must be in the path even if no switch chip appeared in the PCIe
-    device list (e.g. an on-board switch with no Redfish device entry).
+    The sum is an inventory consistency check, not proof of a switch. Duplicated
+    records and downstream links can exceed a CPU budget without showing how
+    physical root lanes are wired.
 
     Only populated slots with a known lane width are counted — empty slots consume
     no CPU lanes. M.2 slots are included since they draw from the same CPU root complex.
@@ -180,7 +179,7 @@ def evaluate_pcie_lane_budget(pcie_slots: list, cpu_lane_budget_per_socket: int,
     Returns:
         cpu_lane_budget       int   — max lanes from CPU silicon across all sockets
         observed_lanes        int   — sum of populated slot physical lane widths
-        over_budget           bool  — observed > cpu_lane_budget (switch implied)
+        over_budget           bool  — observed > cpu_lane_budget (topology unresolved)
         near_budget           bool  — utilization >= 85% but not over budget
         utilization_pct       int   — observed / budget × 100
         populated_slot_count  int   — slots included in the sum
@@ -192,8 +191,11 @@ def evaluate_pcie_lane_budget(pcie_slots: list, cpu_lane_budget_per_socket: int,
             "near_budget": False, "utilization_pct": 0,
             "populated_slot_count": 0, "note": "",
         }
-    populated = [s for s in (pcie_slots or []) if s.get("populated") and s.get("lanes")]
-    observed  = sum(s["lanes"] for s in populated)
+    occupied = [s for s in (pcie_slots or []) if isinstance(s, dict) and s.get("populated")]
+    populated = [s for s in occupied if isinstance(s.get("lanes"), (int, float))
+                 and not isinstance(s.get("lanes"), bool) and 0 < s["lanes"] <= 128]
+    unknown_widths = len(occupied) - len(populated)
+    observed = sum(s["lanes"] for s in populated)
     budget    = cpu_lane_budget_per_socket * max(socket_count or 1, 1)
     over      = observed > budget
     pct       = round((observed / budget) * 100) if budget else 0
@@ -204,8 +206,8 @@ def evaluate_pcie_lane_budget(pcie_slots: list, cpu_lane_budget_per_socket: int,
             f"Observed {observed} PCIe lanes across {len(populated)} populated slot(s), "
             f"exceeding the CPU root-complex budget of {budget} lanes "
             f"({cpu_lane_budget_per_socket}/socket × {max(socket_count or 1, 1)} socket(s)). "
-            f"A PCIe switch or lane-splitter is present in the platform even if no switch "
-            f"chip was identified in the PCIe device list — verify the Broadcom HCL covers "
+            f"Topology is unresolved: duplicate inventory or downstream switch links may inflate this sum. A switch "
+            f"cannot be established from lane widths alone. Verify physical topology and that the Broadcom HCL covers "
             f"all downstream NVMe devices and that per-drive lane width meets vSAN ESA minimums."
         )
     elif near:
@@ -217,7 +219,12 @@ def evaluate_pcie_lane_budget(pcie_slots: list, cpu_lane_budget_per_socket: int,
     else:
         note = ""
 
+    if unknown_widths:
+        note += f" Link width unknown for {unknown_widths} populated device(s); the lane sum is incomplete."
+
     return {
+        "unknown_width_count":  unknown_widths,
+        "topology_status":      "unresolved" if over or unknown_widths else "inventory_only",
         "cpu_lane_budget":      budget,
         "observed_lanes":       observed,
         "over_budget":          over,
