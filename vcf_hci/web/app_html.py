@@ -4,7 +4,7 @@ VCF Readiness Tool — Clarity-styled single-page app HTML template.
 build_app_html() returns a fully self-contained HTML string that the server
 serves on GET /. All CSS (Clarity tokens + custom components) and JavaScript
 (SSE client, form logic, dark mode) are inlined — zero external requests at
-runtime.
+runtime. Release notifications use a separate server-side GitHub request.
 """
 from vcf_hci.branding import FAVICON_DATA_URI, render_nav_brand
 from vcf_hci.web.app_css import APP_CSS
@@ -33,6 +33,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   {render_nav_brand("Readiness Assessment")}
   {"<span class='badge info' style='background:#0284c7;color:#fff;font-size:0.75rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;'>🔬 OEM Import Mode</span>" if oem_mode else ""}
   <span class="nav-version">v{tool_version}</span>
+  <a id="updateAvailable" class="nav-update hidden" target="_blank" rel="noopener noreferrer" aria-label="Update available on GitHub">Update available</a>
   <a href="/docs" target="_blank" class="nav-btn" style="text-decoration:none" title="Open Documentation &amp; User Guide in a new tab">❓ Help</a>
   <button class="nav-btn" id="themeToggle" title="Toggle dark/light mode">🌙 Dark</button>
   <button class="nav-btn" id="shutdownBtn" title="Quit the assessment tool">✕ Quit</button>

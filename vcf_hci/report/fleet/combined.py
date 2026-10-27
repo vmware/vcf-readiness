@@ -17,7 +17,8 @@ from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
 from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
 from vcf_hci.report.fleet.vendor import normalize_oem_vendor
 from vcf_hci.report.helpers import _h
-from vcf_hci.report.inventory_tables import build_host_decision_rows, clean_model_code
+from vcf_hci.report.inventory_tables import build_host_decision_rows, clean_model_code, summarize_fc_hbas
+from vcf_hci.report.presentation import REPORT_UI_CSS, REPORT_UI_JS
 from vcf_hci.report.styles import HOST_REPORT_CSS
 from vcf_hci.security.scoring import score_host_security
 
@@ -65,7 +66,6 @@ def _generate_combined_html(
 
     n_hosts = len(all_results)
     mode = embed_mode or ("inline" if n_hosts <= COMBINED_HTML_DEFAULT_MAX_HOSTS else "sidecar")
-    _style_re = re.compile(r"<style[^>]*>(.*?)</style>", re.DOTALL | re.IGNORECASE)
 
     host_html_list: list = []
     css_block = HOST_REPORT_CSS
@@ -92,22 +92,9 @@ def _generate_combined_html(
                 else:
                     with open(path, encoding="utf-8") as fh:
                         report_html = fh.read()
-                m = _style_re.search(report_html)
-                if m:
-                    css_block = m.group(1)
                 host_html_list.append(report_html)
             except Exception as exc:
                 host_html_list.append(f"<!DOCTYPE html><html><body><p style='color:red'>Error: {_h(exc)}</p></body></html>")
-    else:
-        if report_paths:
-            try:
-                with open(report_paths[0], encoding="utf-8") as fh:
-                    first_html = fh.read(65536)
-                m = _style_re.search(first_html)
-                if m:
-                    css_block = m.group(1)
-            except Exception:
-                pass
 
     def _pii(value: str, kind: str = "host") -> str:
         if not value:
@@ -178,7 +165,8 @@ def _generate_combined_html(
         psu_cls = "success" if psu.get("redundant") else "warning"
         psu_td = "🟢 Redundant" if psu.get("redundant") else "🟡 Single"
         _psu_sort = "1" if psu.get("redundant") else "2"
-        fc_n = len(data.get("fc_hbas", []))
+        fc_summary = summarize_fc_hbas(data)
+        fc_n = fc_summary["count"]
         gpu_n = len(data.get("gpu_accelerators", []))
         tpm = si.get("tpm_status_badge", "<span class='badge warning'>⚠️ Unknown</span>")
         _tpm_sort = "1" if "success" in tpm else ("3" if "danger" in tpm else "2")
@@ -265,7 +253,7 @@ def _generate_combined_html(
             f"<span class='badge {esa_cls}'>{esa_td}</span></a>"
         )
         sum_rows += (
-            f"<tr data-vendor='{_xe(_vendor_norm)}' data-unsupported='{_row_unsupported}'>"
+            f"<tr data-host-idx='{idx}' data-vendor='{_xe(_vendor_norm)}' data-unsupported='{_row_unsupported}'>"
             f"<td data-sort='{_sort_hostname}'><a href='#' class='btn-link tab-jump' data-tab='{idx + 3}'>"
             f"<strong>{_pii(hostname)}</strong></a>"
             f"<br><small style='color:#64748b'>{_pii(raw_ip, 'ip')}</small></td>"
@@ -275,7 +263,7 @@ def _generate_combined_html(
             f"<td data-sort='{_sec_sort}'>{sec_td}</td>"
             f"<td data-sort='{_esa_sort}'>{esa_cell_html}</td>"
             f"<td data-sort='{_psu_sort}'><span class='badge {psu_cls}'>{psu_td}</span></td>"
-            f"<td data-sort='{fc_n}'>{'🔵 ' + str(fc_n) + ' HBA' if fc_n else '—'}</td>"
+            f"<td data-sort='{fc_n}'>{_h(fc_summary['display']) if fc_n else '—'}</td>"
             f"<td data-sort='{gpu_n}'>{'🟣 ' + str(gpu_n) + ' GPU' if gpu_n else '—'}</td>"
             f"</tr>"
         )
@@ -359,7 +347,6 @@ def _generate_combined_html(
 {header_controls}
 <h1 style="display:flex;align-items:center">{MARK_SVG}{summary_title}</h1>
 <p style="color:#64748b">{n_hosts} host(s) assessed — click a host tab for full detail.</p>
-<h2 style="font-size:.9rem;font-weight:700;color:var(--text-muted,#94a3b8);margin:2rem 0 .75rem;text-transform:uppercase">Fleet Health Tiles</h2>
 {tiles_html}
 {slow_bmc_alert_html}
 {fleet_detail_seg}
@@ -394,6 +381,7 @@ def _generate_combined_html(
   </div>
 </div>
 {f"<div class='alert alert-warning' style='margin:0.75rem 0'>⚠️ <strong>Large Fleet Mode:</strong> Showing first 500 hosts of {n_hosts:,} in standalone HTML summary table. Use the searchable Host Picker above to open any host report directly, or use the Web UI (<code>python -m vcf_hci.web</code>) for full pagination across all {n_hosts:,} hosts.</div>" if n_hosts > 500 else ""}
+<div class="report-scroll-region" role="region" aria-label="Per-host assessments" tabindex="0">
 <table class="sortable-table"><thead><tr>
 <th title="Click to sort">Host / IP<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">Model<span class="sort-ind">⇅</span></th>
@@ -402,9 +390,10 @@ def _generate_combined_html(
 <th title="Click to sort">BMC Security<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">vSAN Tier<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">PSU<span class="sort-ind">⇅</span></th>
-<th title="Click to sort">FC HBAs<span class="sort-ind">⇅</span></th>
+<th title="Click to sort">FC cards / ports<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">GPUs<span class="sort-ind">⇅</span></th>
 </tr></thead><tbody>{sum_rows}</tbody></table>
+</div>
 </div>
 {topology_pane}
 {fc_pane}
@@ -476,6 +465,15 @@ def _generate_combined_html(
             readme_html_content = "<p>User Guide & Documentation not available in offline bundle.</p>"
 
     if readme_html_content:
+        # Decorative remote badges must not make an offline report fetch images.
+        def _offline_image_label(match):
+            label = re.search(r'\balt=["\']([^"\']*)["\']', match.group(0), re.IGNORECASE)
+            return _h(html.unescape(label.group(1))) if label else ''
+
+        readme_html_content = re.sub(
+            r'<img\b[^>]*\bsrc=["\']https?://[^"\']*["\'][^>]*>',
+            _offline_image_label, readme_html_content, flags=re.IGNORECASE,
+        )
         # Strip dummy anchor wrappers like <a href="#"><img></a> and root-relative /docs/ links for offline file:// compatibility
         readme_html_content = re.sub(r'<a\s+href=["\']#["\']>(.*?)</a>', r'\1', readme_html_content)
         readme_html_content = re.sub(r'<a\s+href=["\']/(?:docs|api)[^"\']*["\'][^>]*>(.*?)</a>', r'\1', readme_html_content)
@@ -523,10 +521,10 @@ def _generate_combined_html(
 
     picker_html = (
         '<div class="host-picker-bar">'
-        '<input type="text" id="host-picker-search" placeholder="🔍 Find host..." '
+        '<input type="search" id="host-picker-search" aria-label="Find host" placeholder="🔍 Find host..." '
         'style="padding:.3rem .6rem;border-radius:4px;border:1px solid var(--border,#334155);background:var(--card,#1e293b);color:var(--text,#f8fafc);font-size:.82rem;width:150px;" '
         'title="Search by hostname, IP, model, or verdict" autocomplete="off">'
-        '<select id="host-picker-select" style="padding:.3rem .6rem;border-radius:4px;border:1px solid var(--border,#334155);background:var(--card,#1e293b);color:var(--text,#f8fafc);font-size:.82rem;max-width:260px;" '
+        '<select id="host-picker-select" aria-label="Select host" style="padding:.3rem .6rem;border-radius:4px;border:1px solid var(--border,#334155);background:var(--card,#1e293b);color:var(--text,#f8fafc);font-size:.82rem;max-width:260px;" '
         'onchange="if(this.value) showTab(parseInt(this.value, 10))">\n'
         + "\n".join(picker_options) +
         '\n</select>'
@@ -559,15 +557,15 @@ def _generate_combined_html(
             return "tab-btn tab-btn-host"
 
         tab_btns = "\n".join(
-            f'<button class="{_tab_btn_class(i)}" onclick="showTab({i})">'
+            f'<button class="{_tab_btn_class(i)}" data-action="report-tab" data-tab-target="tab-{i}">'
             f'{_tab_lbl(i, lbl)}</button>'
             for i, lbl in enumerate(labels)
         ) + "\n" + picker_html
     else:
         fixed_btns = [
-            '<button class="tab-btn tab-btn-summary active" onclick="showTab(0)">Fleet Summary</button>',
-            '<button class="tab-btn tab-btn-inventory" onclick="showTab(1)">Detailed Inventory</button>',
-            '<button class="tab-btn tab-btn-help" onclick="showTab(2)">📖 Help &amp; Readme</button>',
+            '<button class="tab-btn tab-btn-summary active" data-action="report-tab" data-tab-target="tab-0">Fleet Summary</button>',
+            '<button class="tab-btn tab-btn-inventory" data-action="report-tab" data-tab-target="tab-1">Detailed Inventory</button>',
+            '<button class="tab-btn tab-btn-help" data-action="report-tab" data-tab-target="tab-2">📖 Help &amp; Readme</button>',
             '<button id="active-host-btn" class="tab-btn tab-btn-host" style="display:none;" onclick="var s = document.getElementById(\'host-picker-select\'); if (s && s.value) showTab(parseInt(s.value, 10));"></button>',
         ]
         tab_btns = "\n".join(fixed_btns) + "\n" + picker_html
@@ -679,33 +677,6 @@ def _generate_combined_html(
     .tab-btn.active{{color:#f1f5f9;border-bottom-color:#3b82f6;background:#1e293b}}
     [data-theme='light'] .tab-btn.active{{color:#0f172a;border-bottom-color:#2563eb;background:#ffffff}}
 
-    /* Fleet Summary Tab (Royal Blue / Indigo Accent) */
-    .tab-btn.tab-btn-summary{{color:#93c5fd;background:rgba(37,99,235,0.14);border-bottom:3px solid rgba(59,130,246,0.5)}}
-    .tab-btn.tab-btn-summary:hover{{color:#bfdbfe;background:rgba(37,99,235,0.25);border-bottom-color:#60a5fa}}
-    .tab-btn.tab-btn-summary.active{{color:#ffffff;background:rgba(37,99,235,0.38);border-bottom-color:#3b82f6;font-weight:700}}
-
-    [data-theme='light'] .tab-btn.tab-btn-summary{{color:#1e40af;background:#dbeafe;border-bottom:3px solid #93c5fd}}
-    [data-theme='light'] .tab-btn.tab-btn-summary:hover{{color:#1d4ed8;background:#bfdbfe;border-bottom-color:#3b82f6}}
-    [data-theme='light'] .tab-btn.tab-btn-summary.active{{color:#1e3a8a;background:#ffffff;border-bottom-color:#1d4ed8;font-weight:700}}
-
-    /* Detailed Inventory Tab (Emerald / Teal Accent) */
-    .tab-btn.tab-btn-inventory{{color:#6ee7b7;background:rgba(5,150,105,0.14);border-bottom:3px solid rgba(16,185,129,0.5)}}
-    .tab-btn.tab-btn-inventory:hover{{color:#a7f3d0;background:rgba(5,150,105,0.25);border-bottom-color:#34d399}}
-    .tab-btn.tab-btn-inventory.active{{color:#ffffff;background:rgba(5,150,105,0.38);border-bottom-color:#10b981;font-weight:700}}
-
-    [data-theme='light'] .tab-btn.tab-btn-inventory{{color:#065f46;background:#d1fae5;border-bottom:3px solid #6ee7b7}}
-    [data-theme='light'] .tab-btn.tab-btn-inventory:hover{{color:#047857;background:#a7f3d0;border-bottom-color:#10b981}}
-    [data-theme='light'] .tab-btn.tab-btn-inventory.active{{color:#064e3b;background:#ffffff;border-bottom-color:#059669;font-weight:700}}
-
-    /* Help & Readme Tab (Amber / Gold Accent) */
-    .tab-btn.tab-btn-help{{color:#fde047;background:rgba(217,119,6,0.14);border-bottom:3px solid rgba(245,158,11,0.5)}}
-    .tab-btn.tab-btn-help:hover{{color:#fef08a;background:rgba(217,119,6,0.25);border-bottom-color:#fbbf24}}
-    .tab-btn.tab-btn-help.active{{color:#ffffff;background:rgba(217,119,6,0.38);border-bottom-color:#f59e0b;font-weight:700}}
-
-    [data-theme='light'] .tab-btn.tab-btn-help{{color:#92400e;background:#fef3c7;border-bottom:3px solid #fde047}}
-    [data-theme='light'] .tab-btn.tab-btn-help:hover{{color:#78350f;background:#fde68a;border-bottom-color:#f59e0b}}
-    [data-theme='light'] .tab-btn.tab-btn-help.active{{color:#451a03;background:#ffffff;border-bottom-color:#d97706;font-weight:700}}
-
     .docs-embedded-content h1{{font-size:1.6rem;border-bottom:2px solid var(--border,#334155);padding-bottom:.4rem;margin-top:0}}
     .docs-embedded-content h2{{font-size:1.3rem;border-bottom:1px solid var(--border,#334155);padding-bottom:.3rem;margin-top:1.5rem}}
     .docs-embedded-content h3{{font-size:1.05rem;margin-top:1.2rem}}
@@ -766,6 +737,7 @@ def _generate_combined_html(
     .host-spec-card-clickable:hover{{transform:translateY(-2px);border-color:var(--primary,#3b82f6);box-shadow:0 4px 12px rgba(59,130,246,0.2)}}
     .host-spec-card-clickable .jump-arrow{{position:absolute;top:0.6rem;right:0.75rem;font-size:0.85rem;opacity:0.4;transition:opacity .15s ease,transform .15s ease}}
     .host-spec-card-clickable:hover .jump-arrow{{opacity:1;transform:translate(2px,-2px);color:var(--primary,#60a5fa)}}
+{REPORT_UI_CSS}
   </style>
 </head>
 <body>
@@ -794,6 +766,7 @@ function syncIframeTheme(targetIframe) {{
   try {{
     var th = document.documentElement.getAttribute('data-theme') || 'dark';
     var ifr = targetIframe || document.querySelector('.tab-content.active iframe');
+    if(ifr && ifr.contentWindow)ifr.contentWindow.postMessage({{type:'vcf-report-theme',theme:th}},'*');
     if (ifr && ifr.contentDocument && ifr.contentDocument.documentElement) {{
       ifr.contentDocument.documentElement.setAttribute('data-theme', th);
       var ibtn = ifr.contentDocument.getElementById('themeToggle');
@@ -1179,6 +1152,7 @@ function renderEmbeddedHostCard(n, pane) {{
 function showTab(n, subTab){{
   document.querySelectorAll('.tab-content').forEach(function(el){{
     el.classList.toggle('active', el.id === 'tab-' + n);
+    el.hidden = el.id !== 'tab-' + n;
   }});
   var activeBtn = null;
   document.querySelectorAll('.tab-btn').forEach(function(el, i){{
@@ -1194,7 +1168,9 @@ function showTab(n, subTab){{
       hostSelect.value = String(n);
       if (activeHostBtn) {{
         var selOpt = hostSelect.options[hostSelect.selectedIndex];
-        activeHostBtn.textContent = '🖥️ ' + (selOpt ? selOpt.textContent : ('Host ' + (n - 2)));
+        activeHostBtn.dataset.tabTarget = 'tab-' + n;
+        activeHostBtn.setAttribute('aria-controls', 'tab-' + n);
+        activeHostBtn.textContent = (selOpt ? selOpt.textContent : ('Host ' + (n - 2)));
         activeHostBtn.style.display = 'inline-block';
         activeHostBtn.classList.add('active');
         activeBtn = activeHostBtn;
@@ -1439,6 +1415,7 @@ if (table) {{
       var hideUnsup = (document.getElementById('hide-unsupported') || {{}}).checked || false;
       var vendor = row.getAttribute('data-vendor') || '';
       var unsup  = row.getAttribute('data-unsupported') === '1';
+      if (window.VCFReportUI && !window.VCFReportUI.matchesHost(row)) return false;
       if (oem !== 'all' && vendor !== oem) return false;
       if (hideUnsup && unsup) return false;
       return true;
@@ -1493,7 +1470,7 @@ if (table) {{
       Array.from(tbody.querySelectorAll('tr')).forEach(function(row) {{
         var vendor = row.getAttribute('data-vendor') || '';
         var unsup  = row.getAttribute('data-unsupported') === '1';
-        var show = true;
+        var show = !window.VCFReportUI || window.VCFReportUI.matchesHost(row);
         if (oem !== 'all' && vendor !== oem) show = false;
         if (hideUnsup && unsup) show = false;
         row.style.display = show ? '' : 'none';
@@ -1501,46 +1478,14 @@ if (table) {{
     }}
   }}
 
+  window.addEventListener('vcf-overview-filter', applyTableFilters);
   var oemSel = document.getElementById('oem-filter');
   var hideChk = document.getElementById('hide-unsupported');
   if (oemSel) oemSel.addEventListener('change', applyTableFilters);
   if (hideChk) hideChk.addEventListener('change', applyTableFilters);
 }}
 
-(function initCombinedResizers(){{
-  document.querySelectorAll('table.sortable-table, table.inv-table').forEach(function(table){{
-    var ths = table.querySelectorAll('thead th');
-    ths.forEach(function(th){{
-      if (th.querySelector('.col-resizer')) return;
-      var resizer = document.createElement('span');
-      resizer.className = 'col-resizer';
-      th.appendChild(resizer);
 
-      var startX, startW;
-      function onMouseDown(e){{
-        e.stopPropagation();
-        e.preventDefault();
-        startX = e.pageX;
-        startW = th.offsetWidth;
-        resizer.classList.add('resizing');
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-      }}
-      function onMouseMove(e){{
-        var diff = e.pageX - startX;
-        var newW = Math.max(30, startW + diff);
-        th.style.width = newW + 'px';
-        th.style.minWidth = newW + 'px';
-      }}
-      function onMouseUp(){{
-        resizer.classList.remove('resizing');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }}
-      resizer.addEventListener('mousedown', onMouseDown);
-    }});
-  }});
-}})();
 
 (function(){{
   var cb = document.getElementById('maskPII');
@@ -1560,6 +1505,7 @@ if (table) {{
       if (dlBtn) dlBtn.style.display = isMasked ? 'inline-block' : 'none';
       document.querySelectorAll('iframe').forEach(function(iframe) {{
         try {{
+          if(iframe.contentWindow)iframe.contentWindow.postMessage({{type:'vcf-report-mask',checked:isMasked}},'*');
           if (iframe.contentDocument) {{
             var icb = iframe.contentDocument.getElementById('maskPII');
             if (icb) {{
@@ -1578,7 +1524,33 @@ if (table) {{
 
   function downloadObfuscatedCombined(e) {{
     if (e) e.preventDefault();
+    var replacements = [];
+    document.querySelectorAll('.pii[data-real]').forEach(function(el) {{
+      var real=el.dataset.real, mask=el.dataset.mask;
+      if(real && mask && real!==mask)replacements.push([real,mask]);
+    }});
+    replacements.sort(function(a,b){{return b[0].length-a[0].length;}});
+    function redactAttributes(root) {{
+      root.querySelectorAll('[title],[aria-label],[data-search]').forEach(function(el) {{
+        ['title','aria-label','data-search'].forEach(function(attr) {{
+          if(!el.hasAttribute(attr))return;
+          var value=el.getAttribute(attr);
+          replacements.forEach(function(pair){{value=value.split(pair[0]).join(pair[1]);}});
+          el.setAttribute(attr,value);
+        }});
+      }});
+    }}
+    function markPublic(root) {{
+      var checkbox=root.querySelector('#maskPII');
+      if(checkbox){{
+        var badge=(root.ownerDocument||root).createElement('span');
+        badge.className='badge info';badge.textContent='🔒 Obfuscated report';
+        (checkbox.closest('label')||checkbox).replaceWith(badge);
+      }}
+      var duplicate=root.querySelector('#dlObf');if(duplicate)duplicate.remove();
+    }}
     var clone = document.documentElement.cloneNode(true);
+    markPublic(clone);
     clone.querySelectorAll('.pii').forEach(function(el) {{
       var mask = el.dataset.mask || el.textContent;
       el.textContent = mask;
@@ -1628,6 +1600,10 @@ if (table) {{
         cleanSrcdoc = cleanSrcdoc.replace(/\\s+data-real=["'][^"']*["']/gi, '');
         cleanSrcdoc = cleanSrcdoc.replace(/<title>.*?<\\/title>/gi, '<title>VCF Readiness<\\/title>');
         cleanSrcdoc = cleanSrcdoc.replace(/(^|[^0-9])(?:10\\.\\d{{1,3}}\\.\\d{{1,3}}\\.\\d{{1,3}}|172\\.(?:1[6-9]|2\\d|3[01])\\.\\d{{1,3}}\\.\\d{{1,3}}|192\\.168\\.\\d{{1,3}}\\.\\d{{1,3}})(?=[^0-9]|$)/g, '$1192.0.2.1');
+        var parsedSrcdoc = new DOMParser().parseFromString(cleanSrcdoc, 'text/html');
+        redactAttributes(parsedSrcdoc);
+        markPublic(parsedSrcdoc);
+        cleanSrcdoc = '<!DOCTYPE html>' + parsedSrcdoc.documentElement.outerHTML;
         if (iframe.hasAttribute('data-srcdoc')) {{
           iframe.setAttribute('data-srcdoc', cleanSrcdoc);
         }} else {{
@@ -1692,6 +1668,10 @@ if (table) {{
       activeBtn.classList.remove('active');
     }}
 
+    // A shared copy must never retain the original report's private key export.
+    clone.querySelectorAll('[data-private-export]').forEach(function(button){{button.remove();}});
+    clone.querySelectorAll('[data-inventory-export="excel"]').forEach(function(button){{button.textContent='Export Excel (Obfuscated)';}});
+
     // Reset active tab to tab-0 in clone
     clone.querySelectorAll('.tab-content').forEach(function(el) {{
       el.classList.toggle('active', el.id === 'tab-0');
@@ -1707,9 +1687,14 @@ if (table) {{
 
     var cbClone = clone.querySelector('#maskPII');
     if (cbClone) cbClone.checked = true;
+    redactAttributes(clone);
     var rawHtml = '<!DOCTYPE html>' + clone.outerHTML;
-    // Strip raw embedded un-obfuscated Excel sheet payload from exported HTML
-    rawHtml = rawHtml.replace(/var _EMBEDDED_EXCEL_B64 = "[^"]*";/g, 'var _EMBEDDED_EXCEL_B64 = "";');
+    // Preserve a public workbook while stripping both raw data and private keys.
+    var publicMatch=rawHtml.match(/var _PUBLIC_EXCEL_B64 = "([^"]*)";/);
+    var publicExcel=publicMatch?publicMatch[1]:'';
+    rawHtml=rawHtml.replace(/var _PUBLIC_REPORT_EXPORT = (?:true|false);/g,'var _PUBLIC_REPORT_EXPORT = true;');
+    rawHtml=rawHtml.replace(/var _EMBEDDED_EXCEL_B64 = "[^"]*";/g,'var _EMBEDDED_EXCEL_B64 = "'+publicExcel+'";');
+    rawHtml=rawHtml.replace(/var _EMBEDDED_OBF_ZIP_B64 = "[^"]*";/g,'var _EMBEDDED_OBF_ZIP_B64 = "";');
     // Scrub any stray private IPs that might appear in free-text outer HTML
     rawHtml = rawHtml.replace(/(^|[^0-9])(?:10\\.\\d{{1,3}}\\.\\d{{1,3}}\\.\\d{{1,3}}|172\\.(?:1[6-9]|2\\d|3[01])\\.\\d{{1,3}}\\.\\d{{1,3}}|192\\.168\\.\\d{{1,3}}\\.\\d{{1,3}})(?=[^0-9]|$)/g, '$1192.0.2.1');
     var blob = new Blob([rawHtml], {{type: 'text/html'}});
@@ -1743,6 +1728,7 @@ if (table) {{
       tt.textContent = next === 'dark' ? '🌙 Dark' : '☀️ Light';
       document.querySelectorAll('iframe').forEach(function(iframe) {{
         try {{
+          if(iframe.contentWindow)iframe.contentWindow.postMessage({{type:'vcf-report-theme',theme:next}},'*');
           if (iframe.contentDocument && iframe.contentDocument.documentElement) {{
             iframe.contentDocument.documentElement.setAttribute('data-theme', next);
             var ibtn = iframe.contentDocument.getElementById('themeToggle');
@@ -1771,6 +1757,7 @@ if (table) {{
 }})();
 </script>
 <!-- VCF Readiness v{TOOL_VERSION} · {timestamp} -->
+{REPORT_UI_JS}
 </body></html>"""
     combined_html = combined_template.replace("__SUMMARY_TAB__", summary_tab).replace("__INVENTORY_TAB__", inventory_tab).replace("__README_TAB__", readme_tab)
 

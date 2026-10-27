@@ -62,10 +62,11 @@ def _cpu_dot(tier: str, model: str, verdict: str) -> str:
     color_cls = {"green": "inv-good", "yellow": "inv-warn", "red": "inv-bad"}.get(tier, "inv-muted")
     tip = html.escape(f"{model} — {verdict}", quote=True)
     formatted_model = _format_cpu_model(model)
+    label = re.sub(r'^[\s🟢🟡🔴⚠️✓✗]+', '', verdict or 'Unknown')
     return (
         f"<div style='display:inline-flex;align-items:flex-start;gap:4px'>"
-        f"<span class='{color_cls}' title='{tip}' style='font-size:13px;line-height:1;margin-top:1px'>\u25cf</span>"
-        f"<span style='font-size:10px;line-height:1.2;color:var(--text-muted,#64748b);max-width:130px;white-space:normal'>{formatted_model}</span>"
+        f"<span aria-hidden='true' class='{color_cls}' title='{tip}' style='font-size:13px;line-height:1;margin-top:1px'>\u25cf</span>"
+        f"<span class='inv-cpu-label'>{formatted_model}<span class='inv-cpu-verdict'>{_xe(label)}</span></span>"
         f"</div>"
     )
 

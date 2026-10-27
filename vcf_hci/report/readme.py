@@ -14,6 +14,7 @@ import os
 from typing import Dict, List, Optional
 
 from vcf_hci.constants import TOOL_VERSION
+from vcf_hci.logging_utils import scan_contains_original_artifacts
 
 logger = logging.getLogger("vcf_assess")
 
@@ -28,6 +29,7 @@ def generate_scan_readme(
     tool_version: Optional[str] = None,
     scanned_at: Optional[str] = None,
     failed_count: int = 0,
+    sanitized_archive: bool = False,
 ) -> str:
     """Generate structured plain-text Readme.txt content describing scan artifacts.
 
@@ -61,7 +63,8 @@ def generate_scan_readme(
                 logger.debug("Failed reading MANIFEST.json in %s: %s", outdir, exc)
 
     tool_ver = tool_version or TOOL_VERSION
-    scan_time = scanned_at or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    scan_time = scanned_at or "Unknown (saved capture date unavailable)"
+    generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     # Inspect directory contents to adapt file catalog and quick-start recommendations
     existing_root_files = set(os.listdir(outdir)) if (outdir and os.path.isdir(outdir)) else set()
@@ -71,6 +74,12 @@ def generate_scan_readme(
 
     data_dir = os.path.join(outdir, "data") if outdir else ""
     data_files = sorted(os.listdir(data_dir)) if (data_dir and os.path.isdir(data_dir)) else []
+
+    # The strict ZIP builder describes its selected entries, not its mixed source.
+    if sanitized_archive:
+        existing_root_files = {f for f in existing_root_files if f.startswith(("00_OBFUSCATED_", "OBFUSCATED_"))}
+        report_files = [f for f in report_files if f.startswith("OBFUSCATED_")]
+        data_files = [f for f in data_files if f.startswith("OBFUSCATED_")]
 
     # If host_count is still 0, infer from reports or JSON files
     if host_count <= 0:
@@ -110,8 +119,13 @@ def generate_scan_readme(
     has_failed_csv = "00_failed_hosts.csv" in existing_root_files or "00_OBFUSCATED_failed_hosts.csv" in existing_root_files
     has_gpus_csv = "00_gpus_inventory.csv" in existing_root_files or "00_OBFUSCATED_gpus_inventory.csv" in existing_root_files
 
+    # A mixed directory cannot inherit the sanitized archive's privacy claim.
+    unmasked = not sanitized_archive and scan_contains_original_artifacts(outdir)
+    if unmasked:
+        obfuscated = False
+
     # Build Header Section
-    meta_parts: List[str] = [f"Version: {tool_ver}", f"Scan Date: {scan_time}"]
+    meta_parts: List[str] = [f"Version: {tool_ver}", f"Capture Date: {scan_time}", f"Guide Generated: {generated_at}"]
     if host_count > 0:
         meta_parts.append(f"Hosts: {host_count}")
     if site:
@@ -121,7 +135,7 @@ def generate_scan_readme(
     if collector_id:
         meta_parts.append(f"Collector ID: {collector_id}")
     if has_obfuscated_artifacts and not obfuscated:
-        meta_parts.append("Contains Obfuscated Copies")
+        meta_parts.append("Mixed Package — Contains Original Data and Obfuscated Copies")
     elif obfuscated:
         meta_parts.append("Obfuscated Package")
 
@@ -228,8 +242,12 @@ def generate_scan_readme(
         prefix_note = "Sanitized multi-tab" if "OBFUSCATED" in xf else "Multi-tab"
         catalog_entries.append({
             "name": xf,
-            "desc": f"{prefix_note} Microsoft Excel workbook (Fleet Summary, Drives, NICs, GPUs, Failures).",
+            "desc": f"{prefix_note} Microsoft Excel workbook (14 tabs including Decision, vCPU, vMemory, vStorage, vNetwork, vGPU, vHBA, vFirmware, vBIOS, Health_Alarms, Security, Security_Audit, and supporting summaries).",
         })
+
+    for name in sorted(existing_root_files):
+        if name.endswith(("component_evidence.csv", "telemetry_completeness.csv", "firmware_spread.csv")):
+            catalog_entries.append({"name": name, "desc": "Component provenance or metric availability with explicit assessed/full-fleet counts."})
 
     csv_items = [
         ("00_OBFUSCATED_fleet_summary.csv", "Sanitized cluster summary CSV with anonymous host identifiers."),
@@ -318,6 +336,11 @@ def generate_scan_readme(
         lines.append("• Network MAC addresses and sensitive identifiers are normalized.")
         lines.append("• OEM hardware models, CPU architectures, firmware revisions, and component")
         lines.append("  compatibility verdicts remain 100% authentic Redfish telemetry from live servers.")
+        lines.append("")
+
+    if unmasked:
+        lines.append("The directory and main ZIP include original identities. Share only the separately")
+        lines.append("generated obfuscated ZIP after reviewing its contents, never the mixed directory.")
         lines.append("")
 
     # Section 6: Offline Re-Import & Fleet Assembly

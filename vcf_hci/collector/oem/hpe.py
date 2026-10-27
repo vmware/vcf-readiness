@@ -305,57 +305,31 @@ class HPECollector(GenericCollector):
         return res
 
     def oem_license_info(self, mgr_data: dict, sys_data: dict) -> dict:
-        """Detect HPE iLO license tier (Advanced, Standard, Expired)."""
-        ilo_license = get_nested(mgr_data, "Oem", "Hpe", "License", default={})
-        if not ilo_license:
-            return {"license_name": "N/A", "badge": "", "vendor_note": ""}
-        tier = ilo_license.get("LicenseType") or ilo_license.get("License", "Standard")
-        tier_low = str(tier).lower()
-        if "advanced" in tier_low or "essentials" in tier_low:
-            return {
-                "license_name": str(tier),
-                "badge": f"<span class='badge success'>🟢 HPE iLO {tier}</span>",
-                "vendor_note": (
-                    "iLO Advanced enables KVM remote console, Federation, Directory "
-                    "authentication, and advanced power regulation. All hardware inventory "
-                    "in this report is available at the Standard tier."
-                ),
-            }
-        elif "expired" in tier_low:
-            return {
-                "license_name": "iLO Advanced — License expired",
-                "badge": "<span class='badge warning'>🟡 HPE iLO Advanced — License expired</span>",
-                "vendor_note": (
-                    "An iLO Advanced license was previously installed but has expired. "
-                    "Hardware inventory (Storage, Memory, NICs, Thermal, PSU) remains fully "
-                    "accessible. Performance telemetry (CPU/memory/PCIe utilisation metrics), "
-                    "KVM remote console, Federation, and Directory auth are unavailable until "
-                    "the license is renewed."
-                ),
-            }
-        elif tier_low in ("unlicensed", "", "none"):
-            return {
-                "license_name": "iLO — No activation key",
-                "badge": "<span class='badge warning'>🟡 HPE iLO — No activation key installed</span>",
-                "vendor_note": (
-                    "No iLO Advanced license key is installed. "
-                    "Hardware inventory (Storage, Memory, NICs, Thermal, PSU) is fully "
-                    "accessible at the base tier. Performance telemetry (TelemetryService — "
-                    "CPU/memory/PCIe utilisation metrics), KVM remote console, Federation, "
-                    "and Directory auth require an iLO Advanced license."
-                ),
-            }
-        else:
-            return {
-                "license_name": str(tier),
-                "badge": f"<span class='badge warning'>🟡 HPE iLO {tier}</span>",
-                "vendor_note": (
-                    "iLO Standard: hardware inventory (Storage, Memory, NICs, Thermal, "
-                    "PSU) is fully accessible. Upgrade to iLO Advanced to enable KVM "
-                    "remote console, Federation, Directory auth, performance telemetry "
-                    "(CPU/memory/PCIe utilisation), and detailed power regulation."
-                ),
-            }
+        """Keep edition, term and expiry separate; infer no metric entitlement."""
+        from html import escape
+
+        raw = get_nested(mgr_data, "Oem", "Hpe", "License", default={})
+        raw = raw if isinstance(raw, dict) else {}
+        # LicenseType may be a term (Perpetual/Internal), not a product edition.
+        product = str(raw.get("License") or "").strip()
+        term = str(raw.get("LicenseType") or "").strip()
+        edition = next((value for value in (product, term)
+                        if any(t in value.lower() for t in ("advanced", "essentials", "standard"))), "Unknown")
+        status = str(raw.get("LicenseStatus") or raw.get("Status") or "Unknown")
+        if status == "Unknown" and "expired" in f"{product} {term}".lower():
+            status = "Expired"
+        expiry = str(raw.get("ExpirationDate") or raw.get("ExpiryDate") or "")
+        name = product or term or "N/A"
+        return {
+            "license_name": name,
+            "edition": edition,
+            "license_term": term,
+            "expiry": expiry,
+            "status": status,
+            "source": "Manager.Oem.Hpe.License" if raw else "Unknown",
+            "badge": f"<span class='badge info'>HPE iLO {escape(name)}</span>" if raw else "",
+            "vendor_note": "License labels do not establish metric entitlement. Available SystemUsage counters remain usable; feature restrictions require explicit endpoint evidence.",
+        }
 
     def oem_security_evidence(self) -> Dict[str, Any]:
         """Collect HPE-native security evidence from iLO extensions (Bead 6).

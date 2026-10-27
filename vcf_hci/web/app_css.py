@@ -84,6 +84,13 @@ APP_CSS = """
     }
     .nav-brand { font-size: 1rem; font-weight: 600; letter-spacing: .01em; flex: 1; }
     .nav-version { font-size: .75rem; color: #8a9aa5; }
+    .nav-update { font-size: .75rem; color: #a9ddf5; text-decoration: none; white-space: nowrap; padding: .15rem .4rem; border: 1px solid #678b9c; border-radius: var(--vcf-radius); }
+    .nav-update:hover { color: #fff; text-decoration: underline; }
+    .nav-update:focus-visible { outline: 2px solid #a9ddf5; outline-offset: 3px; }
+    @media (max-width: 700px) {
+      .nav-header { height: auto; min-height: 48px; flex-wrap: wrap; padding: .5rem .75rem; gap: .5rem; }
+      .nav-header .nav-brand { flex-basis: 100%; }
+    }
     .nav-btn {
       background: none;
       border: 1px solid rgba(255,255,255,.2);

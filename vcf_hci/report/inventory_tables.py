@@ -21,6 +21,7 @@ from vcf_hci.constants import (
     is_unfriendly_nic_name,
     prefer_storage_ctrl_display_name,
 )
+from vcf_hci.fc_inventory import fc_adapter_count, normalize_fc_ports
 from vcf_hci.report.schema_registry import color_for_verdict, strip_html
 from vcf_hci.report.sel_links import (
     normalize_vendor,
@@ -645,11 +646,13 @@ def evaluate_vsan_esa_profile(
 
 def summarize_fc_hbas(data: dict) -> dict:
     """Return FC HBA rollup for one host."""
-    hbas = data.get("fc_hbas") or []
+    hbas = normalize_fc_ports(data.get("fc_hbas"))
     count = len(hbas)
     if not count:
         return {
             "count": 0,
+            "port_count": 0,
+            "adapter_count": 0,
             "display": "\u2014",
             "speed_summary": "",
             "models": "",
@@ -672,9 +675,13 @@ def summarize_fc_hbas(data: dict) -> dict:
         spd_parts.append(f"{n}\u00d7{s:g}G" if n > 1 else f"{s:g}G")
     spd_str = " ".join(spd_parts)
 
-    display = f"{count} HBA" + (f" ({spd_str})" if spd_str else "")
+    adapters = fc_adapter_count(hbas)
+    card_label = f"{adapters} HBA card{'s' if adapters != 1 else ''} · " if adapters is not None else ""
+    display = f"{card_label}{count} FC port{'s' if count != 1 else ''}" + (f" ({spd_str})" if spd_str else "")
     return {
         "count": count,
+        "port_count": count,
+        "adapter_count": adapters,
         "display": display,
         "speed_summary": spd_str,
         "models": ", ".join(models),
@@ -1632,7 +1639,7 @@ def build_inventory_sheets(
                 "Yes" if fw.get("updateable") else "No",
             ])
 
-        for hba in data.get("fc_hbas") or []:
+        for hba in normalize_fc_ports(data.get("fc_hbas")):
             hba_rows.append([
                 ip, hostname,
                 hba.get("adapter_name") or hba.get("name") or hba.get("id") or "",

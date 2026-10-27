@@ -456,7 +456,7 @@ def _extract_current_draw_watts(data: Dict[str, Any]) -> Any:
 
 def _extract_power_cap_enforced(data: Dict[str, Any]) -> str:
     psu = data.get("psu_status") or {}
-    return "Yes (Enforced)" if psu.get("power_limit_enforced") else "No"
+    return "Yes (Enforced)" if psu.get("power_limit_enforced") is True else ("No (Disabled)" if psu.get("power_limit_enforced") is False else "Unknown")
 
 
 def _extract_thermal_status(data: Dict[str, Any]) -> str:

@@ -5,14 +5,11 @@ import re
 from typing import Any, Dict
 
 from vcf_hci.bcg_links import BCGLinkGenerator
-from vcf_hci.compat_engine import VCF9CompatibilityEngine, _is_oem_chassis_certified
+from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.constants import BROADCOM_KB_428874_URL
 from vcf_hci.report.helpers import _h
-
-_KNOWN_VSPHERE_OEMS = {
-    "DELL", "HPE", "HEWLETT", "LENOVO", "CISCO", "FUJITSU", "HUAWEI", "NEC", "SUPERMICRO",
-    "QUANTA", "QCT", "GIGABYTE", "INTEL",
-}
+from vcf_hci.report.readiness import KNOWN_VSPHERE_OEMS as _KNOWN_VSPHERE_OEMS
+from vcf_hci.report.readiness import chassis_qualification
 
 
 def _clean_cpu_model_display(model: str, default: str = "Unknown") -> str:
@@ -43,18 +40,12 @@ def render_cpu_combined_card(
     """Render merged CPU / server summary card (vSphere support badges + condensed specs)."""
     _vendor_str = str(sys_info.get("vendor") or "")
     _model_str = str(sys_info.get("model") or "")
-    _vendor_upper = _vendor_str.upper()
-    _oem_known = any(k in _vendor_upper for k in _KNOWN_VSPHERE_OEMS)
     _bcg_server_url = BCGLinkGenerator.server(_vendor_str, _model_str, cpu_info)
     _bcg_cpu_url = BCGLinkGenerator.cpu(cpu_info.get("model", ""), cpu_info.get("processor_id", ""))
 
-    _is_dell_14g = "DELL" in _vendor_upper and bool(re.search(r"R[23456789]40|T[1346]40|C6420|MX[78]40C|XC[679]40", _model_str, re.I))
-    _requires_vendor_confirm = _is_dell_14g or "Verify with OEM" in cpu_verdict or "Confirm with vendor" in cpu_verdict
-
-    _model_upper = _model_str.upper()
-    _is_nutanix_appliance = bool(sys_info.get("hci_appliance")) or (
-        "NUTANIX" in _vendor_upper or _model_upper.startswith("NX-") or " NX-" in f" {_model_upper}"
-    )
+    _chassis = chassis_qualification(sys_info, cpu_verdict)
+    _requires_vendor_confirm = _chassis['vendor_approval']
+    _is_nutanix_appliance = _chassis['appliance_tqr']
 
     _server_subtext = ""
     if _is_nutanix_appliance:
@@ -67,7 +58,7 @@ def render_cpu_combined_card(
             "with your account team — not the Broadcom Compatibility Guide OEM SYS/AS chassis list."
         )
     else:
-        _is_certified_chassis = _is_oem_chassis_certified(_vendor_str, _model_str) or (_oem_known and bool(_model_str))
+        _is_certified_chassis = _chassis['qualified']
         if _is_certified_chassis:
             if _requires_vendor_confirm:
                 _server_badge = '<span class="badge warning">🟡 Server: Confirm Vendor</span>'
@@ -241,7 +232,7 @@ def render_cpu_combined_card(
     return (
         f"<div class='card'>"
         f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
-        f"<h3 style='margin:0'>CPU and Server &mdash; vSphere 9.1</h3>"
+        f"<h3 style='margin:0'>Server Readiness &mdash; vSphere 9.1</h3>"
         f"<a href='#tab-cpu' data-jump-tab='tab-cpu' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to CPU section'>Details &rarr;</a>"
         f"</div>"
         f"{_badges_html}"

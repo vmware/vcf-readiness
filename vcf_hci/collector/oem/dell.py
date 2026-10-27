@@ -959,23 +959,46 @@ class DellCollector(GenericCollector):
         return results
 
     def oem_license_info(self, mgr_data: dict, sys_data: dict) -> dict:
-        """Detect Dell iDRAC license tier (Enterprise, Express, Basic)."""
-        mgr_name = str((mgr_data or {}).get("Name", "") or (mgr_data or {}).get("Model", "")).upper()
-        if "ENTERPRISE" in mgr_name or "DATACENTER" in mgr_name:
-            tier, cls, icon = "Enterprise", "success", "🟢"
-        elif "EXPRESS" in mgr_name or "BASIC" in mgr_name:
-            tier, cls, icon = "Express", "warning", "🟡"
-        else:
-            tier, cls, icon = "iDRAC", "info", "ℹ️"
+        """Read a linked license inventory; manager product names are not licenses."""
+        from html import escape
+
+        licenses = []
+        service = mgr_data.get("LicenseService") or (mgr_data.get("Links") or {}).get("LicenseService")
+        source = "Manager.LicenseService"
+        if not service:
+            root = self._get("/redfish/v1", timeout=5, critical=False) or {}
+            service = root.get("LicenseService") if isinstance(root, dict) else None
+            source = "ServiceRoot.LicenseService"
+        if isinstance(service, dict) and service.get("@odata.id"):
+            body = self._get(service["@odata.id"], timeout=5, critical=False) or {}
+            link = body.get("Licenses") or {}
+            if isinstance(link, dict) and link.get("@odata.id"):
+                collection = self._get(link["@odata.id"], timeout=5, critical=False) or {}
+                for member in (collection.get("Members") or [])[:16]:
+                    if not isinstance(member, dict):
+                        continue
+                    item = member
+                    if member.get("@odata.id") and len(member) <= 2:
+                        item = self._get(member["@odata.id"], timeout=5, critical=False) or {}
+                    if item.get("error"):
+                        continue
+                    licenses.append({
+                        "name": str(item.get("Name") or ""),
+                        "license_type": str(item.get("LicenseType") or ""),
+                        "expiry": str(item.get("ExpirationDate") or ""),
+                        "status": item["Status"].get("State", "Unknown") if isinstance(item.get("Status"), dict) else "Unknown",
+                    })
+        name = ", ".join(item["name"] for item in licenses if item["name"]) or "Dell iDRAC"
         return {
-            "license_name": f"Dell {tier}",
-            "badge": f"<span class='badge {cls}'>{icon} Dell {tier}</span>",
-            "vendor_note": (
-                "All hardware inventory (Storage, Memory, NICs, Thermal, PSU) is "
-                "fully accessible at every iDRAC license tier. iDRAC Enterprise / "
-                "Datacenter adds remote KVM console, virtual media, and advanced "
-                "configuration management."
-            ),
+            "license_name": name,
+            "edition": name if licenses else "Unknown",
+            "licenses": licenses,
+            "source": source if licenses else "Unknown",
+            "license_term": ", ".join(sorted({item["license_type"] for item in licenses if item["license_type"]})) or "Unknown",
+            "expiry": ", ".join(sorted({item["expiry"] for item in licenses if item["expiry"]})) or "Unknown",
+            "status": ", ".join(sorted({item["status"] for item in licenses if item["status"]})) or "Unknown",
+            "badge": f"<span class='badge info'>{escape(name)}</span>",
+            "vendor_note": "Metric entitlement is unknown unless the endpoint reports an explicit license restriction.",
         }
 
     def oem_os_info(self, sys_data: dict) -> dict:

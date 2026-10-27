@@ -209,7 +209,7 @@ class _PowerMixin(_CollectorBase):
 
         # ── System-level power consumption (PowerControl[] or EnvironmentMetrics) ─────
         power_limit_watts = None
-        power_limit_enforced = False
+        power_limit_enforced = None
         consumed_energy_kwh = None
         power_allocated_watts = None
 
@@ -232,7 +232,9 @@ class _PowerMixin(_CollectorBase):
                     and p_lim_val < _POWER_CAP_MAX_REALISTIC_WATTS
                 ):
                     power_limit_watts = p_lim_val
-                    power_limit_enforced = True
+                    # A configured threshold alone does not prove enforcement.
+                    enabled = p_limit.get("Enabled")
+                    power_limit_enforced = enabled if isinstance(enabled, bool) else None
 
             p_alloc = pc.get("PowerAllocatedWatts")
             if p_alloc is not None:
@@ -300,11 +302,14 @@ class _PowerMixin(_CollectorBase):
 
         if power_limit_enforced and power_limit_watts:
             result["power_cap_badge"] = f"<span class='badge warning'>⚠️ Power Cap Enforced ({power_limit_watts} W) — Potential Throttle Risk</span>"
+        elif power_limit_watts:
+            result["power_cap_badge"] = f"<span class='badge info'>Power cap configured ({power_limit_watts} W); enforcement {'disabled' if power_limit_enforced is False else 'unknown'}</span>"
         else:
-            result["power_cap_badge"] = "<span class='badge success'>🟢 Power Cap: Unlimited (Uncapped)</span>"
+            result["power_cap_badge"] = "<span class='badge info'>Power cap: no valid threshold reported; enforcement unknown</span>"
 
         result["power_limit_watts"] = power_limit_watts
         result["power_limit_enforced"] = power_limit_enforced
+        result["power_limit_evidence"] = "PowerControl.PowerLimit.Enabled" if power_limit_enforced is not None else "Unknown"
         result["consumed_energy_kwh"] = consumed_energy_kwh
         result["power_allocated_watts"] = power_allocated_watts
 

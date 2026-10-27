@@ -6,7 +6,24 @@ The **Fleet Summary** tab provides a consolidated executive dashboard summarizin
 
 ### 1.1 Fleet Health Tiles {#fleet-health-tiles}
 
-The high-level status tiles at the top of the Fleet Summary dashboard provide instant visibility into overall cluster repurposing potential and hardware health:
+The readiness overview separates Server Readiness, vSAN storage readiness and BMC security. Each category shows its own host counts and denominator; the dimensions overlap and must not be added together as a unique affected-host total. Security excludes central fleet management appliances.
+
+Select a nonzero count to inspect its matching hosts. Combined reports open the filtered Hosts inventory; standalone fleet summaries filter the per-host assessment table. **Clear assessment filter** restores the full rendered set. Unknown or unassessed evidence remains explicit and does not count as a successful assessment.
+
+Fleet Aggregate Raw Resources leads at the upper left, with readiness summaries to the right. Headings sit above aligned cards. OS/NIC/power and security/BIOS summaries follow in consistent rows, stacking on smaller screens; platform fingerprints remain below. A short raw-capacity caveat remains visible; expand **Sizing assumptions** for reserve and overhead details.
+
+Server Readiness uses these categories:
+
+- **Server supported:** existing chassis qualification and supported CPU.
+- **components certified:** chassis not found by the existing rules; use the component-level support guidance. The label opens the [VMware certification blog](https://blogs.vmware.com/cloud-foundation/2026/02/25/vcf-9-0-server-certification-preserving-your-hardware-investment-and-giving-the-best-roi/), the information icon explains the support path, and a nonzero count opens matching hosts.
+- **Review / Override Required:** CPU assessment requires review or an installation override.
+- **Unsupported for VCF 9.x:** CPU assessment is unsupported.
+- **Not assessed:** CPU evidence is missing or unverified.
+
+The BMC scorecard includes a compact **TPM 2.0 ready (fleet)** count and percentage; this is the existing TPM readiness assessment, separate from the BMC score. A compact TPM card remains when no BMC assessment is available. Fleet security recommendations use **Action suggested** without changing finding severity or scores.
+
+A vendor-confirmation note qualifies continued hardware support; it does not imply VMware has marked the server unsupported. Detailed CPU and vendor/TQR guidance remains in the host report. Status badges use shared spacing and compact wrapping for longer labels.
+
 
 | Metric Tile | Description & Evaluation Logic | VCF 9.1 Readiness Significance | Documentation Link |
 |---|---|---|---|
@@ -49,8 +66,17 @@ The central assessment table presents a dense multi-node compatibility matrix. S
 - **OEM Filter:** Filters the fleet table dynamically by hardware manufacturer (Dell, HPE, Lenovo, Cisco, Supermicro, Quanta, GIGABYTE, Intel).
 - **Hide Unsupported Hosts:** Dynamically hides legacy systems containing pre-Skylake processors to focus cluster planning exclusively on viable hardware candidates.
 - **Table Pagination Controls:** Client-side pager with configurable page sizes (25, 50, 100, or All rows per page) ensures responsive rendering even when auditing thousands of physical servers.
-- **Initial Paint Row Capping:** For fleets exceeding 500 hosts, the initial HTML render caps rendered table rows to 500 to guarantee sub-second browser paint times, while the full fleet dataset is preserved in the compact `#fleet-inv-data` JSON island and filterable without page reloads.
+- **Large-fleet display limit:** For fleets exceeding 500 hosts, the standalone HTML assessment and inventory tables show the first 500 hosts and display a limit warning. Filters apply to that rendered subset. The complete fleet remains available in exports; the Web UI provides access to the full dataset.
 - **Searchable Host Picker:** In large-scale fleet reports (Sidecar mode), static host navigation buttons are replaced by a fast filterable dropdown picker (`<input>` + `<select>`) to jump instantly to any server by IP, hostname, or model.
+
+#### Detailed Inventory view controls
+
+- **Density:** Comfortable uses readable text and roomier rows. Compact reduces spacing for dense comparisons. Switching density retains filters, the current page, widths and selected inventory view.
+- **Columns:** Choose Hosts comparison columns by name. Host identity remains visible. Host OS and GPU detail are available as optional columns; FC HBA appears when the fleet contains adapters. Column choices do not change Excel/CSV contents.
+- **Reset view:** Restores default density, columns and widths while retaining filters and the selected view. The browser may remember layout choices; reports remain usable when storage is unavailable.
+- **Keyboard:** Tab enters a tab set; arrows, Home and End move focus; Enter or Space activates the focused view. Column resize handles support left/right arrows. Column Reference contains its own focus until Escape or Close returns focus to its trigger.
+- **Theme and privacy:** Fleet controls also apply to host reports opened from the combined report. Downloaded obfuscated HTML excludes the private identifier key. Inline copies retain an obfuscated workbook; supply the obfuscated workbook alongside shared sidecar reports. Keep key exports from the original private report separate.
+- **Evidence:** Critical conclusions remain visible. Expand evidence opens supporting details for reading or browser Find. Direct links reveal a closed evidence section automatically. Print/PDF includes the selected report view with its supporting evidence expanded, then restores disclosure states.
 
 #### Field-by-Field Reference
 | Column Header | Description & Evaluation Logic | VCF 9.1 Readiness Verdict | External Reference |
@@ -101,3 +127,7 @@ To eliminate historical browser memory crashes and the legacy 256-host ceiling (
 4. **Critical Distribution Rule for Field SEs:**
    > ⚠️ **IMPORTANT PACKAGING RULE:** When delivering reports generated in **Sidecar mode** (&gt;64 hosts), **do not email `00_fleet_combined.html` by itself**. The iframes dynamically load `reports/vsphere_vsan_report_<IP>.html` relative to the hub. Always zip the entire output folder (or use the Web UI "Download ZIP" action) so that `00_fleet_combined.html`, `reports/`, and the `.xlsx` workbook remain co-located.
 
+
+### FC card and port counts
+
+FC inventory distinguishes physical HBA cards from their ports (for example, **1 HBA card · 2 FC ports**). Counts use slot or adapter identity; identical model names do not imply a single card. If physical location is unavailable, the report shows the port count without guessing the number of cards. Repeated node/port WWN observations are reconciled while retaining link, speed and SAN boot evidence.

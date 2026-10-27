@@ -3,8 +3,10 @@ from collections import defaultdict
 from typing import Tuple
 
 from vcf_hci.bcg_links import BCGLinkGenerator
+from vcf_hci.fc_inventory import normalize_fc_ports
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
+from vcf_hci.report.disclosures import evidence_controls_html, supporting_evidence_html
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.sections.hba import _fc_plus_badge, fc_generation_label
 
@@ -57,7 +59,7 @@ def build_fleet_fc_matrix_html(
                 host_to_tab[k] = tab_idx
                 host_to_tab[k.lower()] = tab_idx
 
-        hbas = res.get("fc_hbas") or []
+        hbas = normalize_fc_ports(res.get("fc_hbas"))
         if hbas:
             fc_hosts_data.append({
                 "idx": idx,
@@ -483,7 +485,7 @@ def build_fleet_fc_matrix_html(
         f"<div style='margin-bottom:1.5rem'>"
         f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:.75rem'>"
         f"<h3 style='margin:0;font-size:1.05rem;color:var(--text,#0f172a)'>Fleet Fibre Channel Host Roster ({n_fc_hosts} Hosts &middot; {total_fc_ports} Ports)</h3>"
-        f"<input type='text' id='fcHostSearch' placeholder='🔍 Filter hosts, adapters, WWPNs, arrays...' style='padding:.35rem .75rem;border:1px solid var(--border,#cbd5e1);border-radius:5px;font-size:.85rem;min-width:280px;background:var(--card,#ffffff);color:var(--text,#0f172a)'>"
+        f"<input type='text' id='fcHostSearch' aria-label='Filter Fibre Channel hosts, adapters and targets' placeholder='🔍 Filter hosts, adapters, WWPNs, arrays...' style='padding:.35rem .75rem;border:1px solid var(--border,#cbd5e1);border-radius:5px;font-size:.85rem;min-width:280px;background:var(--card,#ffffff);color:var(--text,#0f172a)'>"
         f"</div>"
         f"<div style='overflow-x:auto'>"
         f"<table><thead><tr>"
@@ -527,7 +529,8 @@ def build_fleet_fc_matrix_html(
         f"</div>"
         f"{kpi_strip_html}"
         f"{spectrum_section}"
-        f"{fabric_section}"
+        f"{evidence_controls_html() if fabric_section else ''}"
+        f"{supporting_evidence_html('SAN fabric evidence', fabric_section, n_fc_hosts, 'fc-fabric-evidence') if fabric_section else ''}"
         f"{roster_table_html}"
         f"{filter_js}"
         f"</div>"

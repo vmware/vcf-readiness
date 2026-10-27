@@ -4,10 +4,12 @@ Detailed Inventory HTML panel builder for combined fleet reports.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import os
 import re
+import zipfile
 from typing import Any, List, Optional
 
 from vcf_hci.hcl import load_vsan_hcl_json
@@ -36,6 +38,7 @@ from vcf_hci.report.fleet.inventory.subtables import (
     _build_nics_table,
     _build_security_table,
 )
+from vcf_hci.report.fleet.inventory.view import INVENTORY_VIEW_CSS, INVENTORY_VIEW_JS
 from vcf_hci.report.inventory_tables import (
     build_compact_fleet_inventory,
     clean_model_code,
@@ -103,6 +106,7 @@ def build_detailed_inventory_html(
 
     excel_b64 = ""
     obf_zip_b64 = ""
+    public_excel_b64 = ""
     # Sidecar skips Excel/zip Base64 embed; link sibling .xlsx instead. inline may still embed Excel.
     if embed_mode != "sidecar" and all_results:
         try:
@@ -115,10 +119,13 @@ def build_detailed_inventory_html(
                 excel_b64 = base64.b64encode(xlsx_bytes).decode("ascii")
                 zip_bytes = build_obfuscated_inventory_zip(all_results)
                 obf_zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
+                with zipfile.ZipFile(io.BytesIO(zip_bytes)) as public_bundle:
+                    public_excel_b64 = base64.b64encode(public_bundle.read("inventory_obfuscated.xlsx")).decode("ascii")
             else:
                 xlsx_bytes = build_inventory_xlsx_bytes(all_results, obfuscated=True)
                 excel_b64 = base64.b64encode(xlsx_bytes).decode("ascii")
                 obf_zip_b64 = excel_b64
+                public_excel_b64 = excel_b64
         except Exception as exc:
             logger.debug("Failed building embedded Excel base64: %s", exc)
 
@@ -133,12 +140,12 @@ def build_detailed_inventory_html(
     inv_dl_filename = "inventory_obfuscated.xlsx" if obfuscated else "inventory.xlsx"
     if obfuscated:
         export_buttons = (
-            '<button type="button" class="inv-btn" onclick="dlInvExcel(false)">Export Excel (Obfuscated)</button>'
+            '<button type="button" class="inv-btn" data-inventory-export="excel" onclick="dlInvExcel(false)">Export Excel (Obfuscated)</button>'
         )
     else:
         export_buttons = (
-            '<button type="button" class="inv-btn" onclick="dlInvExcel(false)">Export Excel</button>\n'
-            '    <button type="button" class="inv-btn" onclick="dlInvExcel(true)">Export Obfuscated + Key</button>'
+            '<button type="button" class="inv-btn" data-inventory-export="excel" onclick="dlInvExcel(false)">Export Excel</button>\n'
+            '    <button type="button" class="inv-btn" data-private-export="true" onclick="dlInvExcel(true)">Export Obfuscated + Key</button>'
         )
 
     # Build compact FLEET_INV JSON island
@@ -191,7 +198,7 @@ def build_detailed_inventory_html(
         fc_cell = ""
         if has_fc_hbas:
             fc_cell = (
-                f"<td style='text-align:center' title='{_xe(fc.get('models') or '')}'>"
+                f"<td data-column-key='fc_hba' style='text-align:center' title='{_xe(fc.get('models') or '')}'>"
                 f"{_xe(fc.get('display') or _DASH)}</td>"
             )
 
@@ -216,7 +223,7 @@ def build_detailed_inventory_html(
             if "EOL" in eol:
                 os_td = (
                     f"<span class='inv-bad' title='{_xe(eol)}'>{_xe(os_label)}</span>"
-                    f"<div style='font-size:9px;color:var(--text-muted,#64748b)'>{_xe(eol)}</div>"
+                    f"<div style='font-size:var(--inv-secondary-size,12px);color:var(--text-muted,#64748b)'>{_xe(eol)}</div>"
                 )
             else:
                 os_td = f"<span>{_xe(os_label)}</span>"
@@ -233,22 +240,22 @@ def build_detailed_inventory_html(
             f"data-link='{_xe(r.get('facet_link') or '')}' "
             f"data-sec-posture='{_xe(sec_posture)}' "
             f"data-host-idx='{idx}'>"
-            f"<td class='inv-sticky'><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-overview' style='color:inherit;text-decoration:none;display:block'>"
+            f"<td data-column-key='hostname' class='inv-sticky'><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-overview' style='color:inherit;text-decoration:none;display:block'>"
             f"<strong>{_pii(hostname, 'host')}</strong>"
             f"<br><small style='color:var(--text-muted,#64748b)'>{_pii(ip, 'ip')}</small></a></td>"
-            f"<td title='{_xe(full_model)}'><strong>{_xe(clean_m)}</strong></td>"
-            f"<td><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-cpu' style='color:inherit;text-decoration:none;display:inline-block'>{_cpu_dot(r.get('cpu_tier') or '', r.get('cpu_model') or '', r.get('cpu_verdict') or '')}</a></td>"
-            f"<td>{os_td}</td>"
-            f"<td>{_xe(esa.get('display') or _DASH)}<br>{_storage_qualification_chip(r)}</td>"
-            f"<td>{_esa_profile_chip(esa_profile_data)}</td>"
-            f"<td title='{nic_tip}'>{nic_html}</td>"
+            f"<td data-column-key='model' title='{_xe(full_model)}'><strong>{_xe(clean_m)}</strong></td>"
+            f"<td data-column-key='cpu_model'><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-cpu' style='color:inherit;text-decoration:none;display:inline-block'>{_cpu_dot(r.get('cpu_tier') or '', r.get('cpu_model') or '', r.get('cpu_verdict') or '')}</a></td>"
+            f"<td data-column-key='host_os'>{os_td}</td>"
+            f"<td data-column-key='esa_disks'>{_xe(esa.get('display') or _DASH)}<br>{_storage_qualification_chip(r)}</td>"
+            f"<td data-column-key='esa_tier'>{_esa_profile_chip(esa_profile_data)}</td>"
+            f"<td data-column-key='nic_summary' title='{nic_tip}'>{nic_html}</td>"
             f"{fc_cell}"
-            f"<td>{_xe(ram)} GB"
-            f"<div style='font-size:9px;color:var(--text-muted,#64748b)'>{dimm_info}</div></td>"
-            f"<td style='text-align:center'>{_dot_bool(r.get('tpm_ok'), 'TPM OK', 'TPM issue')}</td>"
-            f"<td style='text-align:center' title='{_xe(sec_tip)}'>{sec_jump}</td>"
-            f"<td style='text-align:center'>{_vmd_cell(r.get('vmd_on'))}</td>"
-            f"<td style='text-align:center'>{_xe(gpu_td)}</td>"
+            f"<td data-column-key='ram_gb'>{_xe(ram)} GB"
+            f"<div style='font-size:var(--inv-secondary-size,12px);color:var(--text-muted,#64748b)'>{dimm_info}</div></td>"
+            f"<td data-column-key='tpm' style='text-align:center'>{_dot_bool(r.get('tpm_ok'), 'TPM OK', 'TPM issue')}</td>"
+            f"<td data-column-key='bmc_security' style='text-align:center' title='{_xe(sec_tip)}'>{sec_jump}</td>"
+            f"<td data-column-key='vmd' style='text-align:center'>{_vmd_cell(r.get('vmd_on'))}</td>"
+            f"<td data-column-key='gpu_count' style='text-align:center'>{_xe(gpu_td)}</td>"
             f"</tr>"
         )
     colspan = 13 if has_fc_hbas else 12
@@ -258,7 +265,7 @@ def build_detailed_inventory_html(
     n_hosts = len(rows)
     inv_shown_count = len(render_rows)
     inv_banner = (
-        f"<div style='margin:0.4rem 0;font-size:11px;padding:6px 10px;"
+        f"<div style='margin:0.4rem 0;font-size:var(--inv-secondary-size,12px);padding:6px 10px;"
         f"background:rgba(245,158,11,0.15);border:1px solid #f59e0b;border-radius:4px;color:#f59e0b'>"
         f"⚠️ <strong>Large Fleet Mode ({n_hosts:,} hosts):</strong> Detailed Inventory tables display first {inv_shown_count} hosts. "
         f"All {n_hosts:,} hosts are available in Excel export and in the interactive Web UI.</div>"
@@ -270,25 +277,25 @@ def build_detailed_inventory_html(
     security_html = _build_security_table(render_results, host_tab_offset=host_tab_offset, _pii=_pii, obfuscated=obfuscated)
     ref_modal_html = _build_inventory_reference_modal_html()
 
-    fc_th = '<th title="Fibre Channel Host Bus Adapters detected in system">FC HBA</th>' if has_fc_hbas else ""
+    fc_th = '<th data-column-key="fc_hba" title="Fibre Channel Host Bus Adapters detected in system">FC HBA</th>' if has_fc_hbas else ""
 
     return f"""
 <style>
 .inv-wrap{{padding:0.6rem 0.85rem 1rem;font-family:ui-sans-serif,system-ui,Segoe UI,sans-serif;color:var(--text,#e2e8f0)}}
 .inv-toolbar{{display:flex;flex-wrap:wrap;gap:0.45rem 0.75rem;align-items:center;margin-bottom:0.45rem}}
 .inv-toolbar strong{{font-size:0.95rem;margin-right:0.4rem}}
-.inv-filters{{display:flex;flex-wrap:wrap;gap:0.35rem 0.65rem;align-items:center;font-size:11px}}
-.inv-filters select,.inv-filters input{{font-size:11px;padding:3px 6px;border:1px solid var(--border,#334155);border-radius:4px;background:var(--card,#0f172a);color:var(--text,#e2e8f0)}}
-.inv-btn{{font-size:11px;padding:3px 8px;border:1px solid var(--border,#334155);border-radius:4px;background:var(--card,#1e293b);color:var(--text,#e2e8f0);cursor:pointer;text-decoration:none;transition:background .15s;display:inline-flex;align-items:center}}
+.inv-filters{{display:flex;flex-wrap:wrap;gap:0.35rem 0.65rem;align-items:center;font-size:var(--inv-secondary-size,12px)}}
+.inv-filters select,.inv-filters input{{font-size:var(--inv-secondary-size,12px);padding:3px 6px;border:1px solid var(--border,#334155);border-radius:4px;background:var(--card,#0f172a);color:var(--text,#e2e8f0)}}
+.inv-btn{{font-size:var(--inv-secondary-size,12px);padding:3px 8px;border:1px solid var(--border,#334155);border-radius:4px;background:var(--card,#1e293b);color:var(--text,#e2e8f0);cursor:pointer;text-decoration:none;transition:background .15s;display:inline-flex;align-items:center}}
 .inv-btn:hover{{background:var(--border,#334155)}}
 .inv-seg{{display:inline-flex;gap:0;margin:0.35rem 0 0.5rem}}
-.inv-seg button{{font-size:11px;padding:3px 10px;border:1px solid var(--border,#334155);background:var(--bg,#0f172a);color:var(--text-muted,#94a3b8);cursor:pointer;transition:all .12s}}
+.inv-seg button{{font-size:var(--inv-secondary-size,12px);padding:3px 10px;border:1px solid var(--border,#334155);background:var(--bg,#0f172a);color:var(--text-muted,#94a3b8);cursor:pointer;transition:all .12s}}
 .inv-seg button.active{{background:var(--card,#1e293b);color:var(--text,#f1f5f9);border-color:var(--primary,#3b82f6);font-weight:600}}
 .inv-seg button:first-child{{border-radius:4px 0 0 4px}}
 .inv-seg button:last-child{{border-radius:0 4px 4px 0}}
 .inv-pane{{display:none}}.inv-pane.active{{display:block}}
 .inv-scroll{{overflow:auto;max-height:calc(100vh - 120px);border:1px solid var(--border,#1e293b);border-radius:4px}}
-.inv-table{{border-collapse:collapse;font-size:11px;white-space:nowrap;width:max-content;min-width:100%;line-height:1.25}}
+.inv-table{{border-collapse:collapse;font-size:var(--inv-secondary-size,12px);white-space:nowrap;width:max-content;min-width:100%;line-height:1.25}}
 .inv-table th,.inv-table td{{padding:4px 8px;border:1px solid var(--border,#334155);vertical-align:top;position:relative}}
 .inv-table thead th{{position:sticky;top:0;background:var(--th-bg,#1e293b);color:var(--text,#e2e8f0);z-index:2;font-weight:600;text-align:left}}
 .inv-table td.inv-sticky,.inv-table th.inv-sticky{{position:sticky;left:0;background:var(--bg,#0f172a);z-index:1}}
@@ -318,7 +325,7 @@ def build_detailed_inventory_html(
 [data-theme='light'] .inv-btn:hover{{background:#f1f5f9}}
 [data-theme='light'] .inv-seg button{{background:#f8fafc;color:#64748b;border-color:#cbd5e1}}
 [data-theme='light'] .inv-seg button.active{{background:#ffffff;color:#0f172a;border-color:#2563eb}}
-.inv-count{{font-size:11px;color:var(--text-muted,#94a3b8);margin-left:auto}}
+.inv-count{{font-size:var(--inv-secondary-size,12px);color:var(--text-muted,#94a3b8);margin-left:auto}}
 .inv-row-perc7xx{{background:rgba(220,38,38,0.22) !important;color:#fca5a5}}
 .inv-row-perc7xx:hover{{background:rgba(220,38,38,0.35) !important}}
 [data-theme='light'] .inv-row-perc7xx{{background:#fee2e2 !important;color:#991b1b}}
@@ -349,15 +356,23 @@ def build_detailed_inventory_html(
 [data-theme='light'] .inv-ref-table thead th{{background:#f1f5f9;color:#0f172a}}
 .inv-modal-footer{{padding:0.75rem 1.25rem;border-top:1px solid var(--border,#334155);display:flex;justify-content:flex-end;background:var(--bg-alt,rgba(0,0,0,0.1))}}
 [data-theme='light'] .inv-modal-footer{{border-color:#e2e8f0;background:#f8fafc}}
+{INVENTORY_VIEW_CSS}
 </style>
-<div class="inv-wrap" id="invRoot">
+<div class="inv-wrap" id="invRoot" data-density="comfortable">
   <div class="inv-toolbar">
     <strong>Detailed Inventory</strong>
     {export_buttons}
-    <button type="button" class="inv-btn" onclick="openInvRefModal()" title="Open Detailed Inventory Column Reference Guide">📖 Column Reference</button>
-    <div class="inv-page-controls" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;margin-left:auto">
+    <div class="inv-layout">
+      <details class="inv-columns" id="invColumnsChooser"><summary class="inv-btn">Columns</summary>
+        <div class="inv-column-options" id="invColumnOptions"><p>Choose host comparison columns. Host identity stays visible.</p></div>
+      </details>
+      <label>Density <select id="invDensity"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+      <button type="button" class="inv-btn" data-action="reset-inventory-layout">Reset view</button>
+    </div>
+    <button type="button" class="inv-btn" data-action="open-reference" title="Open Detailed Inventory Column Reference Guide">📖 Column Reference</button>
+    <div class="inv-page-controls" style="display:inline-flex;align-items:center;gap:6px;font-size:var(--inv-secondary-size,12px);margin-left:auto">
       <label style="display:inline-flex;align-items:center;gap:4px">Page size:
-        <select id="invPageSize" style="font-size:11px;padding:2px 6px;border:1px solid var(--border,#334155);border-radius:4px;background:var(--card,#0f172a);color:var(--text,#e2e8f0)">
+        <select id="invPageSize" style="font-size:var(--inv-secondary-size,12px);padding:2px 6px;border:1px solid var(--border,#334155);border-radius:4px;background:var(--card,#0f172a);color:var(--text,#e2e8f0)">
           <option value="25">25</option>
           <option value="50" selected>50</option>
           <option value="100">100</option>
@@ -370,6 +385,9 @@ def build_detailed_inventory_html(
       <span id="invPageWarn" style="display:none;color:#f59e0b;font-weight:600">⚠️ Capped at 500 rows</span>
       <span class="inv-count"><span id="invShown">{inv_shown_count}</span> shown / {n_hosts}</span>
     </div>
+  </div>
+  <div class="report-filter-context" hidden role="status"><span></span>
+    <button type="button" class="inv-btn" data-action="clear-overview">Clear assessment filter</button>
   </div>
   {inv_banner}
   <div class="inv-filters">
@@ -417,30 +435,30 @@ def build_detailed_inventory_html(
     <input type="search" id="invFilter" placeholder="Filter…" style="min-width:140px"/>
   </div>
   <div class="inv-seg">
-    <button type="button" class="active" data-inv-view="hosts" onclick="showInvView('hosts')">Hosts</button>
-    <button type="button" data-inv-view="drives" onclick="showInvView('drives')">Drives</button>
-    <button type="button" data-inv-view="nics" onclick="showInvView('nics')">NICs</button>
-    <button type="button" data-inv-view="bios" onclick="showInvView('bios')">BIOS Settings</button>
-    <button type="button" data-inv-view="health" onclick="showInvView('health')">Health Alarms</button>
-    <button type="button" data-inv-view="security" onclick="showInvView('security')">Security</button>
+    <button type="button" class="active" data-inv-view="hosts" data-action="inventory-view">Hosts</button>
+    <button type="button" data-inv-view="drives" data-action="inventory-view">Drives</button>
+    <button type="button" data-inv-view="nics" data-action="inventory-view">NICs</button>
+    <button type="button" data-inv-view="bios" data-action="inventory-view">BIOS Settings</button>
+    <button type="button" data-inv-view="health" data-action="inventory-view">Health Alarms</button>
+    <button type="button" data-inv-view="security" data-action="inventory-view">Security</button>
   </div>
   <div id="inv-pane-hosts" class="inv-pane active">
     <div class="inv-scroll">
       <table class="inv-table" id="invHostTable">
         <thead><tr>
-          <th class="inv-sticky" title="Host system hostname and BMC IP address (Click to view full host assessment report)">Host</th>
-          <th title="Server hardware manufacturer and chassis model">Model</th>
-          <th title="Processor model and VCF 9.1 CPU architecture compatibility tier">CPU</th>
-          <th title="Installed operating system or hypervisor release and lifecycle support status">Host OS</th>
-          <th title="Direct-attached NVMe storage capacity and hardware pass-through qualification">ESA disks</th>
-          <th title="vSAN ESA ReadyNode profile qualification (ESA-L Large, ESA-M Medium, ESA-S Small) based on NVMe storage, RAM, CPU cores, and 25 GbE+ networking">ESA Tier</th>
-          <th title="Network interface adapters and 25 GbE+ baseline compliance (Down ports highlighted in Red)">NICs</th>
+          <th data-column-key="hostname" class="inv-sticky" title="Host system hostname and BMC IP address (Click to view full host assessment report)">Host</th>
+          <th data-column-key="model" title="Server hardware manufacturer and chassis model">Model</th>
+          <th data-column-key="cpu_model" title="Processor model and VCF 9.1 CPU architecture compatibility tier">CPU</th>
+          <th data-column-key="host_os" data-default-visible="false" title="Installed operating system or hypervisor release and lifecycle support status">Host OS</th>
+          <th data-column-key="esa_disks" title="Direct-attached NVMe storage capacity and hardware pass-through qualification">ESA disks</th>
+          <th data-column-key="esa_tier" title="vSAN ESA ReadyNode profile qualification (ESA-L Large, ESA-M Medium, ESA-S Small) based on NVMe storage, RAM, CPU cores, and 25 GbE+ networking">ESA Tier</th>
+          <th data-column-key="nic_summary" title="Network interface adapters and 25 GbE+ baseline compliance (Down ports highlighted in Red)">NICs</th>
           {fc_th}
-          <th title="Total system RAM capacity, DIMM slot population count, and memory channel interleaving">RAM</th>
-          <th title="Trusted Platform Module 2.0 presence and activation status">TPM</th>
-          <th title="Out-of-band management security posture baseline compliance (Click host for detailed audit)">BMC Sec</th>
-          <th title="Intel Volume Management Device status (must be Disabled for native NVMe passthrough)">VMD</th>
-          <th title="PCIe GPU accelerators detected in system">GPU</th>
+          <th data-column-key="ram_gb" title="Total system RAM capacity, DIMM slot population count, and memory channel interleaving">RAM</th>
+          <th data-column-key="tpm" title="Trusted Platform Module 2.0 presence and activation status">TPM</th>
+          <th data-column-key="bmc_security" title="Out-of-band management security posture baseline compliance (Click host for detailed audit)">BMC Sec</th>
+          <th data-column-key="vmd" title="Intel Volume Management Device status (must be Disabled for native NVMe passthrough)">VMD</th>
+          <th data-column-key="gpu_count" data-default-visible="false" title="PCIe GPU accelerators detected in system">GPU</th>
         </tr></thead>
         <tbody>
 {tbody}
@@ -458,29 +476,8 @@ def build_detailed_inventory_html(
 </div>
 <script>
 (function(){{
-  function openInvRefModal(){{
-    var m = document.getElementById('invRefModal');
-    if (m) {{
-      m.classList.add('open');
-      document.body.style.overflow = 'hidden';
-    }}
-  }}
-  window.openInvRefModal = openInvRefModal;
-
-  function closeInvRefModal(){{
-    var m = document.getElementById('invRefModal');
-    if (m) {{
-      m.classList.remove('open');
-      document.body.style.overflow = '';
-    }}
-  }}
-  window.closeInvRefModal = closeInvRefModal;
-
-  document.addEventListener('keydown', function(e){{
-    if (e.key === 'Escape' || e.keyCode === 27) {{
-      closeInvRefModal();
-    }}
-  }});
+  window.openInvRefModal = function(){{ if(window.VCFReportUI)window.VCFReportUI.openDialog('invRefModal'); }};
+  window.closeInvRefModal = function(){{ if(window.VCFReportUI)window.VCFReportUI.closeDialog(); }};
 
   var _fleetScript = document.getElementById('fleet-inv-data');
   if (_fleetScript) {{
@@ -614,10 +611,10 @@ def build_detailed_inventory_html(
     var sec = (document.getElementById('invSec') || {{}}).value || '';
     var text = ((document.getElementById('invFilter') || {{}}).value || '').toLowerCase();
 
-    hostFilterActive = !!(oem || cpu || esa || ctrl || nic || link || sec || text);
+    hostFilterActive = !!(oem || cpu || esa || ctrl || nic || link || sec || text || (window.VCFReportUI && window.VCFReportUI.hasSelection()));
     var matching = {{}};
     document.querySelectorAll('#invHostTable tbody tr.inv-row').forEach(function(tr){{
-      var ok = true;
+      var ok = !window.VCFReportUI || window.VCFReportUI.matchesHost(tr);
       if (oem && tr.getAttribute('data-oem') !== oem) ok = false;
       if (cpu && tr.getAttribute('data-cpu') !== cpu) ok = false;
       if (sec && tr.getAttribute('data-sec-posture') !== sec) ok = false;
@@ -644,7 +641,7 @@ def build_detailed_inventory_html(
       if (nic && tr.getAttribute('data-nic') !== nic) ok = false;
       if (link === 'down' && tr.getAttribute('data-link') !== 'down') ok = false;
       if (link === 'up' && tr.getAttribute('data-link') !== 'up') ok = false;
-      if (text && (tr.innerText || '').toLowerCase().indexOf(text) < 0) ok = false;
+      if (text && (tr.textContent || '').toLowerCase().indexOf(text) < 0) ok = false;
 
       if (ok) {{
         var idx = tr.getAttribute('data-host-idx') || '';
@@ -796,6 +793,7 @@ def build_detailed_inventory_html(
 
   function showInvView(name){{
     currentInvView = name;
+    window.dispatchEvent(new CustomEvent('vcf-inventory-view', {{detail:name}}));
     document.querySelectorAll('#invRoot .inv-pane').forEach(function(p){{
       p.classList.toggle('active', p.id === 'inv-pane-' + name);
     }});
@@ -822,53 +820,15 @@ def build_detailed_inventory_html(
     pInit.update();
   }}
 
-  function setupTableResizers(rootEl){{
-    (rootEl || document).querySelectorAll('table.inv-table, table.sortable-table').forEach(function(table){{
-      var ths = table.querySelectorAll('thead th');
-      ths.forEach(function(th){{
-        if (th.querySelector('.col-resizer')) return;
-        var resizer = document.createElement('span');
-        resizer.className = 'col-resizer';
-        th.appendChild(resizer);
-
-        var startX, startW;
-        function onMouseDown(e){{
-          e.stopPropagation();
-          e.preventDefault();
-          startX = e.pageX;
-          startW = th.offsetWidth;
-          resizer.classList.add('resizing');
-          document.addEventListener('mousemove', onMouseMove);
-          document.addEventListener('mouseup', onMouseUp);
-        }}
-        function onMouseMove(e){{
-          var diff = e.pageX - startX;
-          var newW = Math.max(30, startW + diff);
-          th.style.width = newW + 'px';
-          th.style.minWidth = newW + 'px';
-        }}
-        function onMouseUp(){{
-          resizer.classList.remove('resizing');
-          document.removeEventListener('mousemove', onMouseMove);
-          document.removeEventListener('mouseup', onMouseUp);
-        }}
-        resizer.addEventListener('mousedown', onMouseDown);
-      }});
-    }});
-  }}
-  window.setupTableResizers = setupTableResizers;
-  if (document.readyState === 'loading') {{
-    document.addEventListener('DOMContentLoaded', function(){{ setupTableResizers(document.getElementById('invRoot')); }});
-  }} else {{
-    setupTableResizers(document.getElementById('invRoot'));
-  }}
-
   var _EMBEDDED_EXCEL_B64 = "{excel_b64}";
   var _EMBEDDED_OBF_ZIP_B64 = "{obf_zip_b64}";
+  var _PUBLIC_EXCEL_B64 = "{public_excel_b64}";
+  var _PUBLIC_REPORT_EXPORT = {str(obfuscated).lower()};
   var _SIBLING_XLSX = "{sibling_xlsx_val}";
   var _SIBLING_OBF_XLSX = "{sibling_obf_xlsx_val}";
 
   window.dlInvExcel = function(obf){{
+    if(_PUBLIC_REPORT_EXPORT)obf=false;
     var b64 = obf ? _EMBEDDED_OBF_ZIP_B64 : _EMBEDDED_EXCEL_B64;
     var filename = obf ? 'inventory_obfuscated.zip' : '{inv_dl_filename}';
     var mime = obf ? 'application/zip' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -893,7 +853,7 @@ def build_detailed_inventory_html(
       }}
     }}
 
-    var sib = obf ? (_SIBLING_OBF_XLSX || _SIBLING_XLSX) : _SIBLING_XLSX;
+    var sib = (_PUBLIC_REPORT_EXPORT || obf) ? _SIBLING_OBF_XLSX : _SIBLING_XLSX;
     if (sib) {{
       var a = document.createElement('a');
       a.href = sib;
@@ -904,6 +864,10 @@ def build_detailed_inventory_html(
       return;
     }}
 
+    if (_PUBLIC_REPORT_EXPORT) {{
+      alert('Obfuscated workbook is not embedded. Use the obfuscated workbook supplied with this report.');
+      return;
+    }}
     if (location.protocol === 'file:') {{
       alert('Export payload is not available in offline file mode without sibling .xlsx.');
       return;
@@ -930,4 +894,5 @@ def build_detailed_inventory_html(
   }};
 }})();
 </script>
+{INVENTORY_VIEW_JS}
 """

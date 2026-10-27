@@ -66,6 +66,7 @@ from vcf_hci.collector.pci_utils import (
     pcie_has_fc_candidates,
 )
 from vcf_hci.constants import is_generic_name, normalize_component_manufacturer
+from vcf_hci.fc_inventory import normalize_fc_ports
 from vcf_hci.logging_utils import get_nested
 
 _STORAGE_ARRAY_OUI_TABLE = [
@@ -104,6 +105,53 @@ _STORAGE_ARRAY_OUI_TABLE = [
     (re.compile(r"^(?:10:00:00:05:33|10:00:00:05:1e|10:00:50:eb|20:00:00:05:33|20:00:00:2a)", re.I), "Brocade / Broadcom", "Fibre Channel SAN Switch"),
     (re.compile(r"^(?:50:00:0c|20:00:00:0d|20:00:00:de)", re.I), "Cisco", "MDS SAN Switch"),
 ]
+
+
+def linked_adapter_ports(collector, adapter):
+    """Recover ports through explicit links only, bounded to 32 requests/resources."""
+    pending = [adapter]
+    seen = set()
+    ports = []
+    remaining = 32
+    while pending and remaining > 0:
+        resource = pending.pop(0)
+        if not isinstance(resource, dict):
+            continue
+        if resource.get("error"):
+            continue
+        links = resource.get("Links") or {}
+        containers = [resource, links]
+        for controller in resource.get("Controllers") or []:
+            if isinstance(controller, dict):
+                containers.append(controller.get("Links") or {})
+        for container in containers:
+            for field in ("NetworkAdapter", "NetworkPorts", "Ports"):
+                values = container.get(field)
+                if isinstance(values, dict):
+                    values = values.get("Members") or [values]
+                if not isinstance(values, list):
+                    continue
+                for value in values:
+                    if remaining <= 0:
+                        break
+                    if not isinstance(value, dict):
+                        continue
+                    uri = value.get("@odata.id")
+                    if uri and uri in seen:
+                        continue
+                    remaining -= 1
+                    if uri:
+                        seen.add(uri)
+                    payload = collector._get(uri, timeout=5, critical=False) if uri and len(value) <= 2 else value
+                    if not isinstance(payload, dict) or payload.get("error"):
+                        continue
+                    if field == "NetworkAdapter":
+                        pending.append(payload)
+                    elif isinstance(payload.get("Members"), list):
+                        pending.append({"Ports": payload["Members"]})
+                    else:
+                        ports.append(payload)
+    return ports
 
 
 def _is_valid_wwpn(val: Optional[str]) -> bool:
@@ -1223,6 +1271,11 @@ class _NetworkMixin(_CollectorBase):
                             or bool(re.search(r"\bFC\.", str(uid)))
                             or bool(re.search(r"\bFC\.", str(adapter.get("Id", ""))))
                             or bool(adapter.get("FcPorts"))
+                            or str(adapter.get("PortType") or "").lower() == "fibrechannel"
+                            or any(
+                                set(controller.get("ControllerCapabilities", {}).get("NetworkDeviceFunctionTypes") or []) == {"FibreChannel"}
+                                for controller in adapter.get("Controllers") or [] if isinstance(controller, dict)
+                            )
                         )
                     )
                     if is_pure_fc:
@@ -1262,9 +1315,14 @@ class _NetworkMixin(_CollectorBase):
                         )
                         port_members = self._get_members(ports_uri)
 
+                    if not port_members:
+                        port_members = linked_adapter_ports(self, adapter)
+
                     if port_members:
                         def _fetch_port(pm):
                             port_uri = pm.get("@odata.id") if isinstance(pm, dict) else (pm if isinstance(pm, str) else None)
+                            if isinstance(pm, dict) and len(pm) > 2:
+                                return pm
                             return self._get(port_uri) if port_uri else (pm if isinstance(pm, dict) else None)
 
                         port_jsons = []
@@ -1938,8 +1996,6 @@ class _NetworkMixin(_CollectorBase):
             endpoints.append(f"{self.sys_uri}/NetworkInterfaces")
             endpoints.append(f"{self.sys_uri}/BaseNetworkAdapters")
 
-        seen_wwpns: set = set()
-
         for ep in endpoints:
             coll = None
             if hasattr(self, "_request_cache") and isinstance(self._request_cache, dict):
@@ -2141,8 +2197,8 @@ class _NetworkMixin(_CollectorBase):
                     ).upper()
                     is_pure_fc_proto = ("FIBRE" in proto or "FC" in proto) and not ("ETHERNET" in proto or "FCOE" in proto)
                     raw_wwpn = (
-                        port.get("WWN")
-                        or port.get("WWPN")
+                        port.get("WWPN")
+                        or port.get("WWN")
                     )
                     if not raw_wwpn:
                         for addr in (port.get("AssociatedNetworkAddresses") or []):
@@ -2214,12 +2270,14 @@ class _NetworkMixin(_CollectorBase):
                                         fc_link[k] = v
 
                         port_entries.append({
+                            "adapter_id":        adapter.get("Id") or str(adapter.get("@odata.id") or "").rstrip("/").rsplit("/", 1)[-1],
                             "adapter_name":      resolved_hba_name,
                             "manufacturer":      normalize_component_manufacturer(
                                 adapter.get("Manufacturer", "Unknown")
                             ),
                             "firmware_version":  adapter_fw,
                             "vendor_class":      vendor_class,
+                            "physical_port_id":  port.get("Id") or str(port.get("@odata.id") or "").rstrip("/").rsplit("/", 1)[-1],
                             "port_id":           port.get("Id", "Unknown"),
                             "wwpn":              str(raw_wwpn) if raw_wwpn else "N/A",
                             "wwnn":              "",
@@ -2377,18 +2435,22 @@ class _NetworkMixin(_CollectorBase):
                     matched = False
                     for pe in port_entries:
                         if fn_wwpn and pe["wwpn"] == fn_wwpn:
+                            if pe.get("speed_gbps") in (None, "", "N/A", 0):
+                                pe["speed_gbps"] = fn_speed
                             pe["wwnn"] = fn_wwnn
                             pe["boot_targets"] = boot_targets
                             matched = True
                             break
                     if not matched and (fn_wwpn or fn_wwnn):
                         port_entries.append({
+                            "adapter_id":        adapter.get("Id") or str(adapter.get("@odata.id") or "").rstrip("/").rsplit("/", 1)[-1],
                             "adapter_name":      resolved_hba_name,
                             "manufacturer":      normalize_component_manufacturer(
                                 adapter.get("Manufacturer", "Unknown")
                             ),
                             "firmware_version":  adapter_fw,
                             "vendor_class":      vendor_class,
+                            "physical_port_id":  (matched_p or {}).get("Id") or str((matched_p or {}).get("@odata.id") or "").rstrip("/").rsplit("/", 1)[-1],
                             "port_id":           fn.get("Id", "Unknown"),
                             "wwpn":              fn_wwpn or "N/A",
                             "wwnn":              fn_wwnn,
@@ -2472,19 +2534,9 @@ class _NetworkMixin(_CollectorBase):
                         "cna_fc_driver": "",
                     })
 
-                for entry in port_entries:
-                    w = entry.get("wwpn", "")
-                    if _is_valid_wwpn(w):
-                        if w not in seen_wwpns:
-                            seen_wwpns.add(w)
-                            hbas.append(entry)
-                    elif entry.get("adapter_name"):
-                        ad_key = f"{entry.get('adapter_name')}_{entry.get('port_id')}"
-                        if ad_key not in seen_wwpns:
-                            seen_wwpns.add(ad_key)
-                            hbas.append(entry)
+                hbas.extend(port_entries)
 
-        return hbas
+        return normalize_fc_ports(hbas)
 
 
     def collect_lldp_neighbors(self) -> list:

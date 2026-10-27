@@ -11,13 +11,21 @@ __all__ = [
 def _build_inventory_reference_modal_html() -> str:
     """Build self-contained in-page modal dialog containing the Detailed Inventory Column Reference."""
     return """
-<div id="invRefModal" class="inv-modal-backdrop" onclick="if(event.target===this)closeInvRefModal()">
+<div id="invRefModal" class="inv-modal-backdrop" data-action="dialog-backdrop">
   <div class="inv-modal-card" role="dialog" aria-modal="true" aria-labelledby="invRefModalTitle">
     <div class="inv-modal-header">
       <h3 id="invRefModalTitle">📖 Detailed Inventory Column Reference</h3>
-      <button type="button" class="inv-modal-close" onclick="closeInvRefModal()" aria-label="Close modal">✕</button>
+      <button type="button" class="inv-modal-close" data-action="close-reference" aria-label="Close modal">✕</button>
     </div>
     <div class="inv-modal-body">
+      <h4>Readability and view controls</h4>
+      <p>Comfortable density is the default. Compact reduces row spacing while keeping labels readable.
+      Columns changes only the Hosts comparison view; host identity stays visible. Reset view restores the
+      default density, columns and widths while retaining filters and the selected view.</p>
+      <p>Layout choices may be remembered in this browser. Exported Excel, CSV and obfuscated data retain
+      all fields regardless of hidden columns. Use Expand evidence before searching long supporting sections.</p>
+      <p>Downloaded obfuscated HTML excludes the private obfuscation key. Its workbook contains obfuscated
+      identifiers; sidecar copies use the accompanying obfuscated workbook. Keep original private key exports separate.</p>
       <h4>1. Hosts Tab (SE Decision Matrix)</h4>
       <p>Summarizes physical compute, storage qualification, network readiness, memory interleaving, and platform security for each host.</p>
       <table class="inv-ref-table">
@@ -131,7 +139,7 @@ def _build_inventory_reference_modal_html() -> str:
       </ul>
     </div>
     <div class="inv-modal-footer">
-      <button type="button" class="inv-btn" onclick="closeInvRefModal()">Close</button>
+      <button type="button" class="inv-btn" data-action="close-reference">Close</button>
     </div>
   </div>
 </div>

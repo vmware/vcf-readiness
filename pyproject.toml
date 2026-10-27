@@ -40,7 +40,7 @@ Homepage = "https://github.com/vmware/vcf-readiness"
 Documentation = "https://github.com/vmware/vcf-readiness/blob/main/docs/"
 
 [project.optional-dependencies]
-dev = ["build>=1.2", "pytest>=7.0", "pytest-cov>=4.0", "pytest-xdist>=3.5", "ruff>=0.6", "ty==0.0.79"]
+dev = ["build==1.2.2.post1", "coverage==7.10.7", 'pytest==8.4.2; python_version < "3.10"', 'pytest==9.1.1; python_version >= "3.10"', "pytest-cov==6.3.0", "ruff==0.16.6", "ty==0.0.79"]
 crypto = ["pycryptodomex>=3.20.0"]
 
 [tool.ruff]
@@ -147,8 +147,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-q --tb=line --no-header -rfE"
+addopts = "-q --tb=line --no-header -rfEs --strict-markers --strict-config"
 markers = [
+    "nightly: optional extended replay library acceptance",
+    "crypto: requires the real optional AES implementation",
     "replay: marks tests as offline replay tests using recorded Redfish dumps (deselect with '-m \"not replay\"')",
     "live: marks tests requiring live BMC network access (deselect with '-m \"not live\"')",
     "dell: marks tests for Dell PowerEdge platforms",

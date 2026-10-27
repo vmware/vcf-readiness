@@ -13,6 +13,7 @@ from vcf_hci.hcl import evaluate_drive_hcl_tier, load_optional_vsan_csv, load_vs
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h
+from vcf_hci.report.overview import build_fleet_overview_html, fleet_overview_groups
 from vcf_hci.report.styles import FLEET_EXTRA_CSS
 from vcf_hci.report.switch_topology import build_fleet_switch_topology
 from vcf_hci.security.scoring import aggregate_fleet_security
@@ -79,7 +80,6 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
                         fleet_nvme_tb += d_cap / 1024
     fleet_nvme_tb = round(fleet_nvme_tb, 2)
     fleet_ram_tb = round(fleet_ram_gb / 1024.0, 2)
-    fleet_vcpu = fleet_cores
 
     # ── Tile 2: BIOS Status ───────────────────────────────────────────────────
     bios_outdated = bios_update_avail = bios_no_baseline = 0
@@ -135,16 +135,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
                 _gpu_other[_model_key] = _gpu_other.get(_model_key, 0) + 1
 
     # ── Tile 4: VCF Support Tier ──────────────────────────────────────────────
-    vcf_supported = vcf_deprecated = vcf_unsupported = 0
-    for data in all_results:
-        v = ((data.get("system") or {}).get("cpu_summary") or {}).get("verdict", "")
-        if "Unsupported" in v:
-            vcf_unsupported += 1
-        elif "Deprecated" in v:
-            vcf_deprecated += 1
-        else:
-            vcf_supported += 1
-
+    overview_groups = fleet_overview_groups(all_results)
     # ── Tile 5: TPM Compliance ────────────────────────────────────────────────
     tpm_ok = sum(1 for data in all_results
                  if "success" in (data.get("system") or {}).get("tpm_status_badge", ""))
@@ -375,16 +366,16 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
 
     # BIOS tile HTML
     if bios_outdated + bios_update_avail == 0:
-        bios_html = "<div style='color:#16a34a;font-weight:600'>&#10003; All hosts with baselines are current</div>"
+        bios_html = "<div style='color:var(--success);font-weight:600'>&#10003; All hosts with baselines are current</div>"
         if bios_no_baseline:
             bios_html += (f"<div style='color:#64748b;font-size:.82rem;margin-top:.4rem'>"
                           f"&#8505; {bios_no_baseline} host(s) \u2014 no baseline on file</div>")
     else:
         bios_parts = []
         if bios_outdated:
-            bios_parts.append(f"<div style='color:#dc2626;font-weight:600'>&#128308; {bios_outdated} host(s) \u2014 Outdated</div>")
+            bios_parts.append(f"<div style='color:var(--danger);font-weight:600'>&#10007; {bios_outdated} host(s) \u2014 Outdated</div>")
         if bios_update_avail:
-            bios_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {bios_update_avail} host(s) \u2014 Update Available</div>")
+            bios_parts.append(f"<div style='color:var(--warning);font-weight:600'>&#9650; {bios_update_avail} host(s) \u2014 Update Available</div>")
         if bios_no_baseline:
             bios_parts.append(f"<div style='color:#64748b;font-size:.82rem'>&#8505; {bios_no_baseline} \u2014 No Baseline on File</div>")
         bios_html = "".join(bios_parts)
@@ -466,24 +457,11 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             f"{gpu_fp_rows}"
         )
 
-    # VCF support tier tile HTML
-    vcf_tier_parts = []
-    if vcf_supported:
-        vcf_tier_parts.append(f"<div style='color:#16a34a;font-weight:600'>&#128994; {vcf_supported} \u2014 Fully Supported</div>")
-    if vcf_deprecated:
-        vcf_tier_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {vcf_deprecated} \u2014 Deprecated Mode</div>")
-    if vcf_unsupported:
-        vcf_tier_parts.append(f"<div style='color:#dc2626;font-weight:600'>&#128308; {vcf_unsupported} \u2014 Unsupported for VCF 9.x</div>")
-    vcf_tier_html = "".join(vcf_tier_parts) or "<div style='color:#94a3b8'>No data</div>"
-
-    # TPM tile HTML
+    # Preserve the existing readiness count; installation alone is not readiness.
     tpm_pct = round(tpm_ok / host_count * 100) if host_count else 0
-    tpm_color = "#16a34a" if tpm_pct == 100 else ("#ca8a04" if tpm_pct >= 50 else "#dc2626")
-    tpm_html = (
-        f"<div style='font-size:1.5rem;font-weight:700;color:{tpm_color}'>{tpm_ok}/{host_count}</div>"
-        f"<div style='color:#64748b;font-size:.82rem'>{tpm_pct}% compliant \u2014 VCF 9.1 requires TPM 2.0</div>"
-        f"<div style='height:8px;background:#e2e8f0;border-radius:4px;margin-top:.6rem'>"
-        f"<div style='height:8px;width:{tpm_pct}%;background:{tpm_color};border-radius:4px'></div></div>"
+    tpm_line = (
+        f'<div class="fleet-tpm-summary"><span>TPM 2.0 ready (fleet)</span>'
+        f'<strong>{tpm_ok}/{host_count} <span>({tpm_pct}%)</span></strong></div>'
     )
 
     # NIC tile HTML
@@ -497,14 +475,14 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     # Power Health tile HTML (PSU redundancy + live power consumption)
     psu_parts = []
     if psu_redundant:
-        psu_parts.append(f"<div style='color:#16a34a;font-weight:600'>&#128994; {psu_redundant} redundant</div>")
+        psu_parts.append(f"<div style='color:var(--success);font-weight:600'>&#10003; {psu_redundant} redundant</div>")
     if psu_single:
-        psu_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {psu_single} single PSU (no redundancy)</div>")
+        psu_parts.append(f"<div style='color:var(--warning);font-weight:600'>&#9650; {psu_single} single PSU (no redundancy)</div>")
     if psu_unknown:
         psu_parts.append(f"<div style='color:#64748b'>&#8505; {psu_unknown} unknown</div>")
     if psu_capped:
         psu_parts.append(
-            f"<div style='color:#ca8a04;font-weight:600'>"
+            f"<div style='color:var(--warning);font-weight:600'>"
             f"&#9888; {psu_capped} power cap enforced "
             f"<span style='font-weight:400'>(BIOS/BMC power limit — vSAN throttle risk)</span></div>"
         )
@@ -537,18 +515,18 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     # vSAN tile HTML (includes VMD status sub-section)
     vsan_parts = []
     if vsan_esa:
-        vsan_parts.append(f"<div style='color:#16a34a;font-weight:600'>&#128994; {vsan_esa} \u2014 ESA Ready (\u22652 NVMe + 10/25 GbE)</div>")
+        vsan_parts.append(f"<div style='color:var(--success);font-weight:600'>&#10003; {vsan_esa} \u2014 ESA Ready (\u22652 NVMe + 10/25 GbE)</div>")
     if vsan_osa:
-        vsan_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {vsan_osa} \u2014 OSA / Needs NIC Upgrade</div>")
+        vsan_parts.append(f"<div style='color:var(--warning);font-weight:600'>&#9650; {vsan_osa} \u2014 OSA / Needs NIC Upgrade</div>")
     if vsan_none:
-        vsan_parts.append(f"<div style='color:#dc2626;font-weight:600'>&#128308; {vsan_none} \u2014 Needs Attention</div>")
+        vsan_parts.append(f"<div style='color:var(--danger);font-weight:600'>&#10007; {vsan_none} \u2014 Needs Attention</div>")
     # VMD sub-section merged here
     vsan_parts.append("<hr style='border:none;border-top:1px solid var(--border,#e2e8f0);margin:.5rem 0'>")
     if vmd_on == 0:
         vsan_parts.append("<div style='color:#16a34a;font-size:.82rem;font-weight:600'>&#10003; Intel VMD: disabled on all hosts</div>")
     else:
         vsan_parts.append(
-            f"<div style='color:#dc2626;font-size:.82rem;font-weight:600'>&#128308; Intel VMD: {vmd_on} host(s) \u2014 enabled</div>"
+            f"<div style='color:#dc2626;font-size:.82rem;font-weight:600'>&#10007; Intel VMD: {vmd_on} host(s) \u2014 enabled</div>"
             f"<div style='color:#64748b;font-size:.79rem;margin-top:.2rem'>"
             f"Must be disabled in BIOS for native NVMe pass-through</div>"
         )
@@ -556,24 +534,24 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
 
     # Drive endurance tile HTML
     if drives_critical == 0 and drives_watch == 0:
-        endurance_html = "<div style='color:#16a34a;font-weight:600'>&#10003; All drives within healthy range</div>"
+        endurance_html = "<div style='color:var(--success);font-weight:600'>&#10003; All drives within healthy range</div>"
     else:
         end_parts = []
         if drives_critical:
-            end_parts.append(f"<div style='color:#dc2626;font-weight:600'>&#128308; {drives_critical} drive(s) \u2014 Critical (&lt;20% life)</div>")
+            end_parts.append(f"<div style='color:var(--danger);font-weight:600'>&#10007; {drives_critical} drive(s) \u2014 Critical (&lt;20% life)</div>")
         if drives_watch:
-            end_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {drives_watch} drive(s) \u2014 Watch (20\u201350% remaining)</div>")
+            end_parts.append(f"<div style='color:var(--warning);font-weight:600'>&#9650; {drives_watch} drive(s) \u2014 Watch (20\u201350% remaining)</div>")
         endurance_html = "".join(end_parts)
 
     # SEL tile HTML
     if sel_critical_hosts == 0 and sel_warning_hosts == 0:
-        sel_tile_html = "<div style='color:#16a34a;font-weight:600'>&#10003; No active SEL alarms across fleet</div>"
+        sel_tile_html = "<div style='color:var(--success);font-weight:600'>&#10003; No active SEL alarms across fleet</div>"
     else:
         sel_parts = []
         if sel_critical_hosts:
-            sel_parts.append(f"<div style='color:#dc2626;font-weight:600'>&#128308; {sel_critical_hosts} host(s) \u2014 Critical alarms</div>")
+            sel_parts.append(f"<div style='color:var(--danger);font-weight:600'>&#10007; {sel_critical_hosts} host(s) \u2014 Critical alarms</div>")
         if sel_warning_hosts:
-            sel_parts.append(f"<div style='color:#ca8a04;font-weight:600'>&#128993; {sel_warning_hosts} host(s) \u2014 Warning alarms</div>")
+            sel_parts.append(f"<div style='color:var(--warning);font-weight:600'>&#9650; {sel_warning_hosts} host(s) \u2014 Warning alarms</div>")
         sel_tile_html = "".join(sel_parts)
 
     # Memory distribution tile HTML
@@ -614,19 +592,19 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     _os_tile_parts = []
     if os_esxi9:
         _os_tile_parts.append(
-            f"<div style='color:#16a34a;font-weight:600'>&#128994; {os_esxi9} &mdash; ESXi 9.x (VCF 9.1 Ready)</div>"
+            f"<div style='color:var(--success);font-weight:600'>&#10003; {os_esxi9} &mdash; ESXi 9.x (VCF 9.1 Ready)</div>"
         )
     if os_esxi8:
         _os_tile_parts.append(
-            f"<div style='color:#ca8a04;font-weight:600'>&#128993; {os_esxi8} &mdash; ESXi 8.x (Upgrade path to 9.1)</div>"
+            f"<div style='color:var(--warning);font-weight:600'>&#9650; {os_esxi8} &mdash; ESXi 8.x (Upgrade path to 9.1)</div>"
         )
     if os_esxi7:
         _os_tile_parts.append(
-            f"<div style='color:#dc2626;font-weight:600'>&#128308; {os_esxi7} &mdash; ESXi 7.x <span style='font-weight:400'>(EOL Apr 2025)</span></div>"
+            f"<div style='color:var(--danger);font-weight:600'>&#10007; {os_esxi7} &mdash; ESXi 7.x <span style='font-weight:400'>(EOL Apr 2025)</span></div>"
         )
     if os_esxi6:
         _os_tile_parts.append(
-            f"<div style='color:#dc2626;font-weight:600'>&#128308; {os_esxi6} &mdash; ESXi 6.x <span style='font-weight:400'>(EOL)</span></div>"
+            f"<div style='color:var(--danger);font-weight:600'>&#10007; {os_esxi6} &mdash; ESXi 6.x <span style='font-weight:400'>(EOL)</span></div>"
         )
     if os_win:
         _os_tile_parts.append(f"<div style='color:var(--primary,#60a5fa);font-weight:600'>&#128250; {os_win} &mdash; Windows Server</div>")
@@ -727,15 +705,15 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         sec_parts = []
         if sec_agg["baseline_met_hosts"]:
             sec_parts.append(
-                f"<div style='color:#16a34a;font-weight:600'>&#128994; {sec_agg['baseline_met_hosts']} host(s) &mdash; Baseline Met</div>"
+                f"<div style='color:var(--success);font-weight:600'>&#10003; {sec_agg['baseline_met_hosts']} host(s) &mdash; Baseline Met</div>"
             )
         if sec_agg["partially_assessed_hosts"]:
             sec_parts.append(
-                f"<div style='color:#ca8a04;font-weight:600'>&#128993; {sec_agg['partially_assessed_hosts']} host(s) &mdash; Partially Assessed</div>"
+                f"<div style='color:var(--warning);font-weight:600'>&#9650; {sec_agg['partially_assessed_hosts']} host(s) &mdash; Partially Assessed</div>"
             )
         if sec_agg["action_required_hosts"]:
             sec_parts.append(
-                f"<div style='color:#dc2626;font-weight:600'>&#128308; {sec_agg['action_required_hosts']} host(s) &mdash; Action Required</div>"
+                f"<div style='color:var(--danger);font-weight:600'>&#10007; {sec_agg['action_required_hosts']} host(s) &mdash; Action suggested</div>"
             )
         if sec_agg["not_assessed_hosts"]:
             sec_parts.append(
@@ -770,6 +748,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             <a href="#" class="btn-link" onclick="if(window.showTab){{showTab(1);var fn=window.showInvView||window.showInvTab;if(fn){{fn('security');}}}}return false;" style="font-size:.78rem;text-decoration:none" title="Jump to Detailed Security Inventory">Details &rarr;</a>
           </div>
           {sec_summary_counts}
+          {tpm_line}
           <div style="margin-top:.45rem;font-size:.82rem">
             {"".join(sec_parts)}
           </div>
@@ -779,28 +758,16 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         </div>
         """
     else:
-        sec_tile_html = ""
+        # Keep TPM evidence visible even when no BMC assessment is available.
+        sec_tile_html = f'<div class="tile"><h3>TPM 2.0 Readiness</h3>{tpm_line}</div>'
 
     _tile_css = FLEET_EXTRA_CSS
 
     if host_count >= 4:
-        host_count_badge = (
-            f'<span style="background:rgba(22,163,74,.15);color:var(--success,#16a34a);'
-            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600;'
-            f'border:1px solid rgba(22,163,74,.3)">'
-            f'&#10003; Node Minimum Met ({host_count} hosts &ge; 4)</span>'
-        )
         host_count_note = f'<span style="color:var(--success,#16a34a);font-weight:500">&#10003; Node minimum met ({host_count} hosts &ge; 4)</span>'
     elif host_count > 0:
-        host_count_badge = (
-            f'<span style="background:rgba(217,119,6,.15);color:var(--warning,#ca8a04);'
-            f'padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600;'
-            f'border:1px solid rgba(217,119,6,.3)">'
-            f'⚠️ Requires &ge;4 hosts ({host_count} scanned)</span>'
-        )
         host_count_note = f'<span style="color:var(--warning,#ca8a04);font-weight:600">⚠️ VCF mgmt domain requires &ge;4 hosts ({host_count} scanned)</span>'
     else:
-        host_count_badge = '<span style="color:var(--text-muted,#64748b);font-size:.72rem">No hosts</span>'
         host_count_note = '<span style="color:var(--text-muted,#64748b)">0 hosts scanned</span>'
 
     # ── JS (Hosts | Network Topology | Fibre Channel pane switcher) ──
@@ -834,33 +801,21 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         "});\n"
     )
 
-    return f"""<style>{_tile_css}</style>
-<div class="tile-grid">
-
-  <!-- Tile 1: Fleet Aggregate Raw Resources -->
-  <div class="tile tile-wide">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:.65rem">
-      <div>
-        <h3 class="tile-title-primary" style="margin:0 0 .2rem">Fleet Aggregate Raw Resources</h3>
-        <div style="font-size:.76rem;color:var(--text-muted,#64748b)">
-          Total unreserved physical capacity across all scanned inventory hosts &middot; {host_count_note}
-        </div>
-      </div>
-      <div style="display:flex;gap:.75rem;font-size:.78rem;align-items:center;padding-top:.1rem">
-        <a href="{VCF_PLANNING_WORKBOOK_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600" title="Official Broadcom VCF Planning and Preparation Workbook">📋 Planning Workbook &#x2197;</a>
-        <a href="{VCF_SIZER_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600" title="Official Broadcom VCF / vSAN Sizer">🧮 VCF Sizer &#x2197;</a>
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.65rem;margin:.5rem 0 .75rem">
+    overview_html = build_fleet_overview_html(all_results, groups=overview_groups)
+    resources_html = f"""<!-- Fleet Aggregate Raw Resources -->
+  <section class="fleet-resource-section" aria-labelledby="fleet-resource-title">
+    <h2 id="fleet-resource-title">Fleet Aggregate Raw Resources</h2>
+    <p>Unreserved physical capacity &middot; {host_count_note}</p>
+    <div class="tile fleet-resource-summary">
+    <div class="fleet-resource-metrics">
       <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
         <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Node Count</div>
         <div class="resource-metric-val" style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{host_count} <span class="resource-metric-unit" style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Nodes</span></div>
-        <div style="margin-top:.35rem">{host_count_badge}</div>
       </div>
       <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
         <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Physical Compute</div>
         <div class="resource-metric-val" style="font-size:1.25rem;font-weight:700;color:var(--text,#1e293b);line-height:1.2">{fleet_cores} <span class="resource-metric-unit" style="font-size:.82rem;font-weight:500;color:var(--text-muted,#64748b)">Cores</span></div>
-        <div class="resource-metric-sub" style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_sockets} CPU socket(s) ({fleet_cores} vCPU)</div>
+        <div class="resource-metric-sub" style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">{fleet_sockets} CPU socket(s)</div>
       </div>
       <div class="resource-metric-card" style="background:var(--card-subtle,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.65rem .75rem">
         <div class="resource-metric-label" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#64748b);font-weight:600;margin-bottom:.25rem">Physical Memory</div>
@@ -873,48 +828,29 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
         <div class="resource-metric-sub" style="font-size:.75rem;color:var(--text-muted,#64748b);margin-top:.35rem">Direct-attached raw storage</div>
       </div>
     </div>
-    <div class="resource-guidance-box" style="background:var(--bg-subtle,rgba(241,245,249,.6));border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:.6rem .8rem;font-size:.76rem;line-height:1.45;color:var(--text-muted,#475569)">
-      <div style="font-weight:600;color:var(--text,#1e293b);margin-bottom:.2rem;display:flex;align-items:center;gap:.35rem">
-        <span>📐 Sizing &amp; Failure Domain Guidance</span>
-      </div>
-      <div>
-        Raw totals represent unreserved physical hardware capacity across all scanned hosts. These aggregates do <strong>not</strong> deduct N+1 / N+2 host failover reserves, vSAN ESA RAID parity, metadata slack space (20&ndash;30%), ESXi system overhead, or workload vCPU overcommit ratios.
-        Use the official <a href="{VCF_PLANNING_WORKBOOK_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600">Broadcom Planning &amp; Preparation Workbook &#x2197;</a> and <a href="{VCF_SIZER_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#2563eb);text-decoration:none;font-weight:600">VCF Sizer &#x2197;</a> to validate usable workload capacity, HA failover headroom, and cluster sizing for your target deployment model.
-      </div>
+    <aside class="fleet-sizing-note" aria-label="Capacity sizing guidance">
+      <p>Raw capacity &mdash; before HA reserves and storage overhead.</p>
+      <details data-report-evidence="supporting">
+        <summary>📐 Sizing assumptions</summary>
+        <p>Totals exclude N+1 / N+2 failover reserves, vSAN ESA RAID parity,
+        metadata slack (20&ndash;30%), ESXi overhead and workload vCPU overcommit.
+        Validate usable capacity and failure domains with the Planning Workbook and VCF Sizer.</p>
+      </details>
+    </aside>
+    <div class="fleet-resource-links">
+      <a href="{VCF_PLANNING_WORKBOOK_URL}" target="_blank" rel="noopener noreferrer">📋 Planning Workbook &#x2197;</a>
+      <a href="{VCF_SIZER_URL}" target="_blank" rel="noopener noreferrer">🧮 VCF Sizer &#x2197;</a>
     </div>
-  </div>
-
-  <!-- Tile 2: BIOS Status -->
-  <div class="tile">
-    <h3>BIOS Firmware Status</h3>
-    {bios_html}
-  </div>
-
-  <!-- Tile 3: CPU Fleet Fingerprint -->
-  <div class="tile">
-    <h3>CPU Fleet Fingerprint</h3>
-    {fp_rows}
-  </div>
-
-  <!-- Tile 3b: GPU Fleet Fingerprint -->
-  <div class="tile">
-    <h3>GPU Fleet Fingerprint</h3>
-    {gpu_fp_html}
-  </div>
-
-  <!-- Tile 4: VCF CPU Support Tier -->
-  <div class="tile">
-    <h3>VCF 9.1 CPU Support Tier</h3>
-    {vcf_tier_html}
-  </div>
+    </div>
+  </section>"""
+    return f"""<style>{_tile_css}</style>
+<div class="fleet-leading-grid">
+  {resources_html}
+  <div class="fleet-leading-assessment">{overview_html}</div>
+</div>
+<div class="fleet-status-grid">
 
   {os_tile_html}
-
-  <!-- Tile 5: TPM 2.0 Compliance -->
-  <div class="tile">
-    <h3>TPM 2.0 Compliance</h3>
-    {tpm_html}
-  </div>
 
   <!-- Tile 6: NIC Speed Tier -->
   <div class="tile">
@@ -927,6 +863,16 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     <h3>Power Health</h3>
     {psu_tile_html}
   </div>
+
+</div>
+<div class="fleet-status-grid fleet-status-secondary">
+  {sec_tile_html}
+  <div class="tile">
+    <h3>BIOS Firmware Status</h3>
+    {bios_html}
+  </div>
+</div>
+<div class="tile-grid">
 
   <!-- Tile 8: vSAN Distribution -->
   <div class="tile">
@@ -954,14 +900,25 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
 
   {switch_tile_html}
 
-  <!-- Tile 15: BMC Security Posture -->
-  {sec_tile_html}
 
   <!-- Tile 13: Hardware Fault Roster -->
   <div class="tile tile-full">
     <h3>Hardware Fault Roster (DIMMs &middot; PSUs &middot; Fans &middot; Drives)</h3>
     {fault_tile_html}
   </div>
+
+  <!-- Tile 3: CPU Fleet Fingerprint -->
+  <div class="tile">
+    <h3>CPU Fleet Fingerprint</h3>
+    {fp_rows}
+  </div>
+
+  <!-- Tile 3b: GPU Fleet Fingerprint -->
+  <div class="tile">
+    <h3>GPU Fleet Fingerprint</h3>
+    {gpu_fp_html}
+  </div>
+
 
 </div>
 <script>{_js}</script>"""

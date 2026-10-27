@@ -16,6 +16,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from vcf_hci.constants import TOOL_VERSION
+from vcf_hci.fc_inventory import fc_adapter_key, normalize_fc_ports
 from vcf_hci.security.redaction import (
     obfuscate_security_data,
     redact_security_findings,
@@ -282,7 +283,15 @@ def obfuscate_host_data(
             desc = re.sub(r'([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}', lambda m: mac(salt, m.group(0)), desc)
             desc = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', lambda m: ip_tok(salt, m.group(0)), desc)
             n["system_desc"] = desc
+    if d.get("fc_hbas"):
+        d["fc_hbas"] = normalize_fc_ports(d["fc_hbas"])
     for hba in d.get("fc_hbas", []):
+        adapter_key = fc_adapter_key(hba)
+        if adapter_key:
+            hba["physical_adapter_id"] = label(salt, "FCAdapter", adapter_key)
+        for field in ("adapter_id", "adapter_uri", "pcie_device_uri", "physical_port_id"):
+            if hba.get(field):
+                hba[field] = label(salt, "FCResource", str(hba[field]))
         hba["wwpn"] = wwpn(salt, hba.get("wwpn", ""))
         hba["wwnn"] = wwnn(salt, hba.get("wwnn", ""))
         for bt in (hba.get("boot_targets") or []):

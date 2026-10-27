@@ -589,7 +589,7 @@ def _build_health_table(
                         "timestamp": f"{rep} replays",
                     })
 
-            me = d.get("media_errors") or (d.get("oem_metrics") or {}).get("drive_error_count")
+            me = next((v for v in (d.get("media_errors"), (d.get("oem_metrics") or {}).get("media_errors"), (d.get("oem_metrics") or {}).get("drive_error_count")) if v is not None), None)
             if isinstance(me, (int, float)) and me > 0:
                 host_alarms.append({
                     "severity": "Warning",

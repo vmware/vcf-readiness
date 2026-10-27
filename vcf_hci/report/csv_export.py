@@ -66,6 +66,7 @@ def generate_drives_csv(
         "Protocol", "Capacity GB", "Category", "HCL Tier", "Drive Health",
         "Endurance Life %", "TBW Written (TB)", "Power-On Hours", "Temperature (°C)",
         "Unsafe Shutdowns", "Behind Tri-Mode", "Form Factor", "Firmware",
+        "Media Errors", "Power Cycles", "Available Spare %", "Available Spare Raw", "Thermal Throttled",
     ]
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
@@ -114,6 +115,11 @@ def generate_drives_csv(
                     "Yes" if (d.get("behind_trimode") or d.get("category") == "Unsupported NVMe Tri-Mode") else "No",
                     str(d.get("form_factor_label") or "").strip(),
                     str(d.get("firmware") or "").strip(),
+                    d.get("media_errors") if d.get("media_errors") is not None else "Unknown",
+                    d.get("power_cycles") if d.get("power_cycles") is not None else "Unknown",
+                    d.get("available_spare_pct") if isinstance(d.get("available_spare_pct"), (int, float)) and 0 <= d["available_spare_pct"] <= 100 else "Unknown",
+                    d.get("available_spare_pct_raw") if d.get("available_spare_pct_raw") is not None else "",
+                    d.get("thermal_throttled") if d.get("thermal_throttled") is not None else "Unknown",
                 ])
 
     csv_content = buf.getvalue()
@@ -278,6 +284,91 @@ def generate_failed_hosts_csv(
     return csv_content
 
 
+def generate_component_evidence_csv(results, output_path=None):
+    """Export retained service, sensor, locality, firmware and metric evidence."""
+    from vcf_hci.report.evidence_inventory import (
+        firmware_context,
+        pcie_locality,
+        power_context,
+        sensor_inventory,
+        service_inventory,
+        telemetry_inventory,
+    )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["Host", "Model", "Capture Timestamp", "Collection Partial", "Section", "Component", "Field", "Value"])
+    for data in results:
+        system = data.get("system") or {}
+        common = [system.get("hostname") or system.get("ip") or "Unknown", system.get("model") or "",
+                  data.get("scanned_at") or data.get("timestamp") or "Unknown", bool(data.get("partial_scan"))]
+        sections = [("Service", service_inventory(data)), ("Sensors", sensor_inventory(data)),
+                    ("PCIe locality", pcie_locality(data)), ("Firmware", firmware_context(data)),
+                    ("Telemetry", telemetry_inventory(data)), ("Power", [power_context(data)])]
+        license_info = data.get("bmc_license") or {}
+        sections.append(("BMC license", [{key: license_info.get(key) for key in ("license_name", "edition", "license_term", "expiry", "status", "source")}]))
+        for section, rows in sections:
+            for row in rows:
+                name = row.get("name") or row.get("id") or section
+                for key, value in row.items():
+                    writer.writerow(common + [section, name, key, value if value is not None else "Unknown"])
+    content = buf.getvalue()
+    if output_path:
+        with open(output_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+    return content
+
+
+def generate_telemetry_completeness_csv(results, output_path=None):
+    """Report full and assessed denominators; eligibility is never guessed."""
+    from vcf_hci.report.evidence_inventory import telemetry_inventory
+
+    groups = {}
+    for data in results:
+        for row in telemetry_inventory(data):
+            key = (row["name"], row["period"])
+            counts = groups.setdefault(key, {"available": 0, "assessed": 0, "statuses": {}})
+            counts["available"] += row["status"] == "available"
+            counts["assessed"] += bool(row["assessed"])
+            counts["statuses"][row["status"]] = counts["statuses"].get(row["status"], 0) + 1
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["Metric", "Period", "Full Fleet", "Assessed", "Available", "Status", "Hosts"])
+    for (metric, period), counts in sorted(groups.items()):
+        for status, count in sorted(counts["statuses"].items()):
+            writer.writerow([metric, period, len(results), counts["assessed"], counts["available"], status, count])
+    content = buf.getvalue()
+    if output_path:
+        with open(output_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+    return content
+
+
+def generate_firmware_spread_csv(results, output_path=None):
+    """Compare like component names within the same OEM and server model."""
+    from vcf_hci.report.evidence_inventory import firmware_context
+
+    groups = {}
+    for index, data in enumerate(results):
+        system = data.get("system") or {}
+        for row in firmware_context(data):
+            key = (system.get("vendor") or "Unknown", system.get("model") or "Unknown", row["name"] or "Unknown")
+            version = row["version"] or "Unknown"
+            groups.setdefault(key, {}).setdefault(version, set()).add(index)
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["OEM", "Server Model", "Component", "Known Version Count", "Version", "Hosts"])
+    for key, versions in sorted(groups.items()):
+        known = len([v for v in versions if v != "Unknown"])
+        for version, hosts in sorted(versions.items()):
+            writer.writerow(list(key) + [known, version, len(hosts)])
+    content = buf.getvalue()
+    if output_path:
+        with open(output_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+    return content
+
+
 def export_all_csvs(
     results: List[Dict[str, Any]],
     outdir: str,
@@ -318,6 +409,15 @@ def export_all_csvs(
                 failed_hosts = obfuscate_failed_hosts(failed_hosts, salt=_salt, start_idx=len(results) + 1)
 
     artifacts = {}
+    for key, suffix, generator in (
+        ("component_evidence_csv", "component_evidence.csv", generate_component_evidence_csv),
+        ("telemetry_completeness_csv", "telemetry_completeness.csv", generate_telemetry_completeness_csv),
+        ("firmware_spread_csv", "firmware_spread.csv", generate_firmware_spread_csv),
+    ):
+        path = os.path.join(outdir, sanitize_filename(prefix + suffix))
+        generator(results, path)
+        artifacts[key] = path
+
 
     # 1. Fleet Summary CSV
     sum_fname = sanitize_filename(f"{prefix}fleet_summary.csv")
