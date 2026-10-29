@@ -231,7 +231,7 @@ def render_cpu_combined_card(
 
     return (
         f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+        f"<div class='report-card-header'>"
         f"<h3 style='margin:0'>Server Readiness &mdash; vSphere 9.1</h3>"
         f"<a href='#tab-cpu' data-jump-tab='tab-cpu' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to CPU section'>Details &rarr;</a>"
         f"</div>"
@@ -778,7 +778,7 @@ def render_cpu_deep_section(
         f'{_pcie_gen_badge}'
         f'</div>'
         f'</div>'
-        f'<div style="font-size:.82rem;color:var(--text-muted);text-align:right;white-space:nowrap">'
+        f'<div class="report-cpu-spec-line">'
         f'{_h(_dd_spec_line)}'
         f'</div>'
         f'</div>'
@@ -788,7 +788,7 @@ def render_cpu_deep_section(
         f'<span style="font-size:.85rem;color:var(--primary)">Collapse Architecture Details &#9652;</span>'
         f'</summary>'
         f'<div class="accordion-body">'
-        f'<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1.4rem;">'
+        f'<div class="report-cpu-detail-grid">'
         f'<div>'
         f'<h4 style="margin:0 0 .4rem 0;font-size:.88rem;color:var(--primary)">Cache Hierarchy</h4>'
         f'{_cache_table}'

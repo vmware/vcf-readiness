@@ -1,9 +1,100 @@
 """
 VCF Readiness Tool — memory interleaving & topology report section builders (Layer D).
 """
+import re
+from decimal import Decimal
+from html import unescape
 from typing import Any, Dict, Optional
 
+from vcf_hci.constants import MTAT_GITHUB_URL, VCF_OPS_DEMO_URL
 from vcf_hci.report.helpers import _h
+from vcf_hci.ui_clarity import icon_html
+
+_NUMBER = r"\d+(?:\.\d+)?"
+_CAPACITY_FINDING = re.compile(
+    r"<b>Intra-Channel Capacity Asymmetry — Socket (?P<socket>\d+) / Channel (?P<channel>[^:<>]+):</b> "
+    r"(?P<dimms>.+?) \((?P<high>" + _NUMBER + r") GB\) is paired with a (?P<low>" + _NUMBER + r") GB DIMM\. "
+    r"The extra (?P<extra>" + _NUMBER + r") GB operates outside the interleaved region at reduced bandwidth\."
+)
+_SPEED_FINDING = re.compile(
+    r"<b>2DPC Speed Ceiling Mismatch — Socket (?P<socket>\d+) Channel (?P<channel>[^:<>]+):</b> "
+    r"(?P<slower>.+?) \((?P<low>" + _NUMBER + r") MHz rated\) is paired with "
+    r"(?P<faster>.+?) \((?P<high>" + _NUMBER + r") MHz rated\)\. "
+    r"This channel pair runs at (?P<ceiling>" + _NUMBER + r") MHz regardless of the system-wide speed\."
+)
+
+
+def render_memory_sizing_resources() -> str:
+    """Render optional memory sizing guidance within the Memory tab only."""
+    return (
+        f'<details class="report-resources"><summary>{icon_html("memory")} Memory Tiering &amp; Sizing Resources</summary>'
+        f'<p style="margin:0;font-size:.9rem;line-height:1.6">'
+        f'For memory tiering workload sizing use <strong>VCF Operations 9.1</strong> or the open-source <a href="{MTAT_GITHUB_URL}" target="_blank" class="btn-link">Memory Tiering Assessment Tool (MTAT) ↗</a>.'
+        f' For a VCF Ops 9 demo, see this <a href="{VCF_OPS_DEMO_URL}" target="_blank" class="btn-link">Video ↗</a>.'
+        f'</p>'
+        f'</details>'
+    )
+
+
+def _render_memory_findings(issues) -> str:
+    """Group only recognized equivalent channel findings, retaining their evidence."""
+    groups = {}
+    parsed = {}
+    for index, issue in enumerate(issues):
+        for kind, pattern in (("capacity", _CAPACITY_FINDING), ("speed", _SPEED_FINDING)):
+            match = pattern.fullmatch(unescape(str(issue)))
+            if not match:
+                continue
+            row = match.groupdict()
+            values = ("low", "high", "extra") if kind == "capacity" else ("low", "high", "ceiling")
+            key = (kind,) + tuple(Decimal(row[name]) for name in values)
+            groups.setdefault(key, []).append(row)
+            parsed[index] = key
+            break
+    rendered = []
+    emitted = set()
+    for index, issue in enumerate(issues):
+        key = parsed.get(index)
+        rows = groups.get(key, [])
+        # Ambiguous duplicate channels must not inflate an aggregate or hide evidence.
+        if len(rows) < 2 or len({(r['socket'], r['channel']) for r in rows}) != len(rows):
+            rendered.append(f"<li>{issue}</li>")
+            continue
+        if key in emitted:
+            continue
+        emitted.add(key)
+        rows = sorted(rows, key=lambda row: (int(row['socket']), row['channel']))
+        sockets = {}
+        for row in rows:
+            sockets.setdefault(row['socket'], []).append(row['channel'])
+        locations = "; ".join(f"Socket {socket}: " + ", ".join(channels) for socket, channels in sockets.items())
+        count = f"{len(rows)} channels across {len(sockets)} socket" + ("s" if len(sockets) != 1 else "")
+        low, high, extra = (format(value.normalize(), 'f') for value in key[1:])
+        if key[0] == "capacity":
+            total = format(sum(Decimal(row['extra']) for row in rows).normalize(), 'f')
+            title = "Intra-Channel Capacity Asymmetry"
+            impact = f"{high} GB paired with {low} GB. {extra} GB per channel ({total} GB total) is outside the interleaved region at reduced bandwidth."
+            headings = "<th>DIMM(s)</th><th>Capacity pairing</th><th>Outside interleaved region</th>"
+            cells = [f"<td>{_h(row['dimms'])}</td><td>{high} GB / {low} GB</td><td>{extra} GB</td>" for row in rows]
+        else:
+            title = "2DPC Speed Ceiling Mismatch"
+            impact = f"{low} MHz and {high} MHz rated DIMMs share each channel. Each affected channel is limited to {extra} MHz."
+            headings = "<th>Lower-rated DIMM</th><th>Higher-rated DIMM</th><th>Channel ceiling</th>"
+            cells = [f"<td>{_h(row['slower'])}</td><td>{_h(row['faster'])}</td><td>{extra} MHz</td>" for row in rows]
+        table_rows = "".join(
+            f"<tr><td>{_h(row['socket'])}</td><td>{_h(row['channel'])}</td>{detail}</tr>"
+            for row, detail in zip(rows, cells)
+        )
+        rendered.append(
+            f"<li class='memory-finding-group'><strong>{title} — {count}</strong>"
+            f"<p>{impact}</p><p class='memory-finding-locations'>{_h(locations)}</p>"
+            f"<details class='memory-finding-details' data-report-evidence='supporting'>"
+            f"<summary>Affected channels and DIMMs ({len(rows)})</summary>"
+            f"<div class='memory-finding-table' role='region' aria-label='{title} affected DIMMs' tabindex='0'>"
+            f"<table><thead><tr><th>Socket</th><th>Channel</th>{headings}</tr></thead>"
+            f"<tbody>{table_rows}</tbody></table></div></details></li>"
+        )
+    return "".join(rendered)
 
 
 def render_memory_interleaving_section(
@@ -42,7 +133,7 @@ def render_memory_interleaving_section(
                         '⚠️ ' if _dhealth.lower() == "warning" else ""
                     )
                     _rated_line = (
-                        f'<div style="font-size:.66rem;color:{_row_color};opacity:.75;font-style:italic;">'
+                        f'<div style="font-size:.66rem;color:{_row_color};font-style:italic;">'
                         f'{_h(str(_d.get("rated_speed", "")))}</div>'
                         if _d.get("rated_speed") else ""
                     )
@@ -58,7 +149,7 @@ def render_memory_interleaving_section(
                         f'<div style="font-size:.75rem;font-weight:600;color:{_row_color};">'
                         f'{_health_icon}{_h(str(_d.get("slot", "")))}</div>'
                         f'<div style="font-size:.72rem;color:{_row_color};">{_h(str(_d.get("label", "")))}</div>'
-                        f'<div style="font-size:.68rem;color:{_row_color};opacity:.8;">{_h(str(_d.get("speed", "")))}</div>'
+                        f'<div style="font-size:.68rem;color:{_row_color};">{_h(str(_d.get("speed", "")))}</div>'
                         f'{_rated_line}'
                         f'{_ecc_line}'
                         f'</div>'
@@ -108,12 +199,11 @@ def render_memory_interleaving_section(
 
     _issues_html = ""
     if mem_topo.get("issues"):
-        _i_items = "".join(f"<li style='margin-bottom:.3rem;'>{iss}</li>" for iss in mem_topo["issues"])
+        _i_items = _render_memory_findings(mem_topo["issues"])
         _issues_html = (
-            f'<div style="margin-top:1rem;background:var(--callout-warn-bg,#fefce8);border:1px solid var(--callout-warn-border,#fef08a);border-left:4px solid var(--warning);padding:.8rem 1rem;border-radius:6px;">'
-            f'<h4 style="margin:0 0 .4rem 0;font-size:.88rem;color:var(--callout-warn-h,#854d0e);">⚠️ Interleaving Bottlenecks & Diagnostic Findings</h4>'
-            f'<ul style="margin:0;padding-left:1.2rem;font-size:.83rem;line-height:1.5;color:var(--callout-warn-ul,#713f12);">{_i_items}</ul>'
-            f'</div>'
+            '<div class="alert alert-warning memory-findings">'
+            '<h4>Interleaving Bottlenecks &amp; Diagnostic Findings</h4>'
+            f'<ul>{_i_items}</ul></div>'
         )
 
     _recs_html = ""
@@ -182,7 +272,7 @@ def render_memory_interleaving_section(
         f'</div>'
         f'</summary>'
         f'<div class="accordion-body">'
-        f'<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;">'
+        f'<div class="report-memory-socket-grid">'
         f'{_mem_grid_html}'
         f'</div>'
         f'</div>'
@@ -226,7 +316,7 @@ def render_memory_combined_card(
 
     return (
         f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+        f"<div class='report-card-header'>"
         f"<h3 style='margin:0'>Memory</h3>"
         f"<a href='#tab-memory' data-jump-tab='tab-memory' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Memory section'>Details &rarr;</a>"
         f"</div>"

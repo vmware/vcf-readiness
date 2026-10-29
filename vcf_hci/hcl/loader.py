@@ -1047,6 +1047,7 @@ def get_hcl_cache_status(local_path: Optional[str] = None) -> dict:
 
     upstream_updated_time = None
     upstream_timestamp = None
+    dataset_is_baseline = False
     counts = {"ssd": 0, "nic": 0, "controller": 0, "hdd": 0, "total": 0}
 
     try:
@@ -1060,6 +1061,7 @@ def get_hcl_cache_status(local_path: Optional[str] = None) -> dict:
             payload = json.loads(raw_bytes.decode("utf-8"))
             upstream_updated_time = payload.get("jsonUpdatedTime")
             upstream_timestamp = payload.get("timestamp")
+            dataset_is_baseline = isinstance(payload, dict) and payload.get("status") == "baseline_offline"
             sub_data = payload.get("data", {})
             if isinstance(sub_data, dict):
                 for cat in ["ssd", "nic", "controller", "hdd"]:
@@ -1092,6 +1094,7 @@ def get_hcl_cache_status(local_path: Optional[str] = None) -> dict:
         "upstream_timestamp": upstream_timestamp,
         "counts": counts,
         "source_type": "live_cache",
+        "dataset_is_baseline": dataset_is_baseline,
         "file_size_mb": file_size_mb,
         "file_size_mb_int": file_size_mb_int,
     }

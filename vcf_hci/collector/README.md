@@ -44,9 +44,33 @@ DellCollector      HPECollector    SupermicroCollector    CiscoCollector ...
 - **`discovery.py`**: `DiscoveryMixin` providing dynamic URI root discovery (`/Systems`, `/Chassis`, `/Managers`), BMC silicon architecture classification (`classify_bmc_silicon` across 5 silicon eras), inner worker ceiling sizing (`determine_inner_worker_ceiling`), and PCIe NIC product name resolution.
 - **`os_eval.py`**: `_evaluate_os_info` helper evaluating OS name, build numbers, lifecycle/EOL status, and ESXi update badges.
 - **`async_helpers.py`**: Asynchronous execution helpers (`_safe_result`, `_timed`, `_h`, `_SECTION_DEFAULTS`).
-- **`collect_system.py`**: `_SystemMixin` collecting host SKU, serial, CPU inventory, memory DIMMs, and BIOS release date.
+- **`collect_system.py`**: `_SystemMixin`, preserved utility imports and explicit system-summary assembly/state updates; also retains memory, BIOS, BMC and firmware collection.
+- **`system_cpu.py`**: Processor acquisition and pure CPU normalization. GPU discovery is yielded immediately so the facade retains collector-state timing.
+- **`system_boot.py`**: Bounded boot-option acquisition, reference aliases and pure persistent/override resolution; preserves the original Boot object across fetches.
+- **`system_identity.py`**: OS hooks, System/chassis/FRU identity, SKU/serial separation and chassis-only/hardware evidence. Acquisition helpers use the narrow `SystemCollector` protocol in `contracts.py`; pure helpers receive explicit evidence.
 - **`collect_storage.py`**: `_StorageMixin` enumerating storage controllers, physical drives, NVMe SSDs, RAID volumes, and drive endurance/wear metrics.
-- **`collect_network.py`**: `_NetworkMixin` collecting Ethernet NIC adapters, port speeds, Fibre Channel (FC) HBAs with WWPNs, and Cisco VIC subordinate port/device function pre-caching.
+- **`collect_storage_drive.py`**: Preserved public drive parser/utility imports, ordered Metrics/OEM/endurance acquisition and final explicit field assembly; capacity/media policy stays with its existing normalizers.
+- **`drive_identity.py`**: Pure location, empty-slot records and firmware candidate precedence.
+- **`drive_telemetry.py`**: Pure SMART/endurance normalization with zero/false and raw evidence preserved.
+- **`drive_topology.py`**: Pure attachment/boot/RAID/VMD and late PCIe-link evidence normalization. Keeps capable and negotiated links distinct; no hidden HTTP requests.
+- **`collect_network.py`**: `_NetworkMixin` and preserved utility import paths. Its NIC method owns ordered discovery, per-member error containment and finalization; FC HBA and LLDP methods remain here.
+- **`network_identity.py`**: Pure MAC/manufacturer/CNA classification and parent matching. Match resource and MAC evidence before treating logical interfaces as physical cards; identical PCI IDs alone do not merge cards.
+- **`network_ports.py`**: Pure speed/link/port decoding and final NPAR/VIC cleanup, port sorting and annotation. Finalization runs once after discovery.
+- **`network_resources.py`**: Collector-bound endpoint fetching, expanded-cache priming, port/function acquisition and OEM fact hooks. Uses the existing cache, worker bounds and cancellation behavior.
+- **`network_members.py`**: Per-member acquisition, logical-parent merging, standalone PCIe association and physical-adapter assembly. Receives the real collector and the facade-owned list/seen-ID set through the narrow `NetworkCollector` protocol in `contracts.py`.
+
+Network dependencies flow from the facade to members/resources and then pure
+identity/port helpers; leaves never import the facade. Keep OEM hooks on the
+collector, including the existing Supermicro/Quanta expansion override. The
+[network contract tests](../../tests/test_network_collection_contract.py) cover
+identity, partition/persona, fallback and request behavior through the public mixin.
+System and drive dependencies flow from their facades to helpers; helpers never
+import the facade or higher assessment/report layers. The public-boundary
+[drive](../../tests/test_drive_collection_contract.py) and
+[system](../../tests/test_system_collection_contract.py) contracts preserve early
+returns, request/hook ordering and downstream state. Raw vendor maps remain open;
+no collector-wide context object or compatibility-engine dependency is added.
+
 - **`collect_power.py`**: `_PowerMixin` checking PSU count, redundancy status, and voltage ranges.
 - **`collect_logs.py`**: `_LogsMixin` retrieving System Event Log (SEL) and Integrated Management Log (IML) alarms.
 - **`collect_telemetry.py`**: `_TelemetryMixin` reading thermal sensors, fan speeds, and CPU/memory utilization metrics.

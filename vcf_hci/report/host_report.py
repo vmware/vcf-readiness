@@ -8,9 +8,15 @@ import logging
 import os
 from typing import Optional
 
+from vcf_hci.bios.x2apic import refresh_x2apic_guidance
 from vcf_hci.branding import FAVICON_DATA_URI
+from vcf_hci.collector.oem.dell_storage import normalize_dell_backplanes
 from vcf_hci.fc_inventory import normalize_fc_ports
 from vcf_hci.report.evidence_inventory import render_evidence_inventory
+from vcf_hci.report.formatting import format_report_html
+from vcf_hci.storage_capacity import normalize_storage_capacities
+from vcf_hci.storage_pcie import storage_pcie_view
+from vcf_hci.ui_clarity import icon_html
 
 logger = logging.getLogger("vcf_assess")
 
@@ -19,6 +25,7 @@ from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.hcl import load_optional_vsan_csv, load_vsan_hcl_json
 from vcf_hci.report.disclosures import evidence_controls_html, supporting_evidence_html
 from vcf_hci.report.helpers import _h, html_escape
+from vcf_hci.report.pcie_inventory import render_pcie_device_inventory
 from vcf_hci.report.presentation import REPORT_UI_JS
 from vcf_hci.report.sections.bios_security import (
     render_bios_perf_card_and_accordion,
@@ -42,7 +49,11 @@ from vcf_hci.report.sections.health import (
     render_sel_section,
     render_thermal_health_section,
 )
-from vcf_hci.report.sections.memory import render_memory_combined_card, render_memory_interleaving_section
+from vcf_hci.report.sections.memory import (
+    render_memory_combined_card,
+    render_memory_interleaving_section,
+    render_memory_sizing_resources,
+)
 from vcf_hci.report.sections.network import render_network_section
 from vcf_hci.report.sections.overview import render_alert_rollup, render_header_and_banners
 from vcf_hci.report.sections.pcie_gpu import (
@@ -68,6 +79,10 @@ def generate_host_html_report(
     obfuscated: bool = False,
 ):
     """Generate standalone HTML report for a single host."""
+    data = storage_pcie_view(data)
+    refresh_x2apic_guidance(data)
+    normalize_dell_backplanes(data)
+    normalize_storage_capacities(data.get("storage_subsystem"))
     _page_salt = os.urandom(16).hex()
 
     sys_info = data.get("system", {})
@@ -413,6 +428,7 @@ def generate_host_html_report(
     </div>
 
     <div id="tab-memory" class="tab-pane">
+        {render_memory_sizing_resources()}
         {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=memory" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Memory in Redfish Explorer">🧭 Inspect Memory in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_mem_section_html}
         {tel_section}
@@ -425,7 +441,7 @@ def generate_host_html_report(
         </div>
         <details class="accordion" open>
             <summary>
-                <div>&#128230; Drive &amp; Storage Inventory &nbsp;<span class="badge {_stor_badge_cls}">{_stor_badge_lbl}</span></div>
+                <div>{icon_html("storage")} Drive &amp; Storage Inventory &nbsp;<span class="badge {_stor_badge_cls}">{_stor_badge_lbl}</span></div>
                 <span style="font-size:.85rem;color:var(--primary)">Collapse Details &#9652;</span>
             </summary>
             <div class="accordion-body" style="padding:1.25rem">
@@ -435,6 +451,7 @@ def generate_host_html_report(
     </div>
 
     <div id="tab-pcie" class="tab-pane">
+        {render_pcie_device_inventory(data.get("pcie_devices"), pcie_slots)}
         {pcie_slot_section}
     </div>
 
@@ -602,8 +619,32 @@ def generate_host_html_report(
       window.parent.postMessage({{ type: 'vcf-subreport-ready', host: document.title, url: window.location.href }}, '*');
     }} catch(e) {{}}
   }}
+  // Let the fleet own vertical scrolling; its secondary toolbar then scrolls away.
+  if (window.parent !== window) {{
+    var heightPending = false, lastHeight = 0;
+    function reportEmbeddedHeight() {{
+      if (heightPending) return;
+      heightPending = true;
+      requestAnimationFrame(function() {{
+        heightPending = false;
+        var container = document.querySelector('body > .container');
+        if (!container || !container.getClientRects().length) return;
+        var height = Math.ceil(container.getBoundingClientRect().bottom + window.scrollY + 8);
+        if (height > 0 && height !== lastHeight) {{
+          lastHeight = height;
+          window.parent.postMessage({{type:'vcf-report-height', height:height}}, '*');
+        }}
+      }});
+    }}
+    if (window.ResizeObserver) new ResizeObserver(reportEmbeddedHeight).observe(document.querySelector('body > .container'));
+    document.addEventListener('toggle', reportEmbeddedHeight, true);
+    window.addEventListener('resize', reportEmbeddedHeight);
+    window.addEventListener('load', reportEmbeddedHeight);
+    reportEmbeddedHeight();
+  }}
   window.addEventListener('message', function(ev) {{
-    if (ev.data && ev.data.type === 'vcf_activate_tab' && ev.data.tab && window.activateTab) {{
+    if (ev.source !== window.parent) return;
+    if (ev.data && ev.data.type === 'vcf_activate_tab'  && ev.data.tab && window.activateTab) {{
       window.activateTab(ev.data.tab, true);
     }}
   }});
@@ -616,4 +657,4 @@ def generate_host_html_report(
 
     html_safe = html_escape(html) if False else html.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
     with open(output_filepath, "w", encoding="utf-8", errors="replace") as f:
-        f.write(html_safe)
+        f.write(format_report_html(html_safe))

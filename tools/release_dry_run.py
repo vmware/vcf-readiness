@@ -130,6 +130,8 @@ def _metadata_fields(text: str, artifact: Path) -> Tuple[str, str]:
 def _read_wheel_identity(path: Path) -> Tuple[str, str]:
     try:
         with zipfile.ZipFile(str(path)) as archive:
+            if any(re.search(r"vdt[-_]lite|vsphere[-_]quick[-_]check|quick_check_ssh|(?:^|/)(?:lite|quick_check)_(?:api|html)[.]py$|/web/js/(?:lite|quick_check)[.]py$", name, re.I) for name in archive.namelist()):
+                raise ReleaseDryRunError("Private vSphere quick check experiment in release wheel")
             metadata_names = sorted(
                 name
                 for name in archive.namelist()
@@ -148,6 +150,8 @@ def _read_wheel_identity(path: Path) -> Tuple[str, str]:
 def _read_sdist_identity(path: Path) -> Tuple[str, str]:
     try:
         with tarfile.open(str(path), mode="r:*") as archive:
+            if any(re.search(r"vdt[-_]lite|vsphere[-_]quick[-_]check|quick_check_ssh|(?:^|/)(?:lite|quick_check)_(?:api|html)[.]py$|/web/js/(?:lite|quick_check)[.]py$", name, re.I) for name in archive.getnames()):
+                raise ReleaseDryRunError("Private vSphere quick check experiment in release sdist")
             metadata_members = sorted(
                 (
                     member

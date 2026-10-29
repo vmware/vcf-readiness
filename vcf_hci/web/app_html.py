@@ -7,15 +7,19 @@ serves on GET /. All CSS (Clarity tokens + custom components) and JavaScript
 runtime. Release notifications use a separate server-side GitHub request.
 """
 from vcf_hci.branding import FAVICON_DATA_URI, render_nav_brand
+from vcf_hci.ui_clarity import appearance_controls_html, replace_ui_icons
 from vcf_hci.web.app_css import APP_CSS
 from vcf_hci.web.app_js import APP_JS
+from vcf_hci.web.group_html import GROUP_LIBRARY_HTML, GROUP_SCANNER_HTML
+from vcf_hci.web.plugin_html import VDT_NAV, VDT_PANEL, VDT_WIZARD
+from vcf_hci.web.summary_html import SUMMARY_ACTIONS
 
 
-def build_app_html(tool_version: str, collector_ok: bool, server_token: str = "", oem_mode: bool = False) -> str:
+def build_app_html(tool_version: str, collector_ok: bool, server_token: str = "", oem_mode: bool = False, vdt_available: bool = False) -> str:
     keychain_note = _get_keychain_label()
 
-    return f"""<!DOCTYPE html>
-<html lang="en" cds-base-font="16" data-theme="dark">
+    return replace_ui_icons(f"""<!DOCTYPE html>
+<html lang="en" cds-base-font="16" data-theme="dark" cds-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -27,6 +31,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   </style>
 </head>
 <body>
+<a href="#mainContent" class="skip-link">Skip to content</a>
 
 <!-- ── Navigation header ────────────────────────────────────────────────── -->
 <header class="nav-header">
@@ -35,12 +40,22 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   <span class="nav-version">v{tool_version}</span>
   <a id="updateAvailable" class="nav-update hidden" target="_blank" rel="noopener noreferrer" aria-label="Update available on GitHub">Update available</a>
   <a href="/docs" target="_blank" class="nav-btn" style="text-decoration:none" title="Open Documentation &amp; User Guide in a new tab">❓ Help</a>
-  <button class="nav-btn" id="themeToggle" title="Toggle dark/light mode">🌙 Dark</button>
   <button class="nav-btn" id="shutdownBtn" title="Quit the assessment tool">✕ Quit</button>
+  {appearance_controls_html("scannerDensity")}
 </header>
+<nav class="scanner-subnav" aria-label="Scanner navigation">
+  <a href="#scanner" data-section-link="scanner" aria-current="page">Scanner</a>
+  <a href="#scan-library" data-section-link="scan-library">Scan Library</a>
+  <a href="#credential-vault" data-section-link="credential-vault">Credential Vault</a>
+  <a href="#scan-wizard" data-section-link="scan-wizard">Scan Wizard</a>
+  <a href="#advanced-configuration" data-section-link="advanced-configuration">Advanced Configuration</a>
+{VDT_NAV}
+</nav>
 
 <!-- ── Main content ─────────────────────────────────────────────────────── -->
-<div class="main-wrap">
+<main class="main-wrap" id="mainContent" tabindex="-1">
+
+  <div id="wizardResume" class="alert alert-info" hidden>Scan setup is in progress. <a href="#scan-wizard">Return to Scan Wizard</a> to continue with your settings.</div>
 
   <!-- Collector not found warning -->
   {'<div class="alert alert-warning"><strong>⚠ Collector unavailable.</strong> vcf_hci package not found — scan functionality is disabled.</div>' if not collector_ok else ''}
@@ -50,18 +65,21 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     <strong>⚠ Running as Root / Superuser:</strong> Root privileges are not required for Redfish BMC connections. Default report folder set to: <code id="rootBannerPath"></code>
   </div>
 
+  <section id="scanner" data-app-section aria-labelledby="scannerHeading">
+  <h1 id="scannerHeading" class="section-heading" tabindex="-1">Scanner</h1>
   <!-- ── 2. Discovery ────────────────────────────────────────────────────── -->
-  <div class="card">
+  <div class="card" id="discoveryCard">
     <div class="card-header">🔍 Host Discovery &amp; Selection</div>
     <div class="card-body">
       <div class="form-grid">
         <div class="clr-form-group span-2">
-          <label class="clr-control-label">Target Range</label>
+          <label for="rangeInput" class="clr-control-label">Target Range</label>
           <input class="clr-input" id="rangeInput" type="text"
             placeholder="10.0.0.1  or  10.0.0.1-20  or  192.168.1.0/24  or  host.fqdn">
           <span class="clr-hint">Comma-separated for multiple ranges or IPs. Probe Hosts is optional — Run Assessment uses this field.</span>
         </div>
       </div>
+      {GROUP_SCANNER_HTML}
       <div class="flex gap-sm mt-half" style="flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" id="discoverBtn">Probe Hosts</button>
         <span id="probeSelectActions" class="hidden" style="display:inline-flex;gap:0.4rem;">
@@ -90,7 +108,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
   </div>
 
   <!-- ── 3. Credentials ─────────────────────────────────────────────────── -->
-  <div class="card">
+  <div class="card" id="credentialsCard">
     <div class="card-header">🔑 Credentials</div>
     <div class="card-body">
       <div class="clr-check-row" style="margin-bottom:.75rem">
@@ -99,13 +117,13 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       </div>
       <div id="sharedCreds" class="form-grid">
         <div class="clr-form-group">
-          <label class="clr-control-label">Username</label>
+          <label for="usernameInput" class="clr-control-label">Username</label>
           <input class="clr-input" id="usernameInput" type="text" autocomplete="username"
             placeholder="user  or  user@contoso.com">
           <span class="clr-hint">Defaults to <code>root</code> if blank. Supports local or domain accounts.</span>
         </div>
         <div class="clr-form-group">
-          <label class="clr-control-label">Password</label>
+          <label for="passwordInput" class="clr-control-label">Password</label>
           <input class="clr-input" id="passwordInput" type="password" autocomplete="current-password">
         </div>
       </div>
@@ -121,8 +139,9 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <div class="clr-check-row mt-half" id="useVaultRow">
         <input type="checkbox" id="useVaultChk" disabled>
         <label for="useVaultChk">Use encrypted credential vault for this scan
-          <span class="text-xs text-muted" id="useVaultHint">(off — create or unlock a vault below)</span></label>
+          <span class="text-xs text-muted" id="useVaultHint">(off — create or unlock a vault in Credential Vault)</span></label>
       </div>
+      <a href="#credential-vault" class="section-shortcut">Manage credential vault</a>
       <div id="vaultCoverage" class="text-sm text-muted hidden" style="margin-top:.35rem"></div>
       <div class="mt-half">
         <p class="text-sm" style="margin-bottom:.3rem"><strong>Execution target</strong></p>
@@ -144,7 +163,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     <div class="card-body">
       <div class="form-grid">
         <div class="clr-form-group">
-          <label class="clr-control-label">Output Folder</label>
+          <label for="outdirInput" class="clr-control-label">Output Folder</label>
           <div style="display:flex;gap:0.4rem;align-items:center;">
             <input class="clr-input" id="outdirInput" type="text" value="~/Desktop/VCF-Scans" style="flex:1;">
             <button class="btn btn-outline btn-sm" id="browseOutdirBtn" type="button" title="Browse for output folder" style="white-space:nowrap;">📁 Browse…</button>
@@ -156,14 +175,11 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
 <!-- ── Run & Actions section ───────────────────────────────────────────── -->
   <div class="card" style="margin: 1.25rem 0; padding: 1rem;">
+    <a href="#advanced-configuration" class="section-shortcut">Advanced configuration</a>
     <!-- Primary Actions -->
     <div class="run-bar flex gap-sm items-center flex-wrap">
       <button class="btn btn-primary btn-run" id="runBtn"
               {'disabled' if not collector_ok else ''}>▶  Run Assessment</button>
-      <button class="btn btn-danger btn-sm hidden" id="cancelBtn">🛑 Cancel Scan</button>
-      <input type="file" id="importSummaryInput" accept=".json,.gz,.zip" style="display:none;" multiple>
-      <button class="btn btn-outline btn-sm" id="importScanBtn" title="Import a prior scan: data/fleet_summary.json, vcf_readiness_scan_*.zip, or vcf_summary_*.json">📁 Import prior scan</button>
-      <button class="btn btn-outline btn-sm" id="openLibraryBtn" title="Discover and assemble multiple scan drops from a central library folder (~/Desktop/VCF-Scans)">📚 Open Fleet Library</button>
     </div>
 
     <!-- Conditional 100+ Fleet Notice Banner -->
@@ -171,143 +187,19 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <span>⚡ <strong>Large fleet detected (<span id="fleetCountLabel">100+</span> hosts):</strong> Fleet Summary is written as a sidecar pack, and each host report opens on demand. You can finish this scan in the browser.</span>
     </div>
 
-    <!-- Post-Scan / Report & Export Actions -->
-    <div id="postScanActions" class="hidden" style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--vcf-border);">
-      <!-- Finished Scan Summary Card -->
-      <div id="postScanSummaryCard" class="card mb-md hidden" style="width: 100%; margin-bottom: 0.85rem;">
-        <div class="card-header" style="font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
-          <span>🏁 Finished Scan Summary</span>
-          <span id="summarySuccessBadge" class="badge badge-success">0/0 succeeded</span>
-        </div>
-        <div class="card-body" style="padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
-          <div id="summaryMetricsRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span>⏱️ <strong>Scan Performance:</strong></span>
-            <span id="summaryMetricsText">—</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span>📊 <strong>VCF Readiness:</strong></span>
-            <span id="summarySupportedBadge" class="badge badge-success">0 Supported</span>
-            <span id="summaryDeprecatedBadge" class="badge badge-warning">0 Deprecated</span>
-            <span id="summaryUnsupportedBadge" class="badge badge-danger">0 Unsupported</span>
-            <span id="summaryIncompleteBadge" class="badge badge-warning">0 Incomplete</span>
-            <span id="summaryRemediatedBadge" class="badge badge-success hidden" style="background:#16a34a;color:#fff">0 Remediated</span>
-          </div>
-          <div id="summaryFailedList" class="text-sm hidden"></div>
-          <div id="summaryOutdirRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all; flex-wrap: wrap;">
-            <span>📁 <strong>Output Folder:</strong></span>
-            <code id="summaryOutdirText" style="font-size: 0.8rem;">—</code>
-            <button class="btn btn-outline btn-sm" id="summaryOpenFolderBtn" type="button" style="padding: 0.1rem 0.4rem; font-size: 0.75rem; margin-left: 0.25rem;">📂 Open Folder</button>
-          </div>
-          <div id="summaryZipRow" class="text-muted hidden" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all;">
-            <span>📦 <strong>Zip Archive:</strong></span>
-            <code id="summaryZipText" style="font-size: 0.8rem;">—</code>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex gap-xl flex-wrap items-start">
-        <!-- View Reports Column -->
-        <div id="reportLinksGroup" class="flex flex-col gap-xs items-start">
-          <span class="fw-bold text-xs text-muted mb-3xs">VIEW REPORTS</span>
-          <button class="btn btn-success-solid btn-sm hidden" id="openSummaryBtn">
-            📊  Open Fleet Summary
-          </button>
-          <button class="btn btn-outline btn-sm hidden" id="openObfSummaryBtn" style="color:#7c3aed;border-color:#7c3aed">
-            🔒  Open Obfuscated Summary
-          </button>
-          <button class="btn btn-success-solid btn-sm hidden" id="openReportBtn">
-            ✔  Open Combined Host Report
-          </button>
-          <button class="btn btn-outline btn-sm hidden" id="openObfReportBtn" style="color:#7c3aed;border-color:#7c3aed">
-            🔒  Open Obfuscated Combined
-          </button>
-        </div>
-
-        <!-- Export Data Column -->
-        <div id="exportLinksGroup" class="flex flex-col gap-xs items-start">
-          <span class="fw-bold text-xs text-muted mb-3xs">EXPORT DATA</span>
-          <button class="btn btn-flat btn-sm hidden" id="openFolderBtn">
-            📂 Open Scan Folder
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportXlsxBtn">
-            ⬇  Export Excel
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportObfXlsxBtn" style="color:#7c3aed">
-            🔒 Export Obfuscated Excel + Key
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportObfZipBtn" style="color:#2563eb" title="Download sanitized ZIP archive with HTML hub, sub-reports, Excel, and CSVs (safe to post or share externally)">
-            📦 Export Obfuscated Package (.zip)
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportCsvBtn">
-            ⬇  Export CSV
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="exportSummaryJsonBtn">
-            📁 Export Summary JSON
-          </button>
-          <button class="btn btn-flat btn-sm hidden" id="prerenderReportsBtn" title="Pre-generate all single-host HTML reports across the fleet for fully offline portable bundles">
-            ⚡ Pre-render All Host Reports
-          </button>
-        </div>
-
-        <!-- Remediation / Retry Column -->
-        <div id="retryActionsGroup" class="flex flex-col gap-xs items-start hidden" style="min-width:260px">
-          <span class="fw-bold text-xs text-muted mb-3xs">REMEDIATION &amp; RETRY</span>
-          <div id="retryBreakdownBadges" class="flex gap-2xs flex-wrap mb-2xs" style="font-size:0.75rem">
-            <span id="badgePartialCount" class="badge badge-warning hidden">⚠️ <span id="cntPartial">0</span> Partial</span>
-            <span id="badgeTimeoutCount" class="badge badge-warning hidden">⏱️ <span id="cntTimeout">0</span> Timed Out</span>
-            <span id="badgeAuthCount" class="badge badge-danger hidden">🔒 <span id="cntAuth">0</span> Auth Failed</span>
-            <span id="badgeUnreachCount" class="badge hidden" style="background:#64748b;color:#ffffff">🔌 <span id="cntUnreach">0</span> Unreachable</span>
-          </div>
-          <button class="btn btn-warning-solid btn-sm" id="retryIssuesBtn" style="background:#ca8a04;border-color:#ca8a04;color:#ffffff;font-weight:600">
-            🔄 Retry Active Issues (<span id="retryIssuesCount">0</span>)
-          </button>
-          <button class="btn btn-outline btn-sm hidden" id="retryAllBtn" style="font-size:0.78rem">
-            🔄 Retry All Non-Success (<span id="retryAllCount">0</span>)
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
-
-    <!-- ── Advanced ────────────────────────────────────────────────────────── -->
-  <div class="card" id="advancedCard">
-    <div class="card-header" style="cursor:pointer" id="advancedToggle">
-      Advanced
-      <span class="text-muted text-sm" style="margin-left:.4rem;font-weight:400;text-transform:none;letter-spacing:0">— scan depth, profiles, vault, threads, TLS, HCL, Dell warranty</span>
-      <span style="margin-left:auto;font-size:.85rem" id="advancedArrow">▶</span>
-    </div>
-    <div id="advancedBody" class="collapsible">
-<!-- ── 1. Profiles ─────────────────────────────────────────────────────── -->
+  </section>
+  <section id="credential-vault" data-app-section aria-labelledby="vaultHeading" hidden>
+  <h1 id="vaultHeading" class="section-heading" tabindex="-1">Credential Vault</h1>
+  <!-- ── 3b. Encrypted Credential Vault (opt-in) ───────────── -->
   <div class="card">
-    <div class="card-header">🔖 Saved Profiles</div>
-    <div class="card-body">
-      <div class="form-grid">
-        <div class="clr-form-group">
-          <label class="clr-control-label">Load Profile</label>
-          <select class="clr-select" id="profileSelect">
-            <option value="">— select —</option>
-          </select>
-        </div>
-        <div class="clr-form-group" style="justify-content:flex-end;flex-direction:row;align-items:flex-end;gap:.5rem">
-          <button class="btn btn-flat btn-sm" id="loadProfileBtn">Load</button>
-          <button class="btn btn-flat btn-sm" id="saveProfileBtn">Save as…</button>
-          <button class="btn btn-flat btn-sm" id="deleteProfileBtn">Delete</button>
-        </div>
-      </div>
-      <p class="clr-hint mt-half" id="keychainNote">Passwords stored in: {keychain_note}</p>
-    </div>
-  </div>
-
-  <!-- ── 3b. Encrypted Credential Vault (collapsible, opt-in) ───────────── -->
-  <div class="card">
-    <div class="card-header" style="cursor:pointer" id="vaultToggle">
+    <div class="card-header" id="vaultToggle" tabindex="-1">
       🔐 Encrypted Credential Vault
       <span class="text-muted text-sm" style="margin-left:.4rem;font-weight:400;text-transform:none;letter-spacing:0">
         — optional, off by default; per-host / per-subnet / default BMC passwords, encrypted on disk
       </span>
-      <span style="margin-left:auto;font-size:.85rem" id="vaultArrow">▶</span>
     </div>
-    <div id="vaultBody" class="collapsible">
+    <div id="vaultBody">
       <div class="card-body">
         <div class="flex gap-sm" style="align-items:center;flex-wrap:wrap;margin-bottom:.6rem">
           <span class="badge badge-secondary" id="vaultStateBadge">checking…</span>
@@ -316,17 +208,31 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <button class="btn btn-flat btn-sm hidden" id="vaultLockBtn">Lock</button>
         </div>
 
+        <details id="vaultRecoveryHelp" class="mt-half" style="margin-bottom:1rem">
+          <summary>Forgot the vault passphrase?</summary>
+          <p>There is no passphrase recovery. To start over, rename the encrypted vault file as a backup or delete only that file. A backup still requires the old passphrase to unlock.</p>
+          <p>Vault file on this computer: <code id="vaultRecoveryPath" style="overflow-wrap:anywhere">Checking vault location…</code></p>
+          <ol>
+            <li>Finish active work, then quit VCF-Readiness completely so an unlocked vault cannot save over the reset.</li>
+            <li>In your file manager, rename or delete only the vault file shown above. The default is <code>~/.vcf-readiness/credentials.vault</code> on macOS/Linux, or <code>%USERPROFILE%\\.vcf-readiness\\credentials.vault</code> on Windows. Show hidden folders if needed.</li>
+            <li>Restart VCF-Readiness, open Credential Vault, and create a new vault with a new passphrase.</li>
+            <li>Reenter or import credentials, then recreate jump-host profiles and verify their SSH trust keys.</li>
+          </ol>
+          <p>The new vault starts empty: saved credential entries, jump-host secrets and host-key pins from the old vault are unavailable without its passphrase. Delete only the vault file, not the entire settings folder or scan/report files. For a custom CLI <code>--vault</code> path, reset that file instead.</p>
+          <p><a href="/docs/credential_vault" target="_blank" rel="noopener noreferrer">Vault reset instructions in Help</a></p>
+        </details>
+
         <!-- Create -->
         <div id="vaultCreateBlock" class="hidden">
           <p class="text-sm text-muted">No vault exists yet. Choose a passphrase (12+ characters).
             <strong>There is no recovery</strong> — if you forget it, delete the file and start over.</p>
           <div class="form-grid">
             <div class="clr-form-group">
-              <label class="clr-control-label">New passphrase</label>
+              <label for="vaultNewPass1" class="clr-control-label">New passphrase</label>
               <input class="clr-input" id="vaultNewPass1" type="password" autocomplete="new-password">
             </div>
             <div class="clr-form-group">
-              <label class="clr-control-label">Confirm passphrase</label>
+              <label for="vaultNewPass2" class="clr-control-label">Confirm passphrase</label>
               <input class="clr-input" id="vaultNewPass2" type="password" autocomplete="new-password">
             </div>
           </div>
@@ -337,7 +243,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <div id="vaultUnlockBlock" class="hidden">
           <div class="form-grid">
             <div class="clr-form-group">
-              <label class="clr-control-label">Vault passphrase</label>
+              <label for="vaultUnlockPass" class="clr-control-label">Vault passphrase</label>
               <input class="clr-input" id="vaultUnlockPass" type="password" autocomplete="current-password">
             </div>
             <div class="clr-form-group" style="align-self:end">
@@ -368,20 +274,20 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <p class="text-sm" style="margin-bottom:.3rem"><strong>Add / update one entry</strong></p>
           <div class="form-grid">
             <div class="clr-form-group">
-              <label class="clr-control-label">Target (IP, CIDR, hostname, a.b.c.d-e range, or <code>default</code>)</label>
+              <label for="vaultAddTarget" class="clr-control-label">Target (IP, CIDR, hostname, a.b.c.d-e range, or <code>default</code>)</label>
               <input class="clr-input" id="vaultAddTarget" type="text" placeholder="192.0.2.10  |  192.0.2.0/24  |  default">
             </div>
             <div class="clr-form-group">
-              <label class="clr-control-label">Username</label>
+              <label for="vaultAddUser" class="clr-control-label">Username</label>
               <input class="clr-input" id="vaultAddUser" type="text" value="root" autocomplete="off"
                 placeholder="user  or  user@contoso.com">
             </div>
             <div class="clr-form-group">
-              <label class="clr-control-label">Password</label>
+              <label for="vaultAddPass" class="clr-control-label">Password</label>
               <input class="clr-input" id="vaultAddPass" type="password" autocomplete="new-password">
             </div>
             <div class="clr-form-group">
-              <label class="clr-control-label">Note (optional)</label>
+              <label for="vaultAddNote" class="clr-control-label">Note (optional)</label>
               <input class="clr-input" id="vaultAddNote" type="text" maxlength="200">
             </div>
           </div>
@@ -390,6 +296,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <hr class="vcf-sep">
           <p class="text-sm" style="margin-bottom:.3rem"><strong>Import CSV</strong>
             <span class="text-xs text-muted">— columns: <code>target,username,password[,note]</code>. Lines starting with <code>#</code> are ignored.</span></p>
+          <label for="vaultCsvText" class="clr-control-label">CSV entries</label>
           <textarea class="clr-textarea" id="vaultCsvText" rows="4"
                     placeholder="target,username,password,note&#10;192.0.2.10,root,••••••,exact host&#10;192.0.2.0/24,admin,••••••,rack A&#10;default,root,••••••,fallback"></textarea>
           <input type="file" id="vaultCsvInput" accept=".csv,.txt,text/csv" class="hidden">
@@ -413,16 +320,16 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
             <button type="button" class="btn btn-flat btn-sm" id="jumpCancelEditTopBtn" style="color:inherit;padding:2px 8px;">Cancel Edit</button>
           </div>
           <div class="form-grid">
-            <div class="clr-form-group"><label class="clr-control-label">Id</label><input class="clr-input" id="jumpId" type="text" placeholder="dal-jump-01"></div>
-            <div class="clr-form-group"><label class="clr-control-label">Host</label><input class="clr-input" id="jumpHost" type="text" placeholder="192.0.2.10"></div>
-            <div class="clr-form-group"><label class="clr-control-label">Port</label><input class="clr-input" id="jumpPort" type="number" value="22"></div>
-            <div class="clr-form-group"><label class="clr-control-label">Username</label><input class="clr-input" id="jumpUser" type="text" value="ubuntu"></div>
-            <div class="clr-form-group"><label class="clr-control-label">Auth</label><select class="clr-select" id="jumpAuth"><option value="key">SSH key</option><option value="password">Password</option></select></div>
-            <div class="clr-form-group" id="jumpKeyPathGroup"><label class="clr-control-label" id="jumpKeyPathLabel">Key path</label><input class="clr-input" id="jumpKeyPath" type="text" placeholder="~/.ssh/id_ed25519"></div>
-            <div class="clr-form-group"><label class="clr-control-label">Subnets</label><input class="clr-input" id="jumpSubnets" type="text" placeholder="192.0.2.0/24, 192.0.3.0/24"><span class="clr-hint" style="font-size:0.75rem;">Comma-separated CIDRs (supports multiple subnets)</span></div>
-            <div class="clr-form-group"><label class="clr-control-label">Note</label><input class="clr-input" id="jumpNote" type="text"></div>
+            <div class="clr-form-group"><label for="jumpId" class="clr-control-label">Id</label><input class="clr-input" id="jumpId" type="text" placeholder="dal-jump-01"></div>
+            <div class="clr-form-group"><label for="jumpHost" class="clr-control-label">Host</label><input class="clr-input" id="jumpHost" type="text" placeholder="192.0.2.10"></div>
+            <div class="clr-form-group"><label for="jumpPort" class="clr-control-label">Port</label><input class="clr-input" id="jumpPort" type="number" value="22"></div>
+            <div class="clr-form-group"><label for="jumpUser" class="clr-control-label">Username</label><input class="clr-input" id="jumpUser" type="text" value="ubuntu"></div>
+            <div class="clr-form-group"><label for="jumpAuth" class="clr-control-label">Auth</label><select class="clr-select" id="jumpAuth"><option value="key">SSH key</option><option value="password">Password</option></select></div>
+            <div class="clr-form-group" id="jumpKeyPathGroup"><label for="jumpKeyPath" class="clr-control-label" id="jumpKeyPathLabel">Key path</label><input class="clr-input" id="jumpKeyPath" type="text" placeholder="~/.ssh/id_ed25519"></div>
+            <div class="clr-form-group"><label for="jumpSubnets" class="clr-control-label">Subnets</label><input class="clr-input" id="jumpSubnets" type="text" placeholder="192.0.2.0/24, 192.0.3.0/24"><span class="clr-hint" style="font-size:0.75rem;">Comma-separated CIDRs (supports multiple subnets)</span></div>
+            <div class="clr-form-group"><label for="jumpNote" class="clr-control-label">Note</label><input class="clr-input" id="jumpNote" type="text"></div>
             <div class="clr-form-group">
-              <label class="clr-control-label">Host Key (TOFU)</label>
+              <label for="jumpHostKey" class="clr-control-label">Host Key (TOFU)</label>
               <div style="display:flex;gap:0.4rem;align-items:center;">
                 <input class="clr-input" id="jumpHostKey" type="text" placeholder="Not pinned (auto-probed on save/test)" readonly style="font-size:0.8rem;font-family:monospace;">
                 <input type="hidden" id="jumpHostKeyRaw">
@@ -430,8 +337,8 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
               </div>
             </div>
           </div>
-          <div class="clr-form-group" id="jumpPrivKeyGroup"><label class="clr-control-label" id="jumpPrivKeyLabel">Private key (optional, stored encrypted)</label><textarea class="clr-textarea" id="jumpPrivateKey" rows="3"></textarea></div>
-          <div class="clr-form-group" id="jumpPasswordGroup"><label class="clr-control-label" id="jumpPasswordLabel">SSH password (optional)</label><input class="clr-input" id="jumpPassword" type="password" autocomplete="new-password"></div>
+          <div class="clr-form-group" id="jumpPrivKeyGroup"><label for="jumpPrivateKey" class="clr-control-label" id="jumpPrivKeyLabel">Private key (optional, stored encrypted)</label><textarea class="clr-textarea" id="jumpPrivateKey" rows="3"></textarea></div>
+          <div class="clr-form-group" id="jumpPasswordGroup"><label for="jumpPassword" class="clr-control-label" id="jumpPasswordLabel">SSH password (optional)</label><input class="clr-input" id="jumpPassword" type="password" autocomplete="new-password"></div>
           <div class="clr-check-row"><input type="checkbox" id="jumpDefault"><label for="jumpDefault">Default jump host when no subnet matches</label></div>
           <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem;flex-wrap:wrap">
             <button type="button" class="btn btn-outline btn-sm" id="jumpTestBtn">Test connection</button>
@@ -446,11 +353,38 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     </div>
   </div>
 
+  </section>
+  <section id="advanced-configuration" data-app-section aria-labelledby="advancedHeading" hidden>
+  <h1 id="advancedHeading" class="section-heading" tabindex="-1">Advanced Configuration</h1>
+  <p class="text-muted">Configure scan depth, saved profiles, concurrency, TLS, HCL, and Dell warranty settings for your next assessment.</p>
+  <div id="advancedCard">
+    <div id="advancedBody">
+<!-- ── 1. Profiles ─────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">🔖 Saved Profiles</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="clr-form-group">
+          <label for="profileSelect" class="clr-control-label">Load Profile</label>
+          <select class="clr-select" id="profileSelect">
+            <option value="">— select —</option>
+          </select>
+        </div>
+        <div class="clr-form-group" style="justify-content:flex-end;flex-direction:row;align-items:flex-end;gap:.5rem">
+          <button class="btn btn-flat btn-sm" id="loadProfileBtn">Load</button>
+          <button class="btn btn-flat btn-sm" id="saveProfileBtn">Save as…</button>
+          <button class="btn btn-flat btn-sm" id="deleteProfileBtn">Delete</button>
+        </div>
+      </div>
+      <p class="clr-hint mt-half" id="keychainNote">Passwords stored in: {keychain_note}</p>
+    </div>
+  </div>
+
   <!-- ── 4. Options ─────────────────────────────────────────────────────── -->
   <div class="card">
     <div class="card-header">⚙ Options</div>
     <div class="card-body">
-      <div class="clr-form-control" style="margin-bottom:0.75rem;">
+      <div id="scanDepthGroup" class="clr-form-control" style="margin-bottom:0.75rem;">
         <label class="clr-control-label" style="font-weight:600;">Scan Depth Profile</label>
         <div class="clr-control-container" style="margin-top:0.25rem;">
           <div style="display:flex;flex-direction:column;gap:0.4rem;">
@@ -470,8 +404,8 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         </div>
       </div>
       <div class="form-grid">
-        <div class="clr-form-group">
-          <label class="clr-control-label">Concurrent Hosts</label>
+        <div id="scanThreadsGroup" class="clr-form-group">
+          <label for="threadsInput" class="clr-control-label">Concurrent Hosts</label>
           <input class="clr-input" id="threadsInput" type="number" value="12" min="1" max="32" style="width:80px">
           <span class="clr-hint">Recommended: 4–8 over VPN/WAN, 8–16 on local LAN</span>
         </div>
@@ -481,7 +415,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <div class="clr-check-row">
         <input type="checkbox" id="combinedChk" checked>
         <label for="combinedChk">Generate Fleet Summary  <span class="text-muted text-sm">— also writes the combined host report (one file up to 64 hosts, sidecar pack above that)</span></label>
-        <div id="combinedNote" class="text-muted text-sm" style="display:none; margin-top:0.25rem;">Large fleet (more than 64 hosts): the combined host report is a sidecar pack, and each host opens on demand. fleet_summary.html is also written. For several independent scans, use Open Fleet Library.</div>
+        <div id="combinedNote" class="text-muted text-sm" style="display:none; margin-top:0.25rem;">Large fleet (more than 64 hosts): the combined host report is a sidecar pack, and each host opens on demand. fleet_summary.html is also written. For several independent scans, use Scan Library.</div>
       </div>
       <div class="clr-check-row">
         <input type="checkbox" id="debugChk" checked>
@@ -536,7 +470,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <hr class="vcf-sep">
       <!-- ── TLS & Security Hardening (collapsible) ── -->
       <div style="margin-bottom:0.75rem;">
-        <label class="clr-control-label" style="font-weight:600;margin-bottom:0.35rem">🛡 TLS &amp; Target Security</label>
+        <label for="ignoreTlsChk" class="clr-control-label" style="font-weight:600;margin-bottom:0.35rem">🛡 TLS &amp; Target Security</label>
         <div class="clr-check-row">
           <input type="checkbox" id="ignoreTlsChk" checked>
           <label for="ignoreTlsChk">Ignore BMC TLS certificate errors <span class="text-muted text-sm">(self-signed BMCs: pin the certificate when you run)</span></label>
@@ -582,13 +516,31 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
           <div class="flex gap-sm mt-xs" style="flex-wrap:wrap;align-items:center">
             <button class="btn btn-outline btn-sm" id="hclRefreshBtn">🔄 Refresh Live HCL</button>
             <input type="file" id="hclFileInput" accept=".zip" class="hidden">
-            <button class="btn btn-outline btn-sm" id="hclUploadBtn">Import Dark-Site HCL Zip</button>
+            <button class="btn btn-outline btn-sm" id="hclExportBtn">Export Dark-Site HCL ZIP</button>
+            <button class="btn btn-outline btn-sm" id="hclUploadBtn">Import Dark-Site HCL ZIP</button>
             <button class="btn btn-flat btn-sm hidden" id="hclResetBtn">Reset to Default HCL</button>
             <span id="hclRefreshSpinner" class="hidden text-sm text-muted" style="display:none;align-items:center;gap:.3rem">
               <span class="spinner"></span> Downloading latest HCL from Broadcom…
             </span>
           </div>
         </div>
+
+        <div id="hclActionStatus" role="status" aria-live="polite" class="text-sm mt-half"></div>
+        <details id="hclOfflineHelp" class="hcl-help">
+          <summary>Export, transfer and import offline HCL datasets</summary>
+          <ol>
+            <li>On a connected scanner, choose <strong>Refresh Live HCL</strong> if you need updated data, then <strong>Export Dark-Site HCL ZIP</strong>. Export packages the datasets currently used by this scanner; it does not download newer data.</li>
+            <li>Transfer the downloaded ZIP to the disconnected workstation.</li>
+            <li>On that scanner, open <strong>Advanced Configuration → Broadcom HCL Database</strong>, choose <strong>Import Dark-Site HCL ZIP</strong>, then check the displayed source, age and coverage before scanning.</li>
+          </ol>
+          <p>The ZIP contains compatibility datasets and their provenance, not scan results, credentials or the scanner application. CPU policy belongs to the scanner version; keep the receiving tool current. Older or limited data remains older or limited after export.</p>
+          <details><summary>CLI alternative</summary>
+            <p>On a connected computer, generate a bundle with <code>python3 vcfr_collector.py --bundle-hcl</code> (Windows: <code>python vcfr_collector.py --bundle-hcl</code>). Bundles are saved under <code>~/.vcf-readiness/hcl/</code> by default.</p>
+            <p>To preload a bundle when starting the Web UI, run <code>python3 vcfr_web.py --import-hcl "/path/to/offline-hcl.zip"</code>.</p>
+            <p>To scan with a transferred bundle from the CLI, run <code>python3 vcfr_collector.py --import-hcl "/path/to/offline-hcl.zip" --targets 192.0.2.10</code>. On Windows use <code>python</code> and the destination file path. The same ZIP can be imported in the browser.</p>
+          </details>
+          <a href="/docs/install" target="_blank" rel="noopener">Offline installation and HCL guide</a>
+        </details>
       </div>
     </div>
   </div>
@@ -606,12 +558,12 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       <div class="card-body">
         <div class="form-grid">
           <div class="clr-form-group">
-            <label class="clr-control-label">Client ID</label>
+            <label for="dellIdInput" class="clr-control-label">Client ID</label>
             <input class="clr-input" id="dellIdInput" type="text" placeholder="TechDirect client_id"
                    autocomplete="off">
           </div>
           <div class="clr-form-group">
-            <label class="clr-control-label">Client Secret</label>
+            <label for="dellSecretInput" class="clr-control-label">Client Secret</label>
             <input class="clr-input" id="dellSecretInput" type="password" placeholder="TechDirect secret"
                    autocomplete="off">
           </div>
@@ -623,7 +575,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         </div>
         <hr class="vcf-sep">
         <div class="clr-form-group">
-          <label class="clr-control-label">Service Tags (comma-separated or one per line)</label>
+          <label for="dellTagsInput" class="clr-control-label">Service Tags (comma-separated or one per line)</label>
           <textarea class="clr-textarea" id="dellTagsInput" rows="2"
                     placeholder="ABC1234, DEF5678"></textarea>
         </div>
@@ -635,11 +587,173 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     </div>
   </div>
 
-      </div>
+    </div>
   </div>
+  </section>
 
+  <section id="scan-library" data-app-section aria-labelledby="libraryHeading" hidden>
+    <h1 id="libraryHeading" class="section-heading" tabindex="-1">Scan Library</h1>
+    <p class="text-muted">Import a prior scan, or combine scans from your library into one fleet assessment.</p>
+    <div class="card"><div class="card-header">Import prior scan</div><div class="card-body">
+      <p>Import scan JSON, gzip, or ZIP files to regenerate reports. Imported results appear below. Original files stay in their current location.</p>
+      <input type="file" id="importSummaryInput" accept=".json,.gz,.zip" style="display:none;" multiple>
+      <button class="btn btn-outline btn-sm" id="importScanBtn" title="Import a prior scan: data/fleet_summary.json, vcf_readiness_scan_*.zip, or vcf_summary_*.json">Import prior scan</button>
+      <label class="clr-control-label library-output-label" for="libraryOutdirInput">Report output folder</label>
+      <input id="libraryOutdirInput" class="clr-input" type="text" value="~/Desktop/VCF-Scans">
+    </div></div>
+    <div class="card"><div class="card-header">Assemble scans from a folder</div><div class="card-body">
+        <p class="text-sm text-muted" style="margin-top:0; margin-bottom:0.75rem;">
+          Discover and merge multiple scan drops (folders or zip archives) from across datacenters, jump boxes, or offline drives into a unified fleet dataset with deduplication.
+        </p>
+        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem; flex-wrap:wrap;">
+          <label for="fleetLibraryPathInput" style="font-weight:600; font-size:0.85rem; white-space:nowrap;">Library Folder:</label>
+          <input type="text" id="fleetLibraryPathInput" class="clr-input" value="~/Desktop/VCF-Scans" style="flex:1; min-width:240px; font-family:monospace; font-size:0.85rem;" placeholder="~/Desktop/VCF-Scans">
+          <button type="button" class="btn btn-outline btn-sm" id="fleetLibraryDiscoverBtn">🔍 Discover Scans</button>
+        </div>
+
+        <div id="fleetLibraryLoading" role="status" class="text-sm text-muted hidden" style="margin:1rem 0;">
+          <span>⏳ Scanning library folder for scan directories and zip archives…</span>
+        </div>
+
+        <div id="fleetLibraryEmpty" class="alert alert-info text-xs hidden" style="margin-bottom:1rem;">
+          <span>No scan folders or zip archives found in this library directory. Drop prior scan folders or .zip files into this folder and click <strong>Discover Scans</strong>.</span>
+        </div>
+
+        <div id="fleetLibraryScansWrap" class="hidden" style="margin-bottom:1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <span class="text-xs text-muted" id="fleetLibraryCount">0 scan(s) discovered</span>
+            <span class="text-xs text-muted">Newest scan wins during deduplication</span>
+          </div>
+          <div style="max-height:420px; overflow:auto; border:1px solid var(--vcf-border); border-radius:4px;">
+            <table class="vcf-cert-table" style="margin:0;">
+              <caption class="sr-only">Available scans in the selected library folder</caption>
+              <thead>
+                <tr style="border-bottom:1px solid var(--vcf-border);">
+                  <th scope="col" style="width:36px;"><input type="checkbox" id="selectAllLibraryScansChk" aria-label="Select all scans" checked></th>
+                  <th scope="col">Scan ID / Name</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Hosts</th>
+                  <th scope="col">Site</th>
+                  <th scope="col">Type</th>
+                </tr>
+              </thead>
+              <tbody id="fleetLibraryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin-top:0.75rem;">
+          <div style="display:flex; gap:0.4rem; align-items:center;">
+            <label for="fleetLibrarySiteInput" style="font-size:0.85rem; font-weight:600;">Default Site:</label>
+            <input type="text" id="fleetLibrarySiteInput" class="clr-input input-sm" placeholder="e.g. DC1" style="max-width:140px;">
+          </div>
+          <label style="display:flex; gap:0.4rem; align-items:center; font-size:0.85rem; cursor:pointer;">
+            <input type="checkbox" id="fleetLibraryObfuscateChk"> Obfuscate customer identifiers
+          </label>
+        </div>
+        <div id="fleetLibraryStatusMsg" role="status" aria-live="polite" class="text-xs text-muted" style="margin-top:0.5rem;"></div>
+      <div class="library-footer">
+        <span id="fleetLibrarySelectionSummary" role="status">0 scan(s) selected</span>
+        <button type="button" class="btn btn-primary" id="fleetLibraryAssembleBtn" disabled>Assemble fleet</button>
+      </div>
+    </div></div>
+
+{GROUP_LIBRARY_HTML}
+</section>
+
+  {VDT_PANEL}
+  <section id="scan-wizard" data-app-section aria-labelledby="wizardHeading" hidden>
+    <h1 id="wizardHeading" class="section-heading" tabindex="-1">Scan Wizard</h1>
+    <p class="text-muted">Set up an assessment in five steps. Vault credentials and a jump host are optional; new scans default to manual credentials on this workstation.</p>
+    <div class="workflow">
+      <nav class="workflow-steps" aria-label="Scan setup steps">
+        <ol>
+          <li><button type="button" data-wizard-step="0" aria-current="step">1. Targets</button></li>
+          <li><button type="button" data-wizard-step="1" disabled>2. Credentials &amp; execution</button></li>
+          <li><button type="button" data-wizard-step="2" disabled>3. HCL readiness</button></li>
+          <li><button type="button" data-wizard-step="3" disabled>4. Scan options &amp; output</button></li>
+          <li><button type="button" data-wizard-step="4" disabled>5. Review &amp; run</button></li>
+        </ol>
+      </nav>
+      <div class="workflow-content">
+        <p id="wizardStepStatus" class="text-muted" role="status">Step 1 of 5</p>
+        <div id="wizardError" class="alert alert-danger hidden" role="alert" tabindex="-1"></div>
+        <div data-wizard-panel="0"><h2 tabindex="-1">Choose targets</h2><p>Enter BMC addresses, hostnames, ranges, or subnets. Probing is optional.</p><div id="wizardTargetsSlot"></div></div>
+        <div data-wizard-panel="1" hidden><h2 tabindex="-1">Credentials and execution</h2><p>Enter BMC credentials below. Use the vault only if you want saved credentials; choose a jump host only for remote execution.</p><div id="wizardAccessSlot"></div>{VDT_WIZARD if vdt_available else ""}<a href="#credential-vault">Create or unlock a vault / manage jump hosts</a><p><a href="#scan-wizard">Return to Scan Wizard</a> after managing the vault.</p></div>
+        <div data-wizard-panel="2" hidden><h2 tabindex="-1">Check HCL readiness</h2><p>The workflow checks the local compatibility database. Download an update when connected, or import an approved dark-site ZIP.</p><p id="wizardHclStatus" role="status">Checking local HCL…</p><div id="wizardHclSlot"></div><div id="wizardHclAckRow" class="clr-check-row" hidden><input type="checkbox" id="wizardHclAck"><label for="wizardHclAck">Continue with limited or unverified HCL evidence. I understand this does not establish hardware certification.</label></div></div>
+        <div data-wizard-panel="3" hidden><h2 tabindex="-1">Scan options and output</h2><div id="wizardDepthSlot"></div><div id="wizardThreadsSlot"></div><div id="wizardOutputSlot"></div><p><a href="#advanced-configuration">More settings: TLS, exports, warranty, and scan behavior</a>. Return to Scan Wizard to review your choices.</p></div>
+        <div data-wizard-panel="4" hidden><h2 tabindex="-1">Review and run</h2><p>Review your assessment settings. Passwords stay out of this summary.</p><dl id="wizardReview" class="workflow-review"></dl><p>Run Assessment uses the same scan engine and certificate checks as Scanner.</p></div>
+        <div class="workflow-footer">
+          <a href="#scanner" class="btn btn-flat">Exit wizard</a>
+          <button type="button" id="wizardBackBtn" class="btn btn-outline" disabled>Back</button>
+          <button type="button" id="wizardNextBtn" class="btn btn-primary">Next</button>
+          <button type="button" id="wizardRunBtn" class="btn btn-primary" hidden {'disabled' if not collector_ok else ''}>Run Assessment</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<div class="card shared-results">
+    <!-- Post-Scan / Report & Export Actions -->
+    <div id="postScanActions" class="hidden" style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--vcf-border);">
+      <!-- Finished Scan Summary Card -->
+      <div id="postScanSummaryCard" class="card mb-md hidden" style="width: 100%; margin-bottom: 0.85rem;">
+        <div class="card-header" style="font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
+          <span>🏁 Finished Scan Summary</span>
+          <span id="summarySuccessBadge" class="badge badge-success">0/0 succeeded</span>
+        </div>
+        <div class="card-body" style="padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
+          <div id="summaryMetricsRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span>⏱️ <strong>Scan Performance:</strong></span>
+            <span id="summaryMetricsText">—</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span>📊 <strong>VCF Readiness:</strong></span>
+            <span id="summarySupportedBadge" class="badge badge-success">0 Supported</span>
+            <span id="summaryDeprecatedBadge" class="badge badge-warning">0 Deprecated</span>
+            <span id="summaryUnsupportedBadge" class="badge badge-danger">0 Unsupported</span>
+            <span id="summaryIncompleteBadge" class="badge badge-warning">0 Incomplete</span>
+            <span id="summaryRemediatedBadge" class="badge badge-success hidden">0 Remediated</span>
+          </div>
+          <div id="summaryFailedList" class="text-sm hidden"></div>
+          <div id="summaryOutdirRow" class="text-muted" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all; flex-wrap: wrap;">
+            <span>📁 <strong>Output Folder:</strong></span>
+            <code id="summaryOutdirText" style="font-size: 0.8rem;">—</code>
+            <button class="btn btn-outline btn-sm" id="summaryOpenFolderBtn" type="button" style="padding: 0.1rem 0.4rem; font-size: 0.75rem; margin-left: 0.25rem;">📂 Open Folder</button>
+          </div>
+          <div id="summaryZipRow" class="text-muted hidden" style="display: flex; align-items: center; gap: 0.5rem; word-break: break-all;">
+            <span>📦 <strong>Zip Archive:</strong></span>
+            <code id="summaryZipText" style="font-size: 0.8rem;">—</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-xl flex-wrap items-start">
+        {SUMMARY_ACTIONS}
+
+        <!-- Remediation / Retry Column -->
+        <div id="retryActionsGroup" class="flex flex-col gap-xs items-start hidden" style="min-width:260px">
+          <span class="fw-bold text-xs text-muted mb-3xs">REMEDIATION &amp; RETRY</span>
+          <div id="retryBreakdownBadges" class="flex gap-2xs flex-wrap mb-2xs" style="font-size:0.75rem">
+            <span id="badgePartialCount" class="badge badge-warning hidden">⚠️ <span id="cntPartial">0</span> Partial</span>
+            <span id="badgeTimeoutCount" class="badge badge-warning hidden">⏱️ <span id="cntTimeout">0</span> Timed Out</span>
+            <span id="badgeAuthCount" class="badge badge-danger hidden">🔒 <span id="cntAuth">0</span> Auth Failed</span>
+            <span id="badgeUnreachCount" class="badge hidden" style="background:#64748b;color:#ffffff">🔌 <span id="cntUnreach">0</span> Unreachable</span>
+          </div>
+          <button class="btn btn-warning-solid btn-sm" id="retryIssuesBtn" style="background:#ca8a04;border-color:#ca8a04;color:#ffffff;font-weight:600">
+            🔄 Retry Active Issues (<span id="retryIssuesCount">0</span>)
+          </button>
+          <button class="btn btn-outline btn-sm hidden" id="retryAllBtn" style="font-size:0.78rem">
+            🔄 Retry All Non-Success (<span id="retryAllCount">0</span>)
+          </button>
+        </div>
+      </div>
+    </div>
+
+</div>
 <!-- ── Progress ───────────────────────────────────────────────────────── -->
-  <div id="progressSection" class="hidden">
+  <div id="progressSection" class="hidden" aria-label="Assessment progress">
+    <button class="btn btn-danger btn-sm hidden" id="cancelBtn">🛑 Cancel Scan</button>
     <!-- ── Jump Host Reconnect Alert Banner ── -->
     <div id="jumpReconnectAlert" class="alert alert-warning hidden" style="margin-bottom: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
       <div>
@@ -656,15 +770,17 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <span id="progressLabel">Scanning…</span>
       </div>
       <div class="card-body">
-        <div class="progress-track">
+        <div class="progress-track" id="scanHostProgress" role="progressbar" aria-label="Hosts processed in current pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="progress-bar" id="progressBar"></div>
         </div>
         <p class="progress-label" id="progressText">0 / 0 hosts</p>
+        <p id="scanProgressOutcome" class="text-muted"></p>
 
+        <details class="log-disclosure"><summary>Collection log</summary>
         <div class="log-box" id="logBox"></div>
         <div class="flex gap-sm mt-half">
           <button class="btn btn-flat btn-sm" id="clearLogBtn">Clear Log</button>
-        </div>
+        </div></details>
 
         <!-- ── Active In-Process Hosts (Below logs, above Results) ── -->
         <div id="activeScansBox" class="active-scans-box hidden">
@@ -744,10 +860,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
   <!-- ── Certificate Trust Review Modal (TOFU) ────────────────────────── -->
   <div id="certModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog">
+    <div class="vcf-modal-dialog" role="dialog" aria-modal="true" aria-label="Review certificates" tabindex="-1">
       <div class="vcf-modal-header">
         <h3 style="margin:0; font-size:1.1rem; font-weight:600;">🔒 Certificate Trust &amp; Thumbprint Review (TOFU)</h3>
-        <button type="button" id="closeCertModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+        <button type="button" id="closeCertModalBtn" aria-label="Close dialog" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
       </div>
       <div class="vcf-modal-body">
         <p class="text-sm text-muted" style="margin-top:0; margin-bottom:0.75rem;">
@@ -781,10 +897,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
   <!-- ── Jump Host Key Trust Review Modal (TOFU) ──────────────────────── -->
   <div id="jumpHostKeyModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog" style="max-width:620px; width:95%;">
+    <div class="vcf-modal-dialog" role="dialog" aria-modal="true" aria-label="Verify jump host key" tabindex="-1" style="max-width:620px; width:95%;">
       <div class="vcf-modal-header">
         <h3 style="margin:0; font-size:1.1rem; font-weight:600;">🔒 SSH Host Key Trust &amp; Pinning (TOFU)</h3>
-        <button type="button" id="closeJumpHostKeyModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+        <button type="button" id="closeJumpHostKeyModalBtn" aria-label="Close dialog" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
       </div>
       <div class="vcf-modal-body">
         <p class="text-sm text-muted" style="margin-top:0; margin-bottom:0.75rem;">
@@ -815,10 +931,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
   <!-- ── Jump Host Edit Subnets Modal ────────────────────────────────────── -->
   <div id="jumpHostSubnetsModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog" style="max-width:560px; width:95%;">
+    <div class="vcf-modal-dialog" role="dialog" aria-modal="true" aria-label="Jump host subnets" tabindex="-1" style="max-width:560px; width:95%;">
       <div class="vcf-modal-header">
         <h3 style="margin:0; font-size:1.1rem; font-weight:600;">🌐 Edit Subnets for Jump Host</h3>
-        <button type="button" id="closeJumpHostSubnetsModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+        <button type="button" id="closeJumpHostSubnetsModalBtn" aria-label="Close dialog" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
       </div>
       <div class="vcf-modal-body">
         <p class="text-sm text-muted" style="margin-top:0; margin-bottom:0.75rem;">
@@ -847,80 +963,12 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     </div>
   </div>
 
-  <!-- ── Fleet Library Modal (Multi-Scan Drop & Assemble) ─────────────── -->
-  <div id="fleetLibraryModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog" style="max-width:880px; width:95%;">
-      <div class="vcf-modal-header">
-        <h3 style="margin:0; font-size:1.1rem; font-weight:600;">📚 Fleet Library — Multi-Scan Assembly</h3>
-        <button type="button" id="closeFleetLibraryModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
-      </div>
-      <div class="vcf-modal-body">
-        <p class="text-sm text-muted" style="margin-top:0; margin-bottom:0.75rem;">
-          Discover and merge multiple scan drops (folders or zip archives) from across datacenters, jump boxes, or offline drives into a unified fleet dataset with deduplication.
-        </p>
-        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem; flex-wrap:wrap;">
-          <label style="font-weight:600; font-size:0.85rem; white-space:nowrap;">Library Folder:</label>
-          <input type="text" id="fleetLibraryPathInput" class="clr-input" value="~/Desktop/VCF-Scans" style="flex:1; min-width:240px; font-family:monospace; font-size:0.85rem;" placeholder="~/Desktop/VCF-Scans">
-          <button type="button" class="btn btn-outline btn-sm" id="fleetLibraryDiscoverBtn">🔍 Discover Scans</button>
-        </div>
-
-        <div id="fleetLibraryLoading" class="text-sm text-muted hidden" style="margin:1rem 0;">
-          <span>⏳ Scanning library folder for scan directories and zip archives…</span>
-        </div>
-
-        <div id="fleetLibraryEmpty" class="alert alert-info text-xs hidden" style="margin-bottom:1rem;">
-          <span>No scan folders or zip archives found in this library directory. Drop prior scan folders or .zip files into this folder and click <strong>Discover Scans</strong>.</span>
-        </div>
-
-        <div id="fleetLibraryScansWrap" class="hidden" style="margin-bottom:1rem;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-            <span class="text-xs text-muted" id="fleetLibraryCount">0 scan(s) discovered</span>
-            <span class="text-xs text-muted">Newest scan wins during deduplication</span>
-          </div>
-          <div style="max-height:280px; overflow-y:auto; border:1px solid var(--vcf-border); border-radius:4px;">
-            <table class="vcf-cert-table" style="margin:0;">
-              <thead>
-                <tr style="border-bottom:1px solid var(--vcf-border);">
-                  <th style="width:36px;"><input type="checkbox" id="selectAllLibraryScansChk" checked></th>
-                  <th>Scan ID / Name</th>
-                  <th>Date</th>
-                  <th>Hosts</th>
-                  <th>Site</th>
-                  <th>Type</th>
-                </tr>
-              </thead>
-              <tbody id="fleetLibraryTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin-top:0.75rem;">
-          <div style="display:flex; gap:0.4rem; align-items:center;">
-            <label style="font-size:0.85rem; font-weight:600;">Default Site:</label>
-            <input type="text" id="fleetLibrarySiteInput" class="clr-input input-sm" placeholder="e.g. DC1" style="max-width:140px;">
-          </div>
-          <label style="display:flex; gap:0.4rem; align-items:center; font-size:0.85rem; cursor:pointer;">
-            <input type="checkbox" id="fleetLibraryObfuscateChk"> Obfuscate customer identifiers
-          </label>
-        </div>
-        <div id="fleetLibraryStatusMsg" class="text-xs text-muted" style="margin-top:0.5rem;"></div>
-      </div>
-      <div class="vcf-modal-footer">
-        <span class="text-xs text-muted" id="fleetLibrarySelectionSummary">0 scan(s) selected</span>
-        <div class="flex gap-sm">
-          <button type="button" class="btn btn-flat btn-sm" id="cancelFleetLibraryModalBtn">Cancel</button>
-          <button type="button" class="btn btn-primary btn-sm" id="fleetLibraryAssembleBtn" disabled>⚡ Assemble Fleet</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ── Missing Password Warning Modal ────────────────────────────── -->
   <div id="missingPasswordModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog" style="max-width:540px; width:95%;">
+    <div class="vcf-modal-dialog" role="dialog" aria-modal="true" aria-label="Missing BMC password" tabindex="-1" style="max-width:540px; width:95%;">
       <div class="vcf-modal-header">
         <h3 style="margin:0; font-size:1.1rem; font-weight:600;">⚠️ Missing BMC Password</h3>
-        <button type="button" id="closeMissingPasswordModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+        <button type="button" id="closeMissingPasswordModalBtn" aria-label="Close dialog" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
       </div>
       <div class="vcf-modal-body">
         <p style="margin-top:0; font-size:0.95rem; font-weight:600; color:var(--vcf-text);">
@@ -948,10 +996,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
   <!-- ── BMC certificate pin gate ──────────────────────────────────── -->
   <div id="certPinModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog" style="max-width:640px; width:95%;">
+    <div class="vcf-modal-dialog" role="dialog" aria-modal="true" aria-label="Certificate trust" tabindex="-1" style="max-width:640px; width:95%;">
       <div class="vcf-modal-header">
         <h3 style="margin:0; font-size:1.1rem; font-weight:600;">🔒 Pin BMC certificates before scanning</h3>
-        <button type="button" id="closeCertPinModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+        <button type="button" id="closeCertPinModalBtn" aria-label="Close dialog" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
       </div>
       <div class="vcf-modal-body">
         <p style="margin-top:0; font-size:0.95rem; font-weight:600; color:var(--vcf-text);">
@@ -976,10 +1024,10 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
   <!-- ── Active Remote Scan Conflict Modal ────────────────────────── -->
   <div id="activeScanConflictModal" class="vcf-modal-backdrop hidden">
-    <div class="vcf-modal-dialog" style="max-width:580px; width:95%;">
+    <div class="vcf-modal-dialog" role="dialog" aria-modal="true" aria-label="Active scan conflict" tabindex="-1" style="max-width:580px; width:95%;">
       <div class="vcf-modal-header">
         <h3 style="margin:0; font-size:1.1rem; font-weight:600;">⚡ Active Scan Detected on Jump Host</h3>
-        <button type="button" id="closeActiveScanConflictModalBtn" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
+        <button type="button" id="closeActiveScanConflictModalBtn" aria-label="Close dialog" style="cursor:pointer; background:none; border:none; color:inherit; font-size:1.2rem; line-height:1;">✕</button>
       </div>
       <div class="vcf-modal-body">
         <p style="margin-top:0; font-size:0.95rem; font-weight:600; color:var(--vcf-text);">
@@ -1002,13 +1050,13 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     </div>
   </div>
 
-</div><!-- /main-wrap -->
+</main><!-- /main-wrap -->
 
 <script>
 {APP_JS}
 </script>
 </body>
-</html>"""
+</html>""")
 
 
 def _get_keychain_label() -> str:

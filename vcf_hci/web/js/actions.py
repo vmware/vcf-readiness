@@ -31,7 +31,7 @@ JS_ACTIONS = """
     var isObf = document.getElementById('obfuscateChk') && document.getElementById('obfuscateChk').checked;
     var ep = '/api/export-excel' + (isObf ? '?obfuscated=1' : '');
     fetch(ep, {method:'POST', credentials: 'same-origin'}).then(function(r) {
-      if (!r.ok) { r.json().then(function(j){alert('Excel error: '+j.error);}); return; }
+      if (!r.ok) { r.json().then(function(j){showContextMessage('Excel error: '+j.error);}); return; }
       return r.blob().then(function(blob) {
         var url = URL.createObjectURL(blob);
         var a2 = document.createElement('a');
@@ -48,7 +48,7 @@ JS_ACTIONS = """
   if (expObfBtn) {
     expObfBtn.addEventListener('click', function() {
       fetch('/api/export-inventory-excel-obfuscated', {method:'POST', credentials: 'same-origin'}).then(function(r) {
-        if (!r.ok) { r.json().then(function(j){alert('Obfuscated Excel error: '+(j.error||r.status));}); return; }
+        if (!r.ok) { r.json().then(function(j){showContextMessage('Obfuscated Excel error: '+(j.error||r.status));}); return; }
         return r.blob().then(function(blob) {
           var url = URL.createObjectURL(blob);
           var a2 = document.createElement('a');
@@ -66,7 +66,7 @@ JS_ACTIONS = """
   if (expObfZipBtn) {
     expObfZipBtn.addEventListener('click', function() {
       fetch('/api/export-obfuscated-zip', {method:'POST', credentials: 'same-origin'}).then(function(r) {
-        if (!r.ok) { r.json().then(function(j){alert('Obfuscated ZIP error: '+(j.error||r.status));}); return; }
+        if (!r.ok) { r.json().then(function(j){showContextMessage('Obfuscated ZIP error: '+(j.error||r.status));}); return; }
         return r.blob().then(function(blob) {
           var url = URL.createObjectURL(blob);
           var a2 = document.createElement('a');
@@ -86,7 +86,7 @@ JS_ACTIONS = """
       var isObf = document.getElementById('obfuscateChk') && document.getElementById('obfuscateChk').checked;
       var ep = '/api/export-csv' + (isObf ? '?obfuscated=1' : '');
       fetch(ep, {method:'POST', credentials: 'same-origin'}).then(function(r) {
-        if (!r.ok) { r.json().then(function(j){alert('CSV error: '+j.error);}); return; }
+        if (!r.ok) { r.json().then(function(j){showContextMessage('CSV error: '+j.error);}); return; }
         return r.blob().then(function(blob) {
           var url = URL.createObjectURL(blob);
           var a2 = document.createElement('a');
@@ -102,7 +102,7 @@ JS_ACTIONS = """
   // ── Export Summary JSON ────────────────────────────────────────────────────
   document.getElementById('exportSummaryJsonBtn').addEventListener('click', function() {
     fetch('/api/export-summary-json', {method:'POST', credentials: 'same-origin'}).then(function(r) {
-      if (!r.ok) { r.json().then(function(j){alert('Export JSON error: '+j.error);}); return; }
+      if (!r.ok) { r.json().then(function(j){showContextMessage('Export JSON error: '+j.error);}); return; }
       return r.blob().then(function(blob) {
         var url = URL.createObjectURL(blob);
         var a2 = document.createElement('a');
@@ -121,8 +121,10 @@ JS_ACTIONS = """
       prerenderBtn.disabled = true;
       var origText = prerenderBtn.textContent;
       prerenderBtn.textContent = '⏳ Pre-rendering...';
+      setOperationProgress('prerenderReportsBtn',{busy:true,label:'Preparing host reports; duration unknown'});
       post('/api/fleet/prerender', {})
         .then(function(res) {
+          setOperationProgress('prerenderReportsBtn',{busy:false,label:'Report preparation finished'});
           prerenderBtn.disabled = false;
           if (res && res.ok) {
             prerenderBtn.textContent = '✓ Pre-rendered (' + res.rendered + '/' + res.total + ')';
@@ -131,14 +133,15 @@ JS_ACTIONS = """
               loadFleetIndexPage(_fleetPageIndex);
             }
           } else {
-            alert('Pre-render error: ' + (res ? res.error : 'Unknown error'));
+            showContextMessage('Pre-render error: ' + (res ? res.error : 'Unknown error'));
             prerenderBtn.textContent = origText;
           }
         })
         .catch(function(err) {
+          setOperationProgress('prerenderReportsBtn',{busy:false,label:'Report preparation finished'});
           prerenderBtn.disabled = false;
           prerenderBtn.textContent = origText;
-          alert('Pre-render error: ' + err);
+          showContextMessage('Pre-render error: ' + err);
         });
     });
   }
@@ -147,7 +150,7 @@ JS_ACTIONS = """
   function openScanFolder(targetPath) {
     var outdir = targetPath || _lastScanOutdir || (document.getElementById('outdirInput') ? document.getElementById('outdirInput').value.trim() : '');
     post('/api/open-folder', {path: outdir}).catch(function(err) {
-      alert('Could not open folder: ' + err);
+      showContextMessage('Could not open folder: ' + err);
     });
   }
 
@@ -245,17 +248,6 @@ JS_ACTIONS = """
   // ── Fleet Library Modal & Multi-Scan Assembly ─────────────────────────────
   var _discoveredScans = [];
 
-  function openFleetLibraryModal() {
-    var modal = document.getElementById('fleetLibraryModal');
-    if (modal) show(modal);
-    discoverFleetScans();
-  }
-
-  function closeFleetLibraryModal() {
-    var modal = document.getElementById('fleetLibraryModal');
-    if (modal) hide(modal);
-  }
-
   function updateLibrarySelectionSummary() {
     var checkedBoxes = document.querySelectorAll('#fleetLibraryTableBody input[type="checkbox"]:checked');
     var count = checkedBoxes.length;
@@ -264,8 +256,11 @@ JS_ACTIONS = """
       summaryEl.textContent = count + ' scan(s) selected';
     }
     var assembleBtn = document.getElementById('fleetLibraryAssembleBtn');
+    var all = document.getElementById('selectAllLibraryScansChk');
+    var total = document.querySelectorAll('#fleetLibraryTableBody .lib-scan-chk').length;
+    if (all) { all.checked = total > 0 && count === total; all.indeterminate = count > 0 && count < total; }
     if (assembleBtn) {
-      assembleBtn.disabled = (count === 0);
+      assembleBtn.disabled = (count === 0) || !!_scanRunning;
     }
   }
 
@@ -306,13 +301,13 @@ JS_ACTIONS = """
             var dateStr = s.scanned_at ? esc(s.scanned_at.substring(0, 16).replace('T', ' ')) : '—';
             var hostsStr = (s.host_count !== null && s.host_count !== undefined) ? esc(String(s.host_count)) : '—';
             var siteStr = s.site ? esc(s.site) : '<span class="text-muted">—</span>';
-            var typeBadge = s.is_zip ? '<span class="badge" style="background:#e0e7ff;color:#3730a3">ZIP</span>'
-                                     : '<span class="badge" style="background:#f1f5f9;color:#334155">Folder</span>';
+            var typeBadge = s.is_zip ? '<span class="badge badge-secondary">ZIP</span>'
+                                     : '<span class="badge badge-secondary">Folder</span>';
             if (s.obfuscated) {
-              typeBadge += ' <span class="badge" style="background:#fef3c7;color:#92400e">Obfuscated</span>';
+              typeBadge += ' <span class="badge badge-warning">Obfuscated</span>';
             }
             return '<tr>'
-              + '<td><input type="checkbox" class="lib-scan-chk" data-idx="' + idx + '" checked></td>'
+              + '<td><input type="checkbox" aria-label="Select scan ' + esc(s.scan_id) + '" class="lib-scan-chk" data-idx="' + idx + '" checked></td>'
               + '<td><strong title="' + esc(s.path) + '">' + esc(s.scan_id) + '</strong></td>'
               + '<td><small class="text-muted">' + dateStr + '</small></td>'
               + '<td>' + hostsStr + '</td>'
@@ -336,15 +331,6 @@ JS_ACTIONS = """
       });
   }
 
-  var openLibBtn = document.getElementById('openLibraryBtn');
-  if (openLibBtn) openLibBtn.addEventListener('click', openFleetLibraryModal);
-
-  var closeLibBtn = document.getElementById('closeFleetLibraryModalBtn');
-  if (closeLibBtn) closeLibBtn.addEventListener('click', closeFleetLibraryModal);
-
-  var cancelLibBtn = document.getElementById('cancelFleetLibraryModalBtn');
-  if (cancelLibBtn) cancelLibBtn.addEventListener('click', closeFleetLibraryModal);
-
   var discLibBtn = document.getElementById('fleetLibraryDiscoverBtn');
   if (discLibBtn) discLibBtn.addEventListener('click', discoverFleetScans);
 
@@ -361,6 +347,7 @@ JS_ACTIONS = """
   var assembleBtn = document.getElementById('fleetLibraryAssembleBtn');
   if (assembleBtn) {
     assembleBtn.addEventListener('click', function() {
+      if (_scanRunning) { showContextMessage('Wait for the current assessment or import to finish before assembling a fleet.'); return; }
       var pathInput = document.getElementById('fleetLibraryPathInput');
       var libPath = pathInput ? pathInput.value.trim() : '';
       var siteInput = document.getElementById('fleetLibrarySiteInput');
@@ -382,6 +369,7 @@ JS_ACTIONS = """
       var statusEl = document.getElementById('fleetLibraryStatusMsg');
       if (statusEl) statusEl.textContent = '⏳ Assembling fleet artifacts across ' + selectedPaths.length + ' scan(s)…';
       assembleBtn.disabled = true;
+      _scanRunning = true;
 
       post('/api/fleet/assemble', {
         library_dir: libPath,
@@ -390,12 +378,13 @@ JS_ACTIONS = """
         obfuscate: isObf
       })
         .then(function(resp) {
-          assembleBtn.disabled = false;
+          _scanRunning = false;
+          updateLibrarySelectionSummary();
           if (!resp || !resp.ok) {
             if (statusEl) statusEl.textContent = 'Assembly error: ' + ((resp && resp.error) || 'Failed to assemble fleet');
             return;
           }
-          closeFleetLibraryModal();
+          if (statusEl) statusEl.textContent = 'Fleet assembled. Results and report actions are available below.';
 
           // Set scan status & show post-scan actions
           _scanRunning = false;
@@ -407,7 +396,8 @@ JS_ACTIONS = """
           loadFleetIndexPage(0);
         })
         .catch(function(err) {
-          assembleBtn.disabled = false;
+          _scanRunning = false;
+          updateLibrarySelectionSummary();
           if (statusEl) statusEl.textContent = 'Assembly failed: ' + err;
         });
     });
@@ -424,4 +414,24 @@ JS_ACTIONS = """
   });
   window.addEventListener('beforeunload', saveSession);
 
+
+  document.getElementById('executiveHtmlBtn').addEventListener('click', function() {
+    window.open('/api/export-executive?format=html', '_blank', 'noopener,noreferrer');
+  });
+  function downloadExecutive(obfuscated, button) {
+    button.disabled = true;
+    fetch('/api/export-executive' + (obfuscated ? '?obfuscated=1' : ''), {credentials:'same-origin'})
+      .then(function(response) {
+        if (!response.ok) throw new Error('Executive summary is not available. Complete or import a scan first.');
+        return response.blob();
+      }).then(function(blob) {
+        var url = URL.createObjectURL(blob), link = document.createElement('a');
+        link.href = url;
+        link.download = (obfuscated ? '00_OBFUSCATED_' : '00_') + 'executive_summary.pdf';
+        link.click();
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+      }).catch(function(error) { showContextMessage(error.message); }).finally(function() { button.disabled = false; });
+  }
+  document.getElementById('executivePdfBtn').addEventListener('click', function() { downloadExecutive(false, this); });
+  document.getElementById('executiveObfPdfBtn').addEventListener('click', function() { downloadExecutive(true, this); });
 """

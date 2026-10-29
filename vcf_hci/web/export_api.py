@@ -49,6 +49,42 @@ logger = logging.getLogger("vcf_assess")
 class ExportApiMixin(_ApiMixinBase):
     """Excel, CSV, and JSON export endpoints mixed into AppHandler."""
 
+    def _api_export_executive(self) -> None:
+        from vcf_hci.report.executive import build_executive_summary, executive_html, executive_pdf
+        with _state_lock:
+            results = list(_state.get("results") or [])
+            failed_hosts = list(_state.get("failed_hosts") or [])
+            outdir = _state.get("outdir", "")
+        if not results and outdir:
+            from vcf_hci.summary_io import load_summary
+            try:
+                results = load_summary(outdir) or []
+            except Exception:
+                logger.debug("Could not reload executive report source", exc_info=True)
+        if not results and not failed_hosts:
+            self._send_json({"error": "No scan results available"}, 400)
+            return
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        obfuscated = query.get("obfuscated", ["0"])[0] in ("1", "true")
+        as_html = query.get("format", ["pdf"])[0] == "html"
+        try:
+            if obfuscated:
+                salt = os.urandom(16).hex()
+                results = [obfuscate_host_data(host, f"Host-{index + 1}", salt) for index, host in enumerate(results)]
+            summary = build_executive_summary(results, failed_hosts, obfuscated)
+            payload = executive_html(summary).encode("utf-8") if as_html else executive_pdf(summary)
+            filename = ("00_OBFUSCATED_" if obfuscated else "00_") + "executive_summary." + ("html" if as_html else "pdf")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8" if as_html else "application/pdf")
+            self.send_header("Content-Disposition", f'inline; filename="{filename}"' if as_html else f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception:
+            logger.exception("Executive report export failed")
+            self._send_json({"error": "Could not generate the executive summary"}, 500)
+
     # ── Excel export ──────────────────────────────────────────────────────────
 
     def _api_export_excel(self) -> None:

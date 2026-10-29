@@ -4,7 +4,7 @@ from typing import Optional
 
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.inventory_tables import build_host_decision_rows
-from vcf_hci.report.readiness import chassis_qualification
+from vcf_hci.report.readiness import chassis_qualification, cpu_verdict_unassessed
 
 COMPONENT_CERTIFICATION_BLOG = 'https://blogs.vmware.com/cloud-foundation/2026/02/25/vcf-9-0-server-certification-preserving-your-hardware-investment-and-giving-the-best-roi/'
 COMPONENT_CERTIFICATION_NOTE = (
@@ -23,7 +23,7 @@ def fleet_overview_groups(all_results: list) -> list:
     for row in rows:
         idx = row['host_idx']
         verdict = str(row.get('cpu_verdict') or '').strip()
-        if not verdict or any(word in verdict.lower() for word in ('unknown', 'not assessed', 'unverified')):
+        if cpu_verdict_unassessed(verdict):
             label = 'Not assessed'
         elif row.get('cpu_tier') == 'red':
             label = 'Unsupported for VCF 9.x'

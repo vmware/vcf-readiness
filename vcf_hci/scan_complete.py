@@ -99,6 +99,8 @@ def _handle_completed_host(future: Any, ip: str, ctx: Any) -> None:
                     if warranty_cache.get(_stag):
                         item["warranty"] = warranty_cache[_stag]
 
+            from vcf_hci.server_groups import hydrate_groups
+            hydrate_groups([item])
             ctx.results.append(item)
             dns_name = (item.get("system") or {}).get("dns_name")
             sled_id = str((item.get("system") or {}).get("serial_number") or (item.get("system") or {}).get("hostname") or "").strip()

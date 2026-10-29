@@ -1,98 +1,53 @@
 # Software Bill of Materials (SBOM) — Customer Deliverables
 
 > **Product:** VCF / vSphere 9.1 HCI Readiness Assessment Tool (`vcf-readiness`)
-> **Runtime version in this checkout:** 9.11.0 (`vcf_hci/constants.py`)
-> **Historical inventory date:** 2026-09-27
-> **Companion JSON:** `docs/sbom/cyclonedx-customer-v9.7.1.json`, `docs/sbom/spdx-customer-v9.7.1.json`
-> **License:** CA, Inc. Software License Agreement (Broadcom)  
+> **Runtime version in this checkout:** 9.12.0 (`vcf_hci/constants.py`)
+> **Source-document review:** 2026-10-29
+> **Historical JSON inventory:** 2026-09-27; `docs/sbom/cyclonedx-customer-v9.7.1.json` and `docs/sbom/spdx-customer-v9.7.1.json`
+> **License:** [CA, Inc. Software License Agreement](../LICENSE.md)
 
-This source checkout does not include prebuilt executables, a platform build script, an offline-package script, a `bin/` directory, a VCF Operations management pack, or a tracked SBOM generator. The JSON companions still identify v9.7.1 and are not rebuilt by a command in this tree. Run the application from source, as described in `README.md` and `docs/INSTALL.md`.
+This is a source-component overview, not an attestation of a particular ZIP or executable. The v9.7.1 companion JSON remains historical. New v9.12.0 CycloneDX/SPDX JSON and a matching file-hash manifest describe a locally prepared sanitized source snapshot; they do not attest a published release or compiled executable. The development checkout includes build/export tools, management-pack sources and `tools/generate_sboms.py`; exported source distributions can omit developer tooling. The customer generator now requires an explicit sanitized artifact root and derives source/component identities and hashes from that tree. It does not infer executable contents from the developer environment.
 
----
+## Runtime and distribution boundaries
 
-## 1. Executive Summary & Zero-Dependency Architectural Guarantee
+Core scanning requires Python 3.9+ with no required third-party pip packages. The optional vault selects AES-256-GCM when installed `pycryptodomex` or `pycryptodome` support is available; otherwise it uses the documented stdlib fallback. An existing AES vault still requires AES support to open. See [vault crypto and storage](CREDENTIAL_VAULT.md).
 
-This document describes the source application in this checkout. It is not a manifest of downloadable release assets.
+Styles and selected Clarity SVG icons are embedded for offline operation. The browser server also checks GitHub release metadata once per launch by default; set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable that request. Public HCL downloads, Dell warranty enrichment and external credential providers require explicit operator action. Source execution does not require a package-index connection.
 
-### Key Compliance Highlights:
-1. **Zero Runtime External Dependencies:**
-   - The core Python application (`vcf_hci/`) imports **strictly from the Python standard library** (Python 3.9+).
-   - **Forbidden third-party runtime libraries:** Zero usage of `requests`, `urllib3`, `aiohttp`, `jinja2`, `pandas`, `beautifulsoup4`, or `lxml`.
-   - Customers can execute the tool directly using any stock Python 3.9–3.12 interpreter without installing external pip packages or connecting to public/private package indexes.
-2. **Zero External CDN / Web Dependencies:**
-   - The embedded Web UI and all generated HTML reports operate **100% offline in air-gapped environments**.
-   - All stylesheet assets (VMware Clarity Design System) and icons are pre-compiled and embedded directly as in-memory data constants.
-3. **Credential vault cryptography:**
-   - The default vault mode uses standard-library primitives (`hashlib`, `hmac`, PBKDF2-HMAC-SHA256). An optional `crypto` extra can use `pycryptodomex` when that package is installed. It is not required to run a scan.
-4. **Default-offline operation:**
-   - Ordinary scans contact the BMC targets the operator selects and write reports locally. They do not send telemetry, update checks, or analytics.
-   - Public HCL download, Dell warranty lookup, external credential providers, and experimental jump-host SSH happen only after an explicit operator action. BMC HTTP on port 80 is accepted with a warning; it is not an HTTPS-only product.
+Standalone builds include a selected Python interpreter and its native libraries and bootloader. Their actual versions, hashes, platform and inclusion must be recorded from the build artifact. A developer machine’s installed versions or historical version list cannot establish an executable’s contents.
 
----
+## Component overview
 
-## 2. Software Component Inventory
+| Component | Version / identity | License / notice | Inclusion |
+|---|---|---|---|
+| `vcf_hci` | 9.12.0 runtime label; working-tree changes may be unreleased | LicenseRef-CA-Inc | Scanner source and generated application assets |
+| `@cds/core` CSS, dark theme and selected SVG outlines | 5.7.0 | MIT; [retained notice](../licenses/clarity-core-MIT.txt) | Embedded local UI/report assets; Angular and Core custom-element runtimes are not included |
+| Packaged Network I/O catalog | `vcf_hci/hcl/io_nics.json`; preserve dataset metadata/hash | Broadcom dataset terms; separate from the Clarity license | Local Network I/O correlation |
+| vSAN HCL data | Operator’s local/imported snapshot; preserve provenance, timestamp and hash | Dataset terms apply | Explicit download/import or selected distribution data; not implied by tool version |
+| Optional AES implementation | Actual installed `pycryptodomex` / `pycryptodome` version | Retain the installed package’s notices | Optional vault path; no required project dependency |
+| Python and native runtime libraries | Build-specific | See [third-party notices](../THIRD_PARTY_LICENSES.md) and build inventory | Supplied by the operator for source use; included as selected by standalone builds |
+| PyInstaller bootloader | Build-specific | GPL with bootloader exception; retain actual build notice | Standalone executable only |
 
-The following table enumerates all first-party and bundled open-source components comprising the customer deliverables:
+`tools/bundle_assets.py` and `tools/bundle_clarity_icons.py` maintain the development checkout’s embedded assets. Running the application does not require Node.js or those generation tools.
 
-| Component Name | Version | Type | License | Supplier | Delivery / Inclusion Mechanism | Required / Optional |
-|---|---|---|---|---|---|---|
-| `vcf_hci` | `9.11.0` | application | LicenseRef-CA-Inc | Broadcom / CA, Inc. | Python source in this checkout | **Required** |
-| `@cds/core` | `5.7.0` | library | Apache-2.0 | VMware by Broadcom | In-memory CSS in `vcf_hci/web/assets.py`, served by the local Web UI and embedded in offline HTML reports | **Required** |
-| `vsan-hcl-dataset` | packaged local data | data | LicenseRef-Proprietary-Broadcom | Broadcom | `vcf_hci/hcl/io_nics.json` plus any local HCL data the operator already has. A public download requires `--refresh-hcl` or `--bundle-hcl`. | **Required for HCL correlation** |
+## Excluded private and operator content
 
----
+Upstream VDT remains operator-supplied through ZIP upload/install or an approved extracted folder. Local payloads under root `Plugins/` are outside source exports, wheels, offline ZIPs and executables. Scanner-owned integration code under `vcf_hci/plugins/` is separate from those upstream payloads. Managed VDT uses appliance-provided libraries; this does not make them scanner runtime dependencies or grant redistribution rights.
 
-## 3. Component Details & Licensing Analysis
+The Redfish working/reference library, private PSO copies, captures and experiments are outside customer shipment sources. Release tools apply private-experiment exclusions to staged copies. Review the manifest of the actual sanitized export before making shipment claims.
 
-### 3.1. Core Application Engine (`vcf_hci`)
-- **License:** CA, Inc. Software License Agreement (`LICENSE.md`)
-- **Purpose:** Enterprise BMC querying (Dell iDRAC, HPE iLO, Supermicro, Cisco IMC, Lenovo XCC, Intel BMC), hardware specification extraction, vSAN ESA readiness evaluation, and standalone HTML report generation.
-- **Dependencies:** Strictly standard library (`urllib.request`, `ssl`, `json`, `sqlite3`, `concurrent.futures`, `hashlib`, `hmac`).
+## Artifact verification and maintenance
 
-### 3.2. VMware Clarity Design System (`@cds/core`)
-- **Version:** 5.7.0
-- **License:** Apache-2.0
-- **Purpose:** Professional enterprise UI design system for the local browser interface (127.0.0.1:7182) and generated interactive fleet reports.
-- **Embedding Method:** Already present in `vcf_hci/web/assets.py` as an in-memory stylesheet constant. This checkout does not include a script that rebuilds that module. No Node.js access is required to run the UI.
+For a release inventory, identify the exact source revision and build, enumerate the actual included files and dependency versions, retain notices, and generate/check CycloneDX or SPDX JSON against that artifact. Historical companion JSON remains historical. The current source snapshot inventories use `cyclonedx-customer-v9.12.0.json`, `spdx-customer-v9.12.0.json` and `customer-file-manifest-v9.12.0.json` under `docs/sbom/`. The manifest’s inventory digest ties both formats to identical observed bytes. Metadata, Python caches and derived SBOM files are excluded to avoid self-reference. This workflow did not build or publish a release executable.
 
-### 3.3. Broadcom vSAN Hardware Compatibility Dataset (`vsan-hcl-dataset`)
-- **Version:** 9.1.0
-- **License:** Broadcom Community / Proprietary Dataset
-- **Purpose:** Maps PCI Vendor ID, Device ID, Sub-Vendor ID, and Sub-Device ID to VMware Compatibility Guide (VCG / BCG) records for network interfaces, NVMe drives, and storage controllers.
-- **Delivery:** Local catalog data in `vcf_hci/hcl/io_nics.json`. Operators can import an approved offline bundle with `--import-hcl`. This checkout does not contain a prebuilt HCL zip.
+From the development checkout, after preparing a sanitized source copy:
 
-### 3.4. What this checkout does not ship
+```bash
+python3 tools/generate_sboms.py --scope customer --artifact-root /path/to/sanitized-source --output-dir docs/sbom
+```
 
-There is no compiled executable, PyInstaller payload, management-pack archive, or helper script directory in this tree. The only supported launch path is the Python source documented in `README.md`.
+The generator preserves this guide. Private references, operator VDT payloads, symlinks and binary runtimes without a separate build inventory are rejected rather than silently included or assigned guessed versions.
 
----
+A minimal required package set reduces supply-chain exposure; it does not eliminate vulnerabilities in Python, OpenSSL, bundled assets, optional crypto, or build tools. BMC certificate verification is disabled by default; enable `--verify-ssl` and an appropriate CA for identity validation. HTTP targets carry credentials without TLS and are accepted only with a warning.
 
-## 4. Source tree you can run
-
-Use the files that are actually in the checkout:
-
-| Path | Role |
-|---|---|
-| `00_HOWTOLAUNCH.TXT` | Short source launch card |
-| `README.md` | Beginner guide |
-| `docs/INSTALL.md` | Source install, headless use, and explicit offline HCL workflow |
-| `ARCHITECTURE.md` | Runtime, remote, and security flows |
-| `vcfr_web.py` | Local web UI launcher |
-| `vcfr_collector.py` | Command-line collector |
-| `vcf_hci/` | Application package |
-| `docs/` | Longer guides |
-| `tools/check_data_hygiene.py` | Contributor data-hygiene check |
-| `tools/bundle_docs.py` | Deterministic help-bundle generator |
-
----
-
-## 5. Vulnerability & Risk Management Statements
-
-- **CVE Risk Surface:** Because runtime Python dependencies are zero, this application is immune to dependency confusion attacks, malicious PyPI package takeovers, or unvetted transitive wheel vulnerabilities.
-- **Network Exposure:** The Web UI binds to loopback by default. A non-loopback listener requires an explicit allow flag and TLS material, and it disables vault and jump-host features.
-- **SSL Verification:** Uses `ssl.CERT_NONE` by default for BMC HTTPS queries because enterprise BMCs frequently utilize self-signed internal certificates. Operator credentials remain encrypted in transit over TLS.
-- **Reporting:** Standalone reports are self-contained single HTML files with zero external tracking pixels, external scripts, or external font stylesheets.
-
----
-
-*Maintained with the source tree. The JSON files under `docs/sbom/` are historical companions and are not rebuilt by a command in this checkout.*
+Reports render locally. Public hyperlinks, Help illustrations or release links can require internet access when opened; no scan telemetry is sent to the project. Review obfuscated exports and exclude private keys/raw captures before sharing.

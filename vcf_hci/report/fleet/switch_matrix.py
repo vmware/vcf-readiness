@@ -313,6 +313,7 @@ def build_fleet_switch_matrix_html(
         </h2>
         <div style="font-size:0.8rem;color:var(--text-muted)">
           Discovered: <b>{stats.get('total_switches',0)} Switches</b> ({stats.get('tor_switches_count',0)} ToR / {stats.get('mgmt_switches_count',0)} Mgmt) &middot; <b>{stats.get('leaf_pairs_count',0)} Leaf Pairs</b>
+          &middot; Deep Buffer / VOQ: <b>{stats.get('deep_buffer_count',0)}</b>
         </div>
       </div>
 

@@ -292,6 +292,8 @@ Examples:
         else:
             print(f"\n[📁] Offline Summary Mode — Rendering reports for {len(results)} host(s)...")
 
+        from vcf_hci.report.executive import write_executive_reports
+        write_executive_reports(results, outdir)
         _obf_salt = os.urandom(16).hex() if args.obfuscate else ""
 
         def _render_host(idx_host):

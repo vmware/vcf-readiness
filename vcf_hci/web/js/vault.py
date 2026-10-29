@@ -543,17 +543,6 @@ JS_VAULT = """
     document.getElementById('dellArrow').textContent = open ? '▼' : '▶';
   });
 
-  var advancedToggle = document.getElementById('advancedToggle');
-  if (advancedToggle) {
-    advancedToggle.addEventListener('click', function() {
-      var body = document.getElementById('advancedBody');
-      if (!body) return;
-      var open = body.classList.toggle('open');
-      var arrow = document.getElementById('advancedArrow');
-      if (arrow) arrow.textContent = open ? '▼' : '▶';
-    });
-  }
-
   // ── Encrypted Credential Vault (opt-in) ───────────────────────────────────
   // All calls are same-origin; the server never returns passwords. Nothing here
   // runs against the vault unless the user clicks Create / Unlock.
@@ -578,16 +567,6 @@ JS_VAULT = """
     var arrow = $v('vaultEntriesArrow');
     if (arrow) arrow.textContent = open ? '▼' : '▶';
   }
-
-  document.getElementById('vaultToggle').addEventListener('click', function() {
-    var body = $v('vaultBody');
-    var open = body.classList.toggle('open');
-    $v('vaultArrow').textContent = open ? '▼' : '▶';
-    if (open) {
-      setVaultEntriesAccordion(false);
-      refreshVaultStatus();
-    }
-  });
 
   var vaultEntriesToggle = $v('vaultEntriesToggle');
   if (vaultEntriesToggle) {
@@ -659,13 +638,15 @@ JS_VAULT = """
     var countBadge = $v('vaultEntriesCountBadge');
     if (countBadge && typeof s.entry_count === 'number') countBadge.textContent = s.entry_count;
     $v('vaultPathText').textContent = s.path || '';
+    var recoveryPath = $v('vaultRecoveryPath');
+    if (recoveryPath) recoveryPath.textContent = s.remote_disabled ? 'Unavailable while vault access is disabled.' : (s.path || 'Vault location unavailable; refresh local vault status.');
     // Scan checkbox: only usable while unlocked. Never auto-check it.
     var chk = $v('useVaultChk');
     chk.disabled = !s.unlocked;
     if (!s.unlocked) chk.checked = false;
     $v('useVaultHint').textContent = s.unlocked
       ? '(' + s.entry_count + ' entries; username/password above become the fallback for unmatched hosts)'
-      : '(off — create or unlock a vault below)';
+      : '(off — create or unlock a vault in Credential Vault)';
     syncUseVaultUi();
   }
 

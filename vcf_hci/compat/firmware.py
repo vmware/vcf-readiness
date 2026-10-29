@@ -215,9 +215,9 @@ def evaluate_driver_firmware_recommendation(
             fw_badge = f"<span class='badge success'>\U0001f7e2 FW Certified ({fw_installed})</span>"
 
     if rec_driver:
-        driver_badge = f"<span class='badge info'>🚗 Recommended Driver: <code>{rec_driver}</code></span>"
+        driver_badge = f"<span class='badge info'>Recommended Driver: <code>{rec_driver}</code></span>"
     else:
-        driver_badge = "<span class='badge info'>🚗 Inbox/Default Driver</span>"
+        driver_badge = "<span class='badge info'>Inbox/Default Driver</span>"
 
     rdma_supported = False
     vcglink = ""

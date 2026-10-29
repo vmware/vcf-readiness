@@ -2,6 +2,11 @@
 Clarity-token-aligned custom component CSS for the web UI.
 """
 
+from vcf_hci.ui_clarity import CLARITY_UI_CSS, SCANNER_CLARITY_CSS
+from vcf_hci.web.group_html import GROUP_CSS
+from vcf_hci.web.summary_css import SUMMARY_CSS
+from vcf_hci.web.workflow_ui import WORKFLOW_CSS
+
 APP_CSS = """
     /* ── Clarity-token-aligned custom component CSS ───────────────── */
 
@@ -102,6 +107,38 @@ APP_CSS = """
       transition: background .12s;
     }
     .nav-btn:hover { background: rgba(255,255,255,.08); }
+
+    /* Clarity-style secondary navigation, using local theme tokens. */
+    .scanner-subnav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 1.5rem;
+      padding: 0 1.25rem;
+      background: var(--vcf-card);
+      border-bottom: 1px solid var(--vcf-border);
+    }
+    .scanner-subnav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 48px;
+      padding: .65rem .25rem;
+      border-bottom: 3px solid transparent;
+      color: var(--vcf-text);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .scanner-subnav a:hover { color: var(--vcf-primary); }
+    .scanner-subnav a[aria-current="page"] {
+      color: var(--vcf-primary);
+      border-bottom-color: var(--vcf-primary);
+    }
+    .scanner-subnav a:focus-visible, .section-shortcut:focus-visible {
+      outline: 2px solid var(--vcf-primary);
+      outline-offset: -2px;
+    }
+    [data-app-section][hidden] { display: none !important; }
+    .section-heading { font-size: 1.4rem; margin: 0 0 1rem; scroll-margin-top: 110px; }
+    .section-shortcut { display: inline-block; color: var(--vcf-primary); margin: .5rem 0; }
 
     /* ── Layout ──────────────────────────────────────────────────────── */
     .main-wrap {
@@ -745,3 +782,68 @@ APP_CSS = """
       margin-top: .15rem;
     }
 """
+
+APP_CSS += """
+    [hidden] { display: none !important; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .workflow { display: grid; grid-template-columns: 230px minmax(0, 1fr); border: 1px solid var(--vcf-border); background: var(--vcf-card); border-radius: var(--vcf-radius); }
+    .workflow-steps { background: var(--vcf-bg-secondary); border-right: 1px solid var(--vcf-border); padding: 1rem 0; }
+    .workflow-steps ol { list-style: none; margin: 0; padding: 0; }
+    .workflow-steps button { display: block; width: 100%; padding: 1rem; text-align: left; color: var(--vcf-text); background: transparent; border: 0; border-left: 4px solid transparent; font: inherit; cursor: pointer; }
+    .workflow-steps button:disabled { opacity: .6; cursor: default; }
+    .workflow-steps .step-complete { border-left-color: var(--vcf-success); }
+    .workflow-steps [aria-current="step"] { background: var(--vcf-input-bg); border-left-color: var(--vcf-primary); font-weight: 600; }
+    .workflow-steps .step-error { border-left-color: var(--vcf-danger); }
+    .workflow button:focus-visible, details summary:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--vcf-primary); outline-offset: -2px; }
+    .workflow-content { min-width: 0; padding: 1.25rem; }
+    .workflow-content h2 { font-size: 1.2rem; margin: .5rem 0 1rem; }
+    .workflow-content .card { box-shadow: none; }
+    .workflow-footer, .library-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem; padding-top: 1.25rem; margin-top: 1rem; border-top: 1px solid var(--vcf-border); }
+    .workflow-footer > :first-child, .library-footer > :first-child { margin-right: auto; }
+    .workflow-review { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: .75rem 1rem; }
+    .workflow-review dt { font-weight: 600; }
+    .workflow-review dd { margin: 0; overflow-wrap: anywhere; }
+    .hcl-help { margin-top: 1rem; padding: .75rem; background: var(--vcf-bg-secondary); border: 1px solid var(--vcf-border); }
+    .hcl-help summary { cursor: pointer; color: var(--vcf-primary); font-weight: 600; }
+    .hcl-help code { overflow-wrap: anywhere; white-space: normal; }
+    .shared-results:has(> .hidden) { display: none; }
+    #scan-library input { max-width: 100%; }
+    #scan-library .vcf-cert-table { min-width: 620px; width: 100%; }
+    @media (max-width: 700px) {
+      .workflow { grid-template-columns: minmax(0, 1fr); }
+      .workflow-steps { border-right: 0; border-bottom: 1px solid var(--vcf-border); }
+      .workflow-steps button { padding: .65rem 1rem; }
+      .workflow-content { padding: .75rem; }
+      .workflow-review { grid-template-columns: minmax(0, 1fr); gap: .25rem; }
+      .workflow-review dd { margin-bottom: .75rem; }
+      .scanner-subnav { gap: 0 .75rem; }
+    }
+"""
+
+APP_CSS += """
+.skip-link { position: fixed; top: -100px; left: 1rem; z-index: 1000; padding: .75rem; background: var(--vcf-card); color: var(--vcf-primary); }
+.skip-link:focus { top: .5rem; }
+"""
+
+APP_CSS += """
+.library-output-label { display: block; margin-top: .75rem; }
+.vcf-modal-dialog { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+"""
+
+APP_CSS += """
+.workflow-steps .step-error::after { content: " — needs attention"; }
+.workflow-steps .step-complete:not(.step-error)::after { content: " ✓"; }
+"""
+
+APP_CSS += """
+.main-wrap a:not(.btn) { color: var(--vcf-primary); }
+.workflow-content h2 { scroll-margin-top: 110px; }
+"""
+
+APP_CSS += '\n    .badge-success,.badge-warning,.badge-danger,.badge-info,.badge-secondary,\n    [data-theme="dark"] .badge-success,[data-theme="dark"] .badge-warning,[data-theme="dark"] .badge-danger,[data-theme="dark"] .badge-info,[data-theme="dark"] .badge-secondary {\n      color:var(--vcf-text);background:var(--vcf-bg-secondary);border:1px solid var(--vcf-border);border-inline-start-width:3px;\n    }\n    .badge-success,[data-theme="dark"] .badge-success {border-inline-start-color:var(--vcf-success)}\n    .badge-warning,[data-theme="dark"] .badge-warning {border-inline-start-color:var(--vcf-warning)}\n    .badge-danger,[data-theme="dark"] .badge-danger {border-inline-start-color:var(--vcf-danger)}\n    .badge-info,[data-theme="dark"] .badge-info {border-inline-start-color:var(--vcf-info)}\n    .btn-success-solid {background:transparent;color:var(--vcf-primary);border-color:var(--vcf-primary)}\n'
+
+APP_CSS += SUMMARY_CSS
+
+APP_CSS += CLARITY_UI_CSS + SCANNER_CLARITY_CSS + WORKFLOW_CSS
+
+APP_CSS += GROUP_CSS

@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from vcf_hci.compat.bios_boot import bios_date_estimate_fields
 from vcf_hci.compat.firmware import evaluate_bmc_fw_version
 from vcf_hci.constants import prefer_storage_ctrl_display_name
 from vcf_hci.report.fleet.escape import _xe
@@ -37,6 +38,10 @@ from vcf_hci.report.sel_links import (
     resolve_sel_event_url,
 )
 from vcf_hci.security.scoring import score_host_security
+from vcf_hci.storage_capacity import drive_capacity_display
+from vcf_hci.storage_media import media_type_display, storage_protocol_display
+from vcf_hci.storage_pcie import drive_link_description, drive_pcie_view
+from vcf_hci.ui_clarity import drive_icon_html
 
 __all__ = [
     "_build_drives_table",
@@ -85,6 +90,7 @@ def _build_drives_table(
             )
 
             for d in ctrl.get("drives") or []:
+                d = drive_pcie_view(d, ctrl)
                 if (d.get("category") or "") == "Empty":
                     continue
                 d_ctrl_name = prefer_storage_ctrl_display_name(
@@ -156,22 +162,23 @@ def _build_drives_table(
                     life_title_parts.append(f"Duty: {duty}%")
                 life_title = f" title='{_xe(' | '.join(life_title_parts))}'" if life_title_parts else ""
 
+                link_html = f"<br><small class='report-drive-link'>{_xe(drive_link_description(d))}</small>" if "NVME" in proto.upper() or "PCIE" in proto.upper() else ""
                 rows.append(
                     f"<tr class='{' '.join(row_classes)}' data-host-idx='{idx}' data-ctrl-type='{ctrl_type}'{row_title}>"
                     f"<td><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-storage' style='color:inherit;text-decoration:none;display:block'>"
                     f"<strong>{_pii(hostname, 'host')}</strong><br><small style='color:var(--text-muted,#64748b)'>{_pii(ip, 'ip')}</small></a></td>"
                     f"<td>{_xe(d_ctrl_name)}</td>"
                     f"<td>{_drive_model_link(d, json_hcl)}</td>"
-                    f"<td>{_xe(d.get('media_type') or '')}</td>"
-                    f"<td>{_xe(d.get('capacity_gb') or '')}</td>"
-                    f"<td>{_xe(d.get('protocol') or '')}</td>"
+                    f"<td><span class='report-media'>{drive_icon_html(d.get('protocol'), d.get('media_type'))}<span class='report-media-label' data-preserve-emojis>{_xe(media_type_display(d.get('media_type')))}</span></span></td>"
+                    f"<td title='{_xe(d.get('capacity_data_quality_note', ''))}'>{_xe(drive_capacity_display(d))}</td>"
+                    f"<td>{_xe(storage_protocol_display(d.get('protocol')))}{link_html}</td>"
                     f"<td>{_xe(cat)}</td>"
                     f"<td>{health_cell}</td>"
                     f"<td{life_title}>{_xe(life)}</td>"
                     f"<td>{_drive_fw_cell(d, json_hcl)}</td>"
                     f"</tr>"
                 )
-    body = "\n".join(rows) if rows else "<tr><td colspan='10' style='color:#94a3b8'>No drives</td></tr>"
+    body = "\n".join(rows) if rows else "<tr><td colspan='10' style='color:var(--text-muted)'>No drives</td></tr>"
     return f"""<div class="inv-scroll">
 <table class="inv-table" id="invDrivesTable">
 <thead><tr>
@@ -264,7 +271,7 @@ def _build_nics_table(
                     f"<td>{_nic_fw_cell(n, json_hcl)}</td>"
                     f"</tr>"
                 )
-    body = "\n".join(rows) if rows else "<tr><td colspan='7' style='color:#94a3b8'>No NICs</td></tr>"
+    body = "\n".join(rows) if rows else "<tr><td colspan='7' style='color:var(--text-muted)'>No NICs</td></tr>"
     mac_th = (
         '<th id="thNicMac" title="Physical hardware MAC address of the network port (Obfuscated hash with synthetic 02: prefix)">MAC <em>(obfuscated)</em></th>'
         if obfuscated
@@ -308,7 +315,7 @@ def _build_bios_table(
         clean_m = clean_model_code(vendor_raw, model_raw) or model_raw or _DASH
 
         bios_checks = data.get("bios_checks") or {}
-        bios_eval = si.get("bios_eval") or {}
+        bios_eval = {**(si.get("bios_eval") or {}), **bios_date_estimate_fields(si.get("bios_release_date"))}
         bios_ver = str(si.get("bios_version") or _DASH)
         bios_date = str(si.get("bios_release_date") or "")
 
@@ -357,16 +364,10 @@ def _build_bios_table(
         else:
             boot_cell = f"<span class='inv-muted'>{_xe(boot_mode)}</span>"
 
-        # Spectre / CVE Coverage Tier (Plain text: Tier 4 green, <4 red)
-        cve_tier_int = bios_eval.get("cve_tier")
-        cve_label = bios_eval.get("cve_tier_label")
-        if cve_tier_int is not None and cve_tier_int >= 0:
-            if cve_tier_int >= 4:
-                tier_cell = f"<span class='inv-good'>✓ Tier {cve_tier_int}: {_xe(cve_label or '')}</span>"
-            else:
-                tier_cell = f"<span class='inv-bad'>✗ Tier {cve_tier_int}: {_xe(cve_label or '')}</span>"
-        else:
-            tier_cell = f"<span class='inv-muted'>{_DASH}</span>"
+        # Historical BIOS dates are informational, never a mitigation pass/fail.
+        cve_tier_int = bios_eval.get("cve_tier", -1)
+        cve_label = bios_eval.get("cve_tier_label", "Not Assessed")
+        tier_cell = f"<span class='inv-muted' title='Mitigations not verified'>{_xe(cve_label)}</span>"
 
         rows.append(
             f"<tr class='inv-detail-row' data-host-idx='{idx}'>"
@@ -382,7 +383,7 @@ def _build_bios_table(
             f"<td>{tier_cell}</td>"
             f"</tr>"
         )
-    body = "\n".join(rows) if rows else "<tr><td colspan='9' style='color:#94a3b8'>No hosts</td></tr>"
+    body = "\n".join(rows) if rows else "<tr><td colspan='9' style='color:var(--text-muted)'>No hosts</td></tr>"
     return f"""<div class="inv-scroll">
 <table class="inv-table" id="invBiosTable">
 <thead><tr>
@@ -394,7 +395,7 @@ def _build_bios_table(
 <th title="Reliability, Availability, and Serviceability memory mode (Advanced ECC, Mirroring, etc.)">Memory RAS</th>
 <th title="Intel Volume Management Device status (must be Disabled for native vSAN ESA NVMe passthrough)">Intel VMD</th>
 <th title="Firmware boot architecture (UEFI required for VCF 9.1; Legacy BIOS unsupported)">Boot Mode</th>
-<th title="Processor microcode security baseline tier covering Spectre, Meltdown, L1TF, MDS, and SRBDS">Spectre / CVE Tier</th>
+<th title="Historical BIOS release-date estimate; microcode and mitigations are not verified">BIOS Date Estimate</th>
 </tr></thead><tbody>{body}</tbody></table></div>"""
 
 
@@ -726,7 +727,7 @@ def _build_health_table(
                     f"style='color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:.35rem' "
                     f"title='{_xe(jump_title)}'>"
                     f"<span>{_xe(alarm['message'])}</span> "
-                    f"<span style='font-size:.72rem;color:var(--primary,#2563eb);opacity:.85;flex-shrink:0'>&rarr;</span></a>"
+                    f"<span style='font-size:.72rem;color:var(--primary,#2563eb);flex-shrink:0'>&rarr;</span></a>"
                 )
 
                 if alarm.get("url"):
@@ -741,7 +742,7 @@ def _build_health_table(
                         f"<a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='{subtab}' style='color:inherit;text-decoration:none' "
                         f"title='{_xe(jump_title)}'>"
                         f"<code class='inv-code'>{_xe(alarm['target'])}</code> "
-                        f"<span style='font-size:.72rem;color:var(--primary,#2563eb);opacity:.75'>&rarr;</span></a>"
+                        f"<span style='font-size:.72rem;color:var(--primary,#2563eb);'>&rarr;</span></a>"
                     )
 
                 rows.append(
@@ -755,7 +756,7 @@ def _build_health_table(
                     f"</tr>"
                 )
 
-    body = "\n".join(rows) if rows else "<tr><td colspan='6' style='color:#94a3b8'>No health data</td></tr>"
+    body = "\n".join(rows) if rows else "<tr><td colspan='6' style='color:var(--text-muted)'>No health data</td></tr>"
     return f"""<div class="inv-scroll">
 <table class="inv-table" id="invHealthTable">
 <thead><tr>
@@ -1011,17 +1012,11 @@ def _build_security_table(
                 bmc_cell += f" <span class='inv-bad' title='{_xe(title)}'>▲</span>"
 
 
-        # CVE Coverage Tier (Green check if current Tier 4, Red X if < Tier 4)
-        bios_eval = si.get("bios_eval") or {}
-        cve_tier_int = bios_eval.get("cve_tier")
-        cve_label = bios_eval.get("cve_tier_label")
-        if cve_tier_int is not None and cve_tier_int >= 0:
-            if cve_tier_int >= 4:
-                cve_cell = f"<span class='inv-good' title='Current CVE baseline: {_xe(cve_label or '')}'>✓ Tier {cve_tier_int}</span>"
-            else:
-                cve_cell = f"<span class='inv-bad' title='Outdated CVE baseline: {_xe(cve_label or '')}'>✗ Tier {cve_tier_int}</span>"
-        else:
-            cve_cell = f"<span class='inv-muted'>{_DASH}</span>"
+        bios_eval = bios_date_estimate_fields(si.get("bios_release_date"))
+        cve_cell = (
+            f"<span class='inv-muted' title='Mitigations not verified'>"
+            f"{_xe(bios_eval['cve_tier_label'])}</span>"
+        )
 
         # Hyperthreading / HT (Plain text: Enabled or Disabled)
         ci = si.get("cpu_summary") or {}
@@ -1106,7 +1101,7 @@ def _build_security_table(
             f"<td>{bmc_hard_cell}</td>"
             f"</tr>"
         )
-    body = "\n".join(rows) if rows else "<tr><td colspan='11' style='color:#94a3b8'>No hosts</td></tr>"
+    body = "\n".join(rows) if rows else "<tr><td colspan='11' style='color:var(--text-muted)'>No hosts</td></tr>"
     return f"""<div class="inv-scroll">
 <table class="inv-table" id="invSecurityTable">
 <thead><tr>
@@ -1116,7 +1111,7 @@ def _build_security_table(
 <th title="UEFI Secure Boot verification status (Recommended for VCF hardening baseline)">Secure<br>Boot</th>
 <th title="Out-of-band management controller model and firmware version baseline">BMC Model<br>&amp; FW</th>
 <th title="Out-of-band management controller license tier and activation status">BMC<br>License</th>
-<th title="BIOS processor microcode mitigation tier (Tier 4 is the current certified baseline)">CVE Coverage<br>Tier</th>
+<th title="Historical BIOS release-date estimate; not verified CVE coverage">BIOS Date<br>Estimate</th>
 <th title="Intel Hyper-Threading / AMD SMT processor logical core status (Enabled or Disabled)">HT</th>
 <th title="BMC Network Time Protocol synchronization status and clock skew detection (5m threshold)">NTP /<br>Time Drift</th>
 <th title="BMC Domain Name System server configuration for hostname resolution">DNS</th>

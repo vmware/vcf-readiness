@@ -445,7 +445,7 @@ JS_JUMP = r"""
         if (r && r.status === 423) {
           var vs = (typeof _vaultState !== 'undefined') ? _vaultState : null;
           var actType = (vs && !vs.exists) ? 'create' : 'unlock';
-          var actLabel = (vs && !vs.exists) ? 'Create vault below &rarr;' : 'Unlock vault below &rarr;';
+          var actLabel = (vs && !vs.exists) ? 'Create vault &rarr;' : 'Unlock vault &rarr;';
           hint.innerHTML = '⚠ Credential vault is ' + ((vs && !vs.exists) ? 'not created' : 'locked') + '. <a href="#" class="jump-vault-anchor-link" data-action="' + actType + '" style="color:inherit;font-weight:600;text-decoration:underline;">' + actLabel + '</a>';
           hint.style.color = 'var(--vcf-danger, #c21d00)';
           hint.classList.remove('hidden');
@@ -454,7 +454,7 @@ JS_JUMP = r"""
           hint.style.color = 'var(--vcf-danger, #c21d00)';
           hint.classList.remove('hidden');
         } else if (hosts.length === 0) {
-          hint.innerHTML = '⚠ No jump hosts configured in vault. <a href="#" class="jump-vault-anchor-link" data-action="add" style="color:inherit;font-weight:600;text-decoration:underline;">Add a jump host profile below &rarr;</a>';
+          hint.innerHTML = '⚠ No jump hosts configured in vault. <a href="#" class="jump-vault-anchor-link" data-action="add" style="color:inherit;font-weight:600;text-decoration:underline;">Add a jump host profile &rarr;</a>';
           hint.style.color = 'var(--vcf-warning, #d9822b)';
           hint.classList.remove('hidden');
         } else {

@@ -1,9 +1,13 @@
 """
 VCF Readiness Tool — thermal, power supply, NVMe SMART & SEL report section builders (Layer D).
 """
+import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from vcf_hci.report.helpers import _h
+from vcf_hci.storage_pcie import drive_link_description, drive_pcie_view
+from vcf_hci.ui_clarity import icon_html
 
 
 def render_psu_card_and_health_section(psu: Dict[str, Any]) -> Tuple[str, str]:
@@ -12,42 +16,72 @@ def render_psu_card_and_health_section(psu: Dict[str, Any]) -> Tuple[str, str]:
     _pm = psu.get("power_metrics") or {}
     _psu_watt_parts = []
     if psu.get("consumed_watts") is not None:
-        _psu_watt_parts.append(f"Draw: <b>{psu['consumed_watts']} W</b>")
+        _psu_watt_parts.append(f"Draw: <b>{_h(str(psu['consumed_watts']))} W</b>")
     if psu.get("total_capacity_watts"):
-        _psu_watt_parts.append(f"Installed: <b>{psu['total_capacity_watts']} W</b>")
-    if _pm.get("avg_w"):
-        _psu_watt_parts.append(f"Avg: {_pm['avg_w']} W")
-    if _pm.get("max_w"):
-        _psu_watt_parts.append(f"Peak: {_pm['max_w']} W")
+        _psu_watt_parts.append(f"Installed: <b>{_h(str(psu['total_capacity_watts']))} W</b>")
+    if _pm.get("avg_w") is not None:
+        _psu_watt_parts.append(f"Avg: {_h(str(_pm['avg_w']))} W")
+    if _pm.get("max_w") is not None:
+        _psu_watt_parts.append(f"Peak: {_h(str(_pm['max_w']))} W")
     _psu_watt_detail = " · ".join(_psu_watt_parts)
 
     _pcap_bdg = psu.get("power_cap_badge", "")
     _kwh_val = psu.get("consumed_energy_kwh")
-    _kwh_line = f"<br><small style='color:var(--text-muted)'>⚡ Cumulative Energy: <b>{_kwh_val} kWh</b></small>" if _kwh_val is not None else ""
-    _pcap_html = f"<div style='margin-top:.35rem'>{_pcap_bdg}</div>" if _pcap_bdg else ""
+    _kwh_line = f"<br><small style='color:var(--text-muted)'>⚡ Cumulative Energy: <b>{_h(str(_kwh_val))} kWh</b></small>" if _kwh_val is not None else ""
+    _pcap_html = f"<div>{_pcap_bdg}</div>" if _pcap_bdg else ""
 
     psu_badge = psu.get("badge", "<span class='badge info'>ℹ️ N/A</span>")
-    psu_summary = psu.get("summary", "")
 
+    # Keep the engine verdict, but remove its repeated inventory count on this card.
+    _card_badge = re.sub(r"\s*\(\d+× PSUs, \d+ healthy\)", "", psu_badge)
+    _metrics = []
+    for _label, _value in (("Draw", psu.get("consumed_watts")),
+                           ("Installed", psu.get("total_capacity_watts"))):
+        if _value is not None and (_label == "Draw" or _value):
+            _metrics.append(f"<div><dt>{_label}</dt><dd>{_h(str(_value))} W</dd></div>")
+    _units = []
+    for _idx, _unit in enumerate(psu.get("psus") or [], 1):
+        _health = str(_unit.get("health") or "Unknown")
+        _state = _health.casefold()
+        _tone, _shape = ("success", "success-standard") if _state == "ok" else (
+            ("danger", "error-standard") if _state == "critical" else ("warning", "warning-standard")
+        )
+        _name = re.sub(r"\s+Status$", "", str(_unit.get("name") or f"PSU {_idx}"))
+        _watts = _unit.get("wattage")
+        _capacity = f"{_h(str(_watts))} W · " if isinstance(_watts, (int, float)) else ""
+        _units.append(
+            f"<li><span class='psu-unit-icon psu-unit-{_tone}'>{icon_html(_shape)}</span>"
+            f"<span class='psu-unit-name'>{_h(_name)}</span>"
+            f"<span class='psu-unit-reading'>{_capacity}{_h(_health)}</span></li>"
+        )
+    _unit_list = "<ul class='psu-unit-list'>" + "".join(_units) + "</ul>" if _units else (
+        "<p class='psu-card-note'>Per-supply data unavailable.</p>"
+    )
+    _cap_line = ""
+    _limit = psu.get("power_limit_watts")
+    if isinstance(_limit, (int, float)) and _limit > 0:
+        _enforced = psu.get("power_limit_enforced")
+        _cap_state = "enforced" if _enforced is True else (
+            "enforcement disabled" if _enforced is False else "enforcement unknown"
+        )
+        _cap_tone = " psu-cap-enforced" if _enforced is True else ""
+        _cap_line = f"<p class='psu-card-note{_cap_tone}'>Cap: {_h(str(_limit))} W · {_cap_state}</p>"
+    elif _pcap_bdg:
+        _cap_line = f"<div class='psu-card-note'>{_pcap_bdg}</div>"
     psu_card_html = (
-        f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
-        f"<h3 style='margin:0'>Power Supply</h3>"
-        f"<a href='#tab-health' data-jump-tab='tab-health' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Health section'>Details &rarr;</a>"
-        f"</div>"
-        f"<div>{psu_badge}</div>{_pcap_html}"
-        f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>{psu_summary}"
-        f"{('<br>' + _psu_watt_detail) if _psu_watt_detail else ''}{_kwh_line}</p>"
-        f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-        f"<a href='#tab-health' data-jump-tab='tab-health' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-        f"Full details in Health tab &#8599;</a></div>"
-        f"</div>"
+        "<div class='card psu-summary-card'>"
+        "<div class='report-card-header'><h3>Power Supply</h3>"
+        "<a href='#tab-health' data-jump-tab='tab-health' class='btn-link tab-jump-link'"
+        " title='Power supply inventory and telemetry in Health'>Details &rarr;</a></div>"
+        f"<div class='psu-verdict'>{_card_badge}</div>"
+        + ("<dl class='psu-card-metrics'>" + "".join(_metrics) + "</dl>" if _metrics else "")
+        + _unit_list + _cap_line + "</div>"
     )
 
     _psu_health_section = ""
-    if psu.get("psus"):
+    if psu.get("psus") or _psu_watt_detail or _pcap_html or _kwh_line:
         _ph_rows = ""
-        for _pu in psu["psus"]:
+        for _pu in psu.get("psus") or []:
             _ph_h   = _pu.get("health", "Unknown")
             _ph_cls = "success" if _ph_h in ("OK", "Ok") else ("danger" if _ph_h == "Critical" else "warning")
             _ph_w   = _pu.get("wattage", "—")
@@ -58,8 +92,11 @@ def render_psu_card_and_health_section(psu: Dict[str, Any]) -> Tuple[str, str]:
                 f"<td>{_ph_w_str}</td>"
                 f"<td><span class='badge {_ph_cls}'>{_h(_ph_h)}</span></td></tr>"
             )
+        _ph_rows = _ph_rows or "<tr><td colspan='4'>Per-supply data unavailable.</td></tr>"
         _psu_health_section = (
             f"<h2>Power Supply Detail</h2>"
+            f"{_pcap_html}"
+            f"<p class='psu-detail-metrics'>{_psu_watt_detail}{_kwh_line}</p>"
             f"<table><thead><tr><th>PSU</th><th>Model / Part</th>"
             f"<th>Capacity</th><th>Health</th></tr></thead>"
             f"<tbody>{_ph_rows}</tbody></table>"
@@ -84,7 +121,7 @@ def render_thermal_health_section(thermal: Dict[str, Any]) -> Tuple[str, str]:
 
     _default_thermal_badge = '<span class="badge info">ℹ️ N/A</span>'
     thermal_section_html = (
-        f"<h2>Thermal &amp; Environmental Health</h2>"
+        f"<h2>{icon_html('thermometer')} Thermal &amp; Environmental Health</h2>"
         f"<details class='accordion' data-report-evidence='supporting'>"
         f"    <summary>"
         f"        <div>🌡️ Thermal: {thermal.get('overall_status_badge', _default_thermal_badge)} &nbsp;"
@@ -99,7 +136,7 @@ def render_thermal_health_section(thermal: Dict[str, Any]) -> Tuple[str, str]:
 
 def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
     """Render NVMe SMART & Drive Health section for Health tab."""
-    _pop_drives = [d for d in (all_drives or []) if d.get("populated", True)]
+    _pop_drives = [drive_pcie_view(d) for d in (all_drives or []) if d.get("populated", True)]
     if not _pop_drives:
         return ""
 
@@ -242,11 +279,11 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
             if _temp >= 60:
                 _temp_parts.append(f"<strong style='color:#dc2626'>{_temp}°C</strong>")
             elif _temp >= 50:
-                _temp_parts.append(f"<strong style='color:#ca8a04'>{_temp}°C</strong>")
+                _temp_parts.append(f"<strong style='color:var(--warning)'>{_temp}°C</strong>")
             else:
-                _temp_parts.append(f"<span style='color:#16a34a'>{_temp}°C</span>")
+                _temp_parts.append(f"<span style='color:var(--success)'>{_temp}°C</span>")
         elif _is_healthy:
-            _temp_parts.append("<span style='color:#16a34a'>OK</span>")
+            _temp_parts.append("<span style='color:var(--success)'>OK</span>")
         else:
             _temp_parts.append("<span style='color:var(--text-muted)'>N/A</span>")
 
@@ -256,11 +293,11 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
 
         _us = _d.get("unsafe_shutdowns")
         if isinstance(_us, (int, float)) and _us > 0:
-            _us_str = f"<strong style='color:#ca8a04'>⚠️ {_us}</strong>"
+            _us_str = f"<strong style='color:var(--warning)'>⚠️ {_us}</strong>"
         elif isinstance(_us, (int, float)):
-            _us_str = f"<span style='color:#16a34a'>{_us}</span>"
+            _us_str = f"<span style='color:var(--success)'>{_us}</span>"
         elif _is_healthy:
-            _us_str = "<span style='color:#16a34a'>0</span>"
+            _us_str = "<span style='color:var(--success)'>0</span>"
         else:
             _us_str = "<span style='color:var(--text-muted)'>N/A</span>"
 
@@ -268,7 +305,7 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         if isinstance(_me, (int, float)) and _me > 0:
             _me_str = f"<strong style='color:#dc2626'>⚠️ {_me}</strong>"
         elif isinstance(_me, (int, float)):
-            _me_str = f"<span style='color:#16a34a'>{_me}</span>"
+            _me_str = f"<span style='color:var(--success)'>{_me}</span>"
         else:
             _me_str = "<span style='color:var(--text-muted)'>N/A</span>"
 
@@ -295,18 +332,17 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
 
         if isinstance(_bad_n, (int, float)):
             if _bad_n > 0:
-                _extra_parts.append(f"Bad Blocks: <strong style='color:#ca8a04'>{_bad_n}</strong>")
+                _extra_parts.append(f"Bad Blocks: <strong style='color:var(--warning)'>{_bad_n}</strong>")
             else:
-                _extra_parts.append("Bad Blocks: <span style='color:#16a34a'>0</span>")
+                _extra_parts.append("Bad Blocks: <span style='color:var(--success)'>0</span>")
         elif _is_healthy and not _d.get("is_magnetic"):
-            _extra_parts.append("Bad Blocks: <span style='color:#16a34a'>0</span>")
+            _extra_parts.append("Bad Blocks: <span style='color:var(--success)'>0</span>")
 
         if isinstance(_e_log, (int, float)) and _e_log > 0:
-            _extra_parts.append(f"<span style='color:#ca8a04'>Log Errors: {_e_log}</span>")
+            _extra_parts.append(f"<span style='color:var(--warning)'>Log Errors: {_e_log}</span>")
 
         _reserve_html = "<br>".join(_extra_parts) if _extra_parts else "<span style='color:var(--text-muted)'>N/A</span>"
 
-        _gen   = _d.get("pcie_gen") or ""
         _lanes = _d.get("pcie_lanes_in_use")
         _neg_w = _d.get("pcie_negotiated_width") or (f"x{_lanes}" if _lanes else "")
         _cap_w = _d.get("pcie_capable_width") or (f"x{_d.get('pcie_max_lanes')}" if _d.get('pcie_max_lanes') else "")
@@ -318,14 +354,14 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
 
         if _downshifted:
             _pcie_parts.append(f"<strong style='color:#dc2626'>⚠️ Downshifted ({_neg_w} of {_cap_w})</strong>")
-        elif _gen or _neg_w:
-            _pcie_parts.append(f"{_gen} {_neg_w}".strip())
+        elif "NVME" in str(_d.get("protocol") or "").upper() or "PCIE" in str(_d.get("protocol") or "").upper():
+            _pcie_parts.append(_h(drive_link_description(_d)))
             if _d.get("single_lane_alert") and not _d_is_boot:
-                _pcie_parts.append("<br><strong style='color:#dc2626'>(x1 Warning)</strong>")
+                _pcie_parts.append("<br><strong style='color:var(--danger)'>(x1 Warning)</strong>")
         elif _neg_speed:
             _pcie_parts.append(f"Speed: {_neg_speed} Gbps")
         elif _is_healthy:
-            _pcie_parts.append("<span style='color:#16a34a'>OK</span>")
+            _pcie_parts.append("<span style='color:var(--success)'>OK</span>")
 
         _p_errors = _d.get("pcie_errors")
         if isinstance(_p_errors, dict):
@@ -340,9 +376,9 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
             if _fat > 0:
                 _err_items.append(f"<strong style='color:#dc2626'>Fatal: {_fat}</strong>")
             if _l0 > 0:
-                _err_items.append(f"<strong style='color:#ca8a04'>Retrains: {_l0}</strong>")
+                _err_items.append(f"<strong style='color:var(--warning)'>Retrains: {_l0}</strong>")
             if _rol > 0:
-                _err_items.append(f"<strong style='color:#ca8a04'>Rollovers: {_rol}</strong>")
+                _err_items.append(f"<strong style='color:var(--warning)'>Rollovers: {_rol}</strong>")
             if _rep > 0:
                 _err_items.append(f"Replays: {_rep}")
             if _non_fat > 0:
@@ -353,12 +389,12 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
             if _err_items:
                 _pcie_parts.append("<br><span style='font-size:0.8em'>" + " | ".join(_err_items) + "</span>")
             else:
-                _pcie_parts.append("<br><span style='color:#16a34a;font-size:0.8em'>Errors: 0</span>")
+                _pcie_parts.append("<br><span style='color:var(--success);font-size:0.8em'>Errors: 0</span>")
         elif isinstance(_pcie_errs, (int, float)):
             if _pcie_errs > 0:
-                _pcie_parts.append(f"<br>Errors: <strong style='color:#ca8a04'>{_pcie_errs}</strong>")
+                _pcie_parts.append(f"<br>Errors: <strong style='color:var(--warning)'>{_pcie_errs}</strong>")
             else:
-                _pcie_parts.append("<br>Errors: <span style='color:#16a34a'>0</span>")
+                _pcie_parts.append("<br>Errors: <span style='color:var(--success)'>0</span>")
 
         _pcie_html = "".join(_pcie_parts) if _pcie_parts else "<span style='color:var(--text-muted)'>N/A</span>"
 
@@ -407,10 +443,10 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         )
 
     return (
-        f"<h2>💾 NVMe SMART &amp; Drive Health Summary</h2>"
+        f"<h2>{icon_html('hard-disk')} NVMe SMART &amp; Drive Health Summary</h2>"
         f"<details class='accordion' data-report-evidence='supporting' {'open' if (_sh_critical_count or _sh_warning_count) else ''}>"
         f"  <summary>"
-        f"    <div>💾 Drive SMART Telemetry: {_sh_rollup_badge} &nbsp;"
+        f"    <div>{icon_html('hard-disk')} Drive SMART Telemetry: {_sh_rollup_badge} &nbsp;"
         f"    <span style='font-size:.85rem;color:var(--text-muted)'>{len(_pop_drives)} drive(s) scanned</span></div>"
         f"    <span style='font-size:.85rem;color:var(--primary)'>Toggle Details ▾</span>"
         f"  </summary>"
@@ -523,139 +559,140 @@ def render_bmc_diagnostics_section(data: Optional[Dict[str, Any]]) -> str:
 
 
 def render_job_queue_card_and_health_section(data: Optional[Dict[str, Any]]) -> Tuple[str, str]:
-    """Render Lifecycle Controller Job Queue summary card for overview grid and detail section for Health tab."""
-    if not data:
+    """Keep job history quiet while exposing failures and stalled work at a glance."""
+    if not data or not isinstance(data.get("job_queue"), dict) or not data["job_queue"]:
         return "", ""
-    job_q = data.get("job_queue")
-    if not isinstance(job_q, dict) or not job_q:
-        return "", ""
+    job_q = data["job_queue"]
+    jobs = [j for j in job_q.get("jobs") or [] if isinstance(j, dict)]
 
-    total_jobs = int(job_q.get("total_jobs") or 0)
-    failed_jobs = int(job_q.get("failed_jobs") or 0)
-    stale_jobs = int(job_q.get("stale_jobs") or 0)
-    pending_reboot_jobs = int(job_q.get("pending_reboot_jobs") or 0)
-    jobs = job_q.get("jobs") or []
+    def failed(job):
+        return bool(job.get("is_failed")) or str(job.get("state") or "").lower() in ("failed", "exception", "killed")
 
-    # Status badge & color
-    if failed_jobs > 0 or stale_jobs > 0:
-        badge_cls = "warning"
-        badge_icon = "⚠️"
+    def completed(job):
+        return str(job.get("state") or "").lower() in ("completed", "rebootcompleted") and not (
+            failed(job) or job.get("is_stale") or job.get("is_pending_reboot")
+        )
+
+    def timestamp(value):
+        try:
+            parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+            return (parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed).timestamp()
+        except (ValueError, TypeError, OverflowError, OSError):
+            return None
+
+    def started(job):
+        # Attempt order uses start time, not completion time of a long-running job.
+        return timestamp(job.get("start_time"))
+
+    ordered = sorted(jobs, key=lambda j: (started(j) is not None, started(j) or 0), reverse=True)
+    dated = [j for j in ordered if started(j) is not None]
+    latest = dated[:5]
+    recent_failed = sum(1 for j in latest if failed(j))
+    failed_jobs = max(int(job_q.get("failed_jobs") or 0), sum(failed(j) for j in jobs))
+    stale_jobs = max(int(job_q.get("stale_jobs") or 0), sum(bool(j.get("is_stale")) for j in jobs))
+    pending_reboot_jobs = max(int(job_q.get("pending_reboot_jobs") or 0), sum(bool(j.get("is_pending_reboot")) for j in jobs))
+    total_jobs = max(int(job_q.get("total_jobs") or 0), len(jobs))
+    successful = [j for j in ordered if completed(j)]
+    attention = [j for j in ordered if not completed(j)]
+    recent_note = f"{recent_failed} of the {len(latest)} latest dated attempts failed." if recent_failed else ""
+
+    if failed_jobs or stale_jobs:
+        badge_cls = "danger" if recent_failed else "warning"
+        badge_shape = "error-standard" if recent_failed else "warning-standard"
         badge_lbl = f"{failed_jobs} Failed, {stale_jobs} Stale"
-        card_summary = f"Stale/Failed LC Jobs Detected ({failed_jobs} failed, {stale_jobs} stale). May block VCF host staging or reboot."
-        remediation_hint = "Log into iDRAC Web UI or run RACADM <code>jobqueue delete</code> to clear stalled tasks prior to VCF commissioning."
-    elif pending_reboot_jobs > 0:
-        badge_cls = "info"
-        badge_icon = "⏳"
+        card_summary = f"{failed_jobs} failed · {stale_jobs} potentially stuck · {pending_reboot_jobs} awaiting reboot."
+    elif pending_reboot_jobs:
+        badge_cls, badge_shape = "info", "clock"
         badge_lbl = f"{pending_reboot_jobs} Pending Reboot"
-        card_summary = f"Configuration jobs staged ({pending_reboot_jobs} job{'s' if pending_reboot_jobs > 1 else ''}) and awaiting server reboot."
-        remediation_hint = "Reboot server to complete pending lifecycle configuration tasks."
+        card_summary = "Configuration tasks are waiting for a server reboot."
+    elif attention:
+        badge_cls, badge_shape = "info", "info-standard"
+        badge_lbl = "Jobs to Review"
+        card_summary = f"{len(attention)} active or unclassified jobs; no failures or stale jobs reported."
     else:
-        badge_cls = "success"
-        badge_icon = "✅"
+        badge_cls, badge_shape = "success", "check"
         badge_lbl = "Queue Clean"
-        card_summary = f"No stalled or failed lifecycle tasks ({total_jobs} total historical jobs)."
-        remediation_hint = "Lifecycle Controller job queue is clear."
-
-    badge_html = f"<span class='badge {badge_cls}'>{badge_icon} {badge_lbl}</span>"
-
-    # Overview Card HTML
+        card_summary = f"No failed or stuck jobs reported; {total_jobs} historical jobs."
+    badge_html = f"<span class='badge {badge_cls}'>{icon_html(badge_shape)} {_h(badge_lbl)}</span>"
     card_html = (
-        f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
-        f"<h3 style='margin:0'>LC Job Queue</h3>"
-        f"<a href='#tab-health' data-jump-tab='tab-health' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Health section'>Details &rarr;</a>"
-        f"</div>"
-        f"<div>{badge_html}</div>"
-        f"<p style='font-size:.85rem;color:var(--text-muted);margin-top:.5rem'>{_h(card_summary)}</p>"
-        f"<div style='margin-top:.5rem;border-top:1px solid var(--border);padding-top:.4rem'>"
-        f"<a href='#tab-health' data-jump-tab='tab-health' class='btn-link tab-jump-link' style='font-size:.78rem'>"
-        f"Full details in Health tab &#8599;</a></div>"
-        f"</div>"
+        "<div class='card job-queue-card'><div class='report-card-header'><h3>LC Job Queue</h3>"
+        "<a href='#tab-health' data-jump-tab='tab-health' class='btn-link tab-jump-link'>Details &rarr;</a></div>"
+        f"{badge_html}<p class='job-queue-summary'>{_h(card_summary)}</p>"
+        + (f"<p class='job-queue-recent'>{icon_html('error-standard')} {_h(recent_note)}</p>" if recent_note else "")
+        + "</div>"
     )
 
-    # Health Detail Section HTML
-    troubled_jobs = [j for j in jobs if j.get("is_failed") or j.get("is_stale") or j.get("is_pending_reboot")]
-    other_jobs = [j for j in jobs if not (j.get("is_failed") or j.get("is_stale") or j.get("is_pending_reboot"))]
-    ordered_jobs = troubled_jobs + other_jobs
-
-    job_rows = ""
-    for j in ordered_jobs:
-        j_id = _h(str(j.get("id") or "—"))
-        j_name = _h(str(j.get("name") or "Job"))
-        j_state = str(j.get("state") or "Unknown")
-        j_pct = f"{j['percent_complete']}%" if j.get("percent_complete") is not None else "—"
-        j_start = _h(str(j.get("start_time") or "—"))
-        j_dur = f"{j['duration_seconds']}s" if j.get("duration_seconds") is not None else "—"
-        if j.get("duration_seconds") and j["duration_seconds"] > 3600:
-            hrs = round(j["duration_seconds"] / 3600.0, 1)
-            j_dur = f"{hrs}h"
-
-        j_msg = _h(str(j.get("message") or "—"))
-
-        if j.get("is_failed"):
-            st_cls = "danger"
-            st_icon = "🔴"
-        elif j.get("is_stale"):
-            st_cls = "warning"
-            st_icon = "⚠️"
-        elif j.get("is_pending_reboot"):
-            st_cls = "info"
-            st_icon = "⏳"
-        elif "completed" in j_state.lower():
-            st_cls = "success"
-            st_icon = "✓"
-        else:
-            st_cls = "info"
-            st_icon = "ℹ️"
-
-        st_badge = f"<span class='badge {st_cls}'>{st_icon} {_h(j_state)}</span>"
-
-        job_rows += (
-            f"<tr>"
-            f"<td><strong>{j_id}</strong></td>"
-            f"<td>{j_name}</td>"
-            f"<td>{st_badge}</td>"
-            f"<td>{j_pct}</td>"
-            f"<td>{j_start}</td>"
-            f"<td>{j_dur}</td>"
-            f"<td style='max-width:320px;word-break:break-word'>{j_msg}</td>"
-            f"</tr>"
+    def table(items, label):
+        rows = []
+        for job in items:
+            state = str(job.get("state") or "Unknown")
+            if failed(job):
+                tone, shape = "danger", "error-standard"
+            elif job.get("is_stale"):
+                tone, shape = "warning", "warning-standard"
+            elif completed(job):
+                tone, shape = "success", "check"
+            else:
+                tone, shape = "info", "clock" if job.get("is_pending_reboot") else "info-standard"
+            duration = job.get("duration_seconds")
+            terminal = completed(job) or failed(job) or state.lower() in ("cancelled", "canceled")
+            # Missing end timestamps must not make completed jobs look years long.
+            if terminal and timestamp(job.get("end_time")) is None:
+                duration = None
+            duration_text = "—"
+            if isinstance(duration, (int, float)):
+                duration_text = f"{round(duration / 3600, 1)}h" if duration > 3600 else f"{duration:g}s"
+            pct = str(job["percent_complete"]) + "%" if job.get("percent_complete") is not None else "—"
+            rows.append(
+                f"<tr><td><strong>{_h(str(job.get('id') or '—'))}</strong></td>"
+                f"<td>{_h(str(job.get('name') or 'Job'))}</td>"
+                f"<td><span class='badge {tone}'>{icon_html(shape)} {_h(state)}</span></td>"
+                f"<td>{_h(pct)}</td><td>{_h(str(job.get('start_time') or '—'))}</td>"
+                f"<td>{_h(duration_text)}</td><td>{_h(str(job.get('message') or '—'))}</td></tr>"
+            )
+        return (
+            f"<div class='job-queue-table' role='region' aria-label='{_h(label)}' tabindex='0'>"
+            "<table><thead><tr><th>Job ID</th><th>Name / Task</th><th>State</th><th>Progress</th>"
+            "<th>Start Time</th><th>Duration</th><th>Status Message</th></tr></thead>"
+            "<tbody>" + "".join(rows) + "</tbody></table></div>"
         )
 
-    if not job_rows:
-        job_rows = "<tr><td colspan='7' style='color:var(--text-muted)'>No active or historical jobs in queue.</td></tr>"
-
-    remediation_banner = ""
-    if failed_jobs > 0 or stale_jobs > 0:
-        remediation_banner = (
-            f"<div class='alert alert-warning' style='margin-bottom:1rem;padding:0.75rem 1rem;border-left:4px solid var(--warning,#ca8a04);border-radius:6px;font-size:0.85rem'>"
-            f"<strong>⚠️ Action Recommended:</strong> {_h(card_summary)}<br>"
-            f"<strong>Remediation:</strong> {remediation_hint}"
-            f"</div>"
+    banner = ""
+    if recent_failed or failed_jobs or stale_jobs:
+        alert_tone = "danger" if recent_failed else "warning"
+        alert_title = "Latest recorded attempts include failures" if recent_failed else "Job queue needs review"
+        alert_note = recent_note or card_summary
+        banner = (
+            f"<div class='alert alert-{alert_tone} job-queue-alert'>"
+            f"<strong>{icon_html('error-standard' if recent_failed else 'warning-standard')} {_h(alert_title)}</strong>"
+            f"<p>{_h(alert_note)} Review job messages before staging or rebooting this host.</p></div>"
         )
-
-    is_open = "open" if (failed_jobs > 0 or stale_jobs > 0) else ""
-
-    health_section_html = (
-        f"<div style='margin-top:1.5rem'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem'>"
-        f"<h2 style='margin:0'>Lifecycle Controller (LC) Job Queue Pre-Flight Audit</h2>"
-        f"<div>{badge_html}</div>"
-        f"</div>"
-        f"{remediation_banner}"
-        f"<details class='accordion' {is_open}>"
-        f"<summary>"
-        f"<div>📋 Itemized Job Queue ({len(jobs)} jobs inspected, {failed_jobs} failed, {stale_jobs} stale)</div>"
-        f"<span style='font-size:.85rem;color:var(--primary)'>Toggle Details &#9662;</span>"
-        f"</summary>"
-        f"<div class='accordion-body' style='padding:1rem'>"
-        f"<table>"
-        f"<thead><tr><th>Job ID</th><th>Name / Task</th><th>State</th><th>Progress</th><th>Start Time</th><th>Duration</th><th>Status Message</th></tr></thead>"
-        f"<tbody>{job_rows}</tbody>"
-        f"</table>"
-        f"</div>"
-        f"</details>"
-        f"</div>"
+    details = table(attention, "Jobs needing review") if attention else "<p>No jobs need review in the captured details.</p>"
+    if successful:
+        details += (
+            f"<details class='job-success-history' data-report-evidence='supporting'><summary>Successful history ({len(successful)} jobs)</summary>"
+            + table(successful, "Successful job history") + "</details>"
+        )
+    if not jobs:
+        details = "<p>No itemized job records were captured.</p>"
+    coverage_note = f"{len(jobs)} itemized records captured; {total_jobs} total reported by the controller."
+    if len(dated) < len(jobs):
+        coverage_note += f" {len(jobs) - len(dated)} records have no valid start time and cannot be ordered as recent."
+    remediation = ""
+    if failed_jobs or stale_jobs:
+        remediation = (
+            "<p>Review the affected jobs and dependencies in iDRAC. For confirmed obsolete or stalled tasks, "
+            "RACADM <code>jobqueue delete</code> is available; verify the job IDs and impact before clearing them.</p>"
+        )
+    health_html = (
+        "<section class='job-queue-section'><h2>Lifecycle Controller (LC) Job Queue Pre-Flight Audit</h2>"
+        f"<div>{badge_html}</div>{banner}"
+        "<p class='job-queue-summary'>Potentially stuck means an unfinished job exceeded 24 hours at capture. "
+        "Completed jobs are history, not stuck work. Latest attempts are ordered by recorded start time; this is saved scan evidence.</p>"
+        "<details class='accordion job-queue-details' data-report-evidence='supporting'>"
+        f"<summary><span>{icon_html('clipboard')} Itemized Job Queue</span>"
+        f"<span>{failed_jobs} failed · {stale_jobs} stale · {len(successful)} successful</span></summary>"
+        f"<div class='accordion-body'><p class='job-queue-summary'>{_h(coverage_note)}</p>{details}{remediation}</div>"
+        "</details></section>"
     )
-
-    return card_html, health_section_html
+    return card_html, health_html

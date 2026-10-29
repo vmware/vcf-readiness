@@ -10,6 +10,8 @@ import re
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set
 
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
+from vcf_hci.server_groups import normalize_groups
+from vcf_hci.storage_capacity import normalize_storage_capacities
 
 SCHEMA_VERSION = "2.0"
 
@@ -130,6 +132,7 @@ def _extract_cpu_verdict(data: Dict[str, Any]) -> str:
 
 
 def _extract_vsan_verdict(data: Dict[str, Any]) -> str:
+    normalize_storage_capacities(data.get("storage_subsystem"))
     all_drives = [d for ctrl in data.get("storage_subsystem", []) for d in ctrl.get("drives", [])]
     esa_count = sum(1 for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe")
     osa_count = sum(1 for d in all_drives if d.get("category") in ("vSAN OSA Only", "vSAN OSA SAS/SATA"))
@@ -295,12 +298,14 @@ def _extract_osa_drive_count(data: Dict[str, Any]) -> int:
 
 
 def _extract_raw_nvme_tb(data: Dict[str, Any]) -> float:
+    normalize_storage_capacities(data.get("storage_subsystem"))
     all_drives = [d for ctrl in data.get("storage_subsystem", []) for d in ctrl.get("drives", [])]
     total_gb = sum(float(d.get("capacity_gb") or 0) for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe")
     return round(total_gb / 1024.0, 2)
 
 
 def _extract_total_storage_tb(data: Dict[str, Any]) -> float:
+    normalize_storage_capacities(data.get("storage_subsystem"))
     all_drives = [d for ctrl in data.get("storage_subsystem", []) for d in ctrl.get("drives", [])]
     total_gb = sum(float(d.get("capacity_gb") or 0) for d in all_drives if d.get("populated", True))
     return round(total_gb / 1024.0, 2)
@@ -685,4 +690,6 @@ FLEET_SUMMARY_FIELDS: List[ExportField] = [
     ExportField("redfish_expand_syntax", "Redfish Expand Syntax", "Diagnostics", _extract_expand_syntax, is_core=False),
     ExportField("pipelining_supported", "Pipelining Supported", "Diagnostics", _extract_pipelining_supported, is_core=False),
     ExportField("request_pacing_s", "Request Pacing (s)", "Diagnostics", _extract_request_pacing, is_core=False),
+    ExportField("server_groups", "Server Groups", "Groups", lambda d: "; ".join(g["name"] for g in normalize_groups(d.get("server_groups")))),
+    ExportField("server_group_ids", "Server Group IDs", "Groups", lambda d: "; ".join(g["id"] for g in normalize_groups(d.get("server_groups")))),
 ]

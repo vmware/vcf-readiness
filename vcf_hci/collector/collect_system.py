@@ -5,12 +5,13 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 if TYPE_CHECKING:
     class _CollectorBase:
         sys_uri: Optional[str]
         chassis_uri: Optional[str]
+        chassis_uris: list
         mgr_uri: Optional[str]
         sys_sku: str
         host: str
@@ -58,30 +59,6 @@ else:
     _CollectorBase = object
 
 logger = logging.getLogger("vcf_assess")
-
-_CPU_SUMMARY_PLACEHOLDERS = frozenset({
-    "",
-    "n/a",
-    "na",
-    "none",
-    "unknown",
-    "available for assignment",
-    "not available",
-    "not specified",
-    "null",
-})
-
-
-def _normalize_cpu_summary_model(raw: Optional[Any]) -> str:
-    """Map BMC placeholder ProcessorSummary.Model strings to Unknown.
-
-    AMI MegaRAC / some RackScale implementations send
-    'Available for assignment' instead of a CPU name.
-    """
-    s = str(raw or "").strip()
-    if not s or s.lower() in _CPU_SUMMARY_PLACEHOLDERS:
-        return "Unknown"
-    return s
 
 
 _TPM_INTERFACE_LABELS = {
@@ -194,156 +171,6 @@ def computer_system_inventory(data: Optional[dict]) -> Dict[str, Any]:
             "warning_action": _present_text(watchdog.get("WarningAction")),
         }
     return inventory
-
-
-KNOWN_XEON_E5_E7_CORES: Dict[str, Tuple[int, int]] = {
-    # Xeon E5 v4 (Broadwell-EP) — (cores_per_socket, threads_per_socket)
-    "E5-2603 V4": (6, 6),
-    "E5-2609 V4": (8, 8),
-    "E5-2620 V4": (8, 16),
-    "E5-2623 V4": (4, 8),
-    "E5-2630 V4": (10, 20),
-    "E5-2630L V4": (10, 20),
-    "E5-2637 V4": (4, 8),
-    "E5-2640 V4": (10, 20),
-    "E5-2643 V4": (6, 12),
-    "E5-2650 V4": (12, 24),
-    "E5-2650L V4": (14, 28),
-    "E5-2660 V4": (14, 28),
-    "E5-2667 V4": (8, 16),
-    "E5-2680 V4": (14, 28),
-    "E5-2683 V4": (16, 32),
-    "E5-2687W V4": (12, 24),
-    "E5-2690 V4": (14, 28),
-    "E5-2695 V4": (18, 36),
-    "E5-2697 V4": (18, 36),
-    "E5-2697A V4": (16, 32),
-    "E5-2698 V4": (20, 40),
-    "E5-2699 V4": (22, 44),
-    "E5-2699A V4": (22, 44),
-    "E5-4610 V4": (10, 10),
-    "E5-4620 V4": (10, 20),
-    "E5-4627 V4": (10, 10),
-    "E5-4640 V4": (12, 24),
-    "E5-4650 V4": (14, 28),
-    "E5-4660 V4": (16, 32),
-    "E5-4669 V4": (22, 44),
-    # Xeon E5 v3 (Haswell-EP)
-    "E5-2603 V3": (6, 6),
-    "E5-2609 V3": (6, 6),
-    "E5-2620 V3": (6, 12),
-    "E5-2623 V3": (4, 8),
-    "E5-2630 V3": (8, 16),
-    "E5-2630L V3": (8, 16),
-    "E5-2637 V3": (4, 8),
-    "E5-2640 V3": (8, 16),
-    "E5-2643 V3": (6, 12),
-    "E5-2650 V3": (10, 20),
-    "E5-2650L V3": (12, 24),
-    "E5-2660 V3": (10, 20),
-    "E5-2667 V3": (8, 16),
-    "E5-2670 V3": (12, 24),
-    "E5-2680 V3": (12, 24),
-    "E5-2683 V3": (14, 28),
-    "E5-2687W V3": (10, 20),
-    "E5-2690 V3": (12, 24),
-    "E5-2695 V3": (14, 28),
-    "E5-2697 V3": (14, 28),
-    "E5-2698 V3": (16, 32),
-    "E5-2699 V3": (18, 36),
-    # Xeon E7 v3/v4 (Broadwell/Haswell-EX)
-    "E7-4809 V3": (8, 16),
-    "E7-4809 V4": (8, 16),
-    "E7-4820 V3": (10, 20),
-    "E7-4820 V4": (10, 20),
-    "E7-4830 V3": (12, 24),
-    "E7-4830 V4": (14, 28),
-    "E7-4850 V3": (14, 28),
-    "E7-4850 V4": (16, 32),
-    "E7-8860 V3": (16, 32),
-    "E7-8860 V4": (18, 36),
-    "E7-8870 V3": (18, 36),
-    "E7-8870 V4": (20, 40),
-    "E7-8880 V3": (18, 36),
-    "E7-8880 V4": (22, 44),
-    "E7-8890 V3": (18, 36),
-    "E7-8890 V4": (24, 48),
-}
-
-
-def lookup_xeon_e5_e7_cores(model: str) -> Optional[Tuple[int, int]]:
-    """Look up (cores_per_socket, threads_per_socket) for known Xeon E5/E7 v3/v4 CPUs."""
-    if not model:
-        return None
-    m_clean = re.sub(r"\s+", " ", model.upper()).strip()
-    for k, v in KNOWN_XEON_E5_E7_CORES.items():
-        if k in m_clean:
-            return v
-    match = re.search(r"\b(E[57]-\d{4}[A-Z]?(?:\s*L)?)\s*(V[34])\b", m_clean)
-    if match:
-        key = f"{match.group(1)} {match.group(2)}"
-        if key in KNOWN_XEON_E5_E7_CORES:
-            return KNOWN_XEON_E5_E7_CORES[key]
-    return None
-
-
-def lookup_cpu_memory_channels(cpu_model: str) -> int:
-    """Determine native memory channels per socket based on CPU architecture."""
-    if not cpu_model:
-        return 8
-    s = str(cpu_model).upper()
-
-    # 1. Embedded & Microserver CPUs (2 or 4 channels)
-    if re.search(r"\b(V1\d{3}|V2\d{3}|V3\d{3}|R1\d{3}|V1500B|V1807B|V3C64|R1606G)\b", s) or "RYZEN EMBEDDED" in s:
-        return 2
-    if re.search(r"\bEPYC\s*3\d{3}\b|\b(3101|3201|3251|3301|3401|3451)\b", s) or "EPYC EMBEDDED 3" in s:
-        return 4
-    if re.search(r"\bXEON\s+D[-\s]?(17|27|28|18)\d\d", s) or re.search(r"\bD-(17|27|28|18)\d\d", s) or "ICE LAKE-D" in s:
-        return 4
-    if re.search(r"\bXEON\s+D[-\s]?(15|16|21)\d\d", s) or re.search(r"\bD-(15|16|21)\d\d", s) or "BROADWELL-DE" in s:
-        return 2
-    if re.search(r"\bE3-1\d{3}", s) or re.search(r"\bXEON\s+E[-\s]?2[123]\d\d", s):
-        return 2
-    if any(k in s for k in ["DENVERTON", "SNOW RIDGE"]) or re.search(r"\bATOM\b|\bC3[3579]\d\d\b|\bP59?\d\d\b", s):
-        return 2
-
-    # 2. 12-channel platforms (AMD Turin/Genoa/Bergamo, Intel Xeon 6 6900)
-    if re.search(r"EPYC\s*9\d\d[45]|TURIN|GENOA|BERGAMOT|BERGAMO", s) or any(k in s for k in ["9004", "9005"]):
-        return 12
-    if re.search(r"\b69\d\d[PE]\b", s) or re.search(r"\bXEON\s*6\s*69\d\d\b", s) or any(k in s for k in ["6900P", "6900E", "XEON 6900", "GRANITE RAPIDS-AP"]):
-        return 12
-
-    # 3. 6-channel platforms (AMD Siena, Intel Cooper Lake, Cascade Lake, Skylake-SP)
-    if re.search(r"EPYC\s*8\d\d4|SIENA", s) or "8004" in s:
-        return 6
-    if re.search(r"\b[345689]2\d\d[+UYTRLSM]*\b", s) or "CASCADE" in s or "CASCADE LAKE" in s:
-        return 6
-    if re.search(r"\b[34568]1\d\d[+TFMP]*\b", s) or "SKYLAKE" in s:
-        return 6
-    if re.search(r"\b[568]3\d\dH\b", s) or "COOPER LAKE" in s:
-        return 6
-
-    # 4. 8-channel platforms (AMD Milan/Rome/Naples, Intel Xeon 6 6700/6500, Emerald, Sapphire, Ice Lake-SP)
-    if re.search(r"EPYC\s*7\d\d[123]|ROME|MILAN|NAPLES", s) or any(k in s for k in ["7001", "7002", "7003"]):
-        return 8
-    if re.search(r"\b6[57]\d\d[PE]\b", s) or re.search(r"\bXEON\s*6\s*6[57]\d\d\b", s) or any(k in s for k in ["6700P", "6700E", "6500P", "6500E", "XEON 6700", "XEON 6500", "GRANITE RAPIDS", "SIERRA FOREST"]):
-        return 8
-    if "EMERALD RAPIDS" in s or "EMERALD" in s or re.search(r"\b[34568]5\d\d[+VNYPUQFLS]*\b", s):
-        return 8
-    if any(k in s for k in ["SAPPHIRE RAPIDS", "SAPPHIRE"]) or re.search(r"\b[34568]4\d\d[+HMNPUVYQS]*\b", s):
-        return 8
-    if any(k in s for k in ["ICE LAKE"]) or re.search(r"\b[34568]3\d\d[+NSTUYPVQ]*\b", s):
-        return 8
-
-    # 5. 4-channel platforms (Pre-Skylake Xeon E5/E7 v1-v4)
-    if any(k in s for k in ["HASWELL", "BROADWELL", " V3 ", " V4 ", "E5-", "E7-"]):
-        return 4
-
-    # 6. Consumer fallbacks
-    if re.search(r"\b(CORE|CELERON|PENTIUM|RYZEN|ATHLON)\b", s):
-        return 2
-
-    return 8
 
 
 def _parse_iso_datetime(dt_str: str) -> Optional[datetime]:
@@ -536,12 +363,34 @@ from vcf_hci.bios import (
     _detect_memory_ras_modes,
     _detect_side_channel_settings,
 )
-from vcf_hci.constants import (
-    DELL_MODEL_CHASSIS_DB,
-    DELL_SKU_CHASSIS_DB,
-    HCI_APPLIANCE_PATTERNS,
-    HPE_SKU_CHASSIS_DB,
-    LENOVO_MODEL_CHASSIS_DB,
+from vcf_hci.collector.system_boot import collect_system_boot
+from vcf_hci.collector.system_cpu import (
+    _CPU_SUMMARY_PLACEHOLDERS as _CPU_SUMMARY_PLACEHOLDERS,
+)
+from vcf_hci.collector.system_cpu import (
+    KNOWN_XEON_E5_E7_CORES as KNOWN_XEON_E5_E7_CORES,
+)
+from vcf_hci.collector.system_cpu import (
+    _normalize_cpu_summary_model as _normalize_cpu_summary_model,
+)
+from vcf_hci.collector.system_cpu import (
+    collect_processor_evidence,
+    normalize_processor_summary,
+    processor_summary_seed,
+)
+from vcf_hci.collector.system_cpu import (
+    lookup_cpu_memory_channels as lookup_cpu_memory_channels,
+)
+from vcf_hci.collector.system_cpu import (
+    lookup_xeon_e5_e7_cores as lookup_xeon_e5_e7_cores,
+)
+from vcf_hci.collector.system_identity import (
+    build_chassis_only_summary,
+    collect_chassis_hardware,
+    collect_os_evidence,
+    normalize_chassis_label,
+    resolve_blade_evidence,
+    resolve_system_identity,
 )
 from vcf_hci.logging_utils import get_nested
 
@@ -628,64 +477,7 @@ class _SystemMixin(_CollectorBase):
         chassis_mgmt = getattr(self, "chassis_management_info", {}) or {}
         if not self.sys_uri:
             if chassis_mgmt and chassis_mgmt.get("is_modular_chassis"):
-                # DNS resolution is performed centrally only when --dns-lookup
-                # (or certificate verification) explicitly requests it.
-                dns_name = getattr(self, "server_hostname", None)
-                m_model = chassis_mgmt.get("chassis_model") or "Modular Server Chassis"
-                m_vendor = chassis_mgmt.get("vendor") or "Modular Chassis"
-                m_mgr_name = chassis_mgmt.get("chassis_manager_name") or "Enclosure Management Controller"
-                return {
-                    "ip": self.host,
-                    "hostname": chassis_mgmt.get("enclosure_name") or self.host,
-                    "dns_name": dns_name,
-                    "vendor": m_vendor,
-                    "model": f"{m_model} ({m_mgr_name})",
-                    "sku": "",
-                    "chassis_label": m_model,
-                    "hci_appliance": False,
-                    "serial_number": chassis_mgmt.get("chassis_serial") or "",
-                    "bios_version": "N/A (Chassis Management Module)",
-                    "bios_release_date": "N/A",
-                    "bios_eval": {"badge": "<span class='badge info'>ℹ️ Chassis Management Module</span>", "verdict": "CHASSIS_MANAGER"},
-                    "boot_mode": "N/A",
-                    "boot_eval": {"badge": "<span class='badge info'>ℹ️ Chassis Manager</span>", "verdict": "N/A"},
-                    "boot_target": "N/A",
-                    "persistent_boot_target": "N/A",
-                    "boot_order": [],
-                    "boot_order_details": [],
-                    "boot_override": {"is_active": False, "target": "None", "enabled": "Disabled", "mode": ""},
-                    "total_memory_gb": 0,
-                    "tpm_status_badge": "<span class='badge info'>ℹ️ Chassis Management Controller</span>",
-                    "os_raw": {
-                        "name": m_mgr_name,
-                        "version": "",
-                        "description": "Modular Enclosure Controller",
-                        "source": "Chassis Manager",
-                    },
-                    "cpu_summary": {
-                        "count": 0,
-                        "core_count": "N/A",
-                        "logical_count": "N/A",
-                        "cores_per_socket": None,
-                        "threads_per_socket": None,
-                        "ht_enabled": None,
-                        "base_freq_ghz": None,
-                        "max_freq_ghz": None,
-                        "model": f"Chassis Manager ({chassis_mgmt.get('sled_count', 0)} Sleds Managed)",
-                        "architecture": "Chassis Management Controller",
-                        "channels_per_socket": 0,
-                        "max_ram_speed_mhz": 0,
-                        "max_pcie_lanes_per_socket": 0,
-                        "verdict": "Modular Chassis Enclosure (Compute Sleds Assessed Separately)",
-                        "processor_id": None,
-                        "cache_list": [],
-                        "socket_label": "",
-                        "processors": [],
-                        "asymmetry_detected": False,
-                        "asymmetry_note": None,
-                    },
-                    "chassis_management_info": chassis_mgmt,
-                }
+                return build_chassis_only_summary(self.host, chassis_mgmt, getattr(self, "server_hostname", None))
             return None
         data = self._get(self.sys_uri) or {}
         if not data:
@@ -693,219 +485,15 @@ class _SystemMixin(_CollectorBase):
         self.sys_data = data
         model = data.get("Model") or "Unknown Server"
         vendor = data.get("Manufacturer") or "Unknown Vendor"
-        proc_summary = data.get("ProcessorSummary") or {}
-        cpu_model = _normalize_cpu_summary_model(proc_summary.get("Model"))
-        if cpu_model == "Unknown" and isinstance(data.get("Processors"), dict):
-            p_fam = data["Processors"].get("ProcessorFamily") or data["Processors"].get("Model")
-            if p_fam:
-                cpu_model = _normalize_cpu_summary_model(p_fam)
-        cpu_count = proc_summary.get("Count") or (data.get("Processors", {}).get("Count") if isinstance(data.get("Processors"), dict) else None) or 1
-        cpu_verdict = ""
-        arch_label = ""
-        channels_per_socket = lookup_cpu_memory_channels(cpu_model)
-        max_ram_speed_mhz = None
-        max_pcie_lanes_per_socket = 0
-
-        # ── Per-socket CPU specs from Processors collection ─────────────────────
-        total_cores   = proc_summary.get("CoreCount")
-        total_threads = proc_summary.get("LogicalProcessorCount")
-        max_speed_mhz = None
-        operating_speed_mhz = None
-        per_socket_cores = None
-        per_socket_threads = None
-        processor_id_str = None
-        cache_list: list = []
-        socket_label: str = ""
-        processors_list: list = []
-        asymmetry_detected = False
-        asymmetry_note = None
-
-        if self.sys_uri:
-            members = self._get_members(f"{self.sys_uri}/Processors")
-            for _m in members:
-                _mid = str(_m.get("@odata.id", ""))
-                if re.search(r'/Video\.|/Accelerator\.|/GPU\.|\.GPU\.|\.Video\.', _mid, re.I):
-                    self._has_gpu_processors = True
-                    continue
-                proc = self._get(_mid) or {}
-                if not proc:
-                    continue
-                _ptype = str(proc.get("ProcessorType") or "").upper()
-                if _ptype and _ptype not in ("CPU", "DSP", "OEM", ""):
-                    if _ptype in ("GPU", "ACCELERATOR"):
-                        self._has_gpu_processors = True
-                    continue
-
-                p_model = str(proc.get("Model") or "").strip()
-                p_max_speed = proc.get("MaxSpeedMHz")
-                p_op_speed = (
-                    proc.get("OperatingSpeedMHz")
-                    or get_nested(proc, "Oem", "Lenovo", "CurrentClockSpeedMHz")
-                    or get_nested(proc, "Oem", "Dell", "DellProcessor", "CurrentClockSpeedMhz")
-                    or get_nested(proc, "Oem", "Hpe", "CurrentSpeedMHz")
-                )
-                p_cores = proc.get("TotalCores")
-                p_threads = proc.get("TotalThreads")
-                p_socket = str(proc.get("Socket", "") or "").strip()
-                p_status = proc.get("Status") or {}
-                p_state = str(p_status.get("State", "") or "").strip()
-                p_health = str(p_status.get("Health", "") or "").strip()
-
-                # ProcessorId — VCG/BCG CPU search helper + microcode revision
-                _pid = proc.get("ProcessorId", {}) or {}
-                _id_reg = _pid.get("IdentificationRegisters", "")
-                _eff_fam = _pid.get("EffectiveFamily", "")
-                _eff_mod = _pid.get("EffectiveModel", "")
-                _step    = _pid.get("Step", "")
-                _ucode   = _pid.get("MicrocodeInfo")
-                p_microcode = None
-                if _ucode is not None and str(_ucode).strip() not in ("", "None", "null", "N/A"):
-                    p_microcode = str(_ucode).strip()
-                    if p_microcode.isdigit() or (
-                        p_microcode.lower().startswith("0x") is False and re.fullmatch(r"[0-9A-Fa-f]+", p_microcode)
-                    ):
-                        # Normalize bare hex / int to 0x-prefixed form when numeric.
-                        try:
-                            p_microcode = hex(int(_ucode)) if isinstance(_ucode, int) else (
-                                hex(int(p_microcode, 16)) if re.fullmatch(r"[0-9A-Fa-f]+", p_microcode) else p_microcode
-                            )
-                        except (TypeError, ValueError):
-                            pass
-                # Supermicro OEM fallback on processor object
-                if not p_microcode:
-                    _smc_proc = ((proc.get("Oem") or {}).get("Supermicro") or {})
-                    if isinstance(_smc_proc, dict):
-                        _alt = _smc_proc.get("MicrocodeVersion") or _smc_proc.get("MicrocodeInfo")
-                        if _alt is not None and str(_alt).strip():
-                            p_microcode = str(_alt).strip()
-                p_proc_id_str = None
-                if _id_reg:
-                    p_proc_id_str = _id_reg.strip()
-                elif _eff_fam or _eff_mod:
-                    _parts = []
-                    if _eff_fam:
-                        _parts.append(f"Fam {_eff_fam}")
-                    if _eff_mod:
-                        _parts.append(f"Mod {_eff_mod}")
-                    if _step:
-                        _parts.append(f"Step {_step}")
-                    p_proc_id_str = " · ".join(_parts)
-
-                # Cache hierarchy — DMTF standard field with OEM hook fallback
-                p_cache_list = []
-                _cache_raw = proc.get("Cache") or self.oem_cpu_cache(proc) or []
-                for _c in _cache_raw:
-                    if not isinstance(_c, dict):
-                        continue
-                    _raw_kb = _c.get("CacheSize") or _c.get("MaximumSizeKB") or 0
-                    try:
-                        _raw_kb = int(_raw_kb)
-                    except (TypeError, ValueError):
-                        _raw_kb = 0
-                    _size_mib = (
-                        _c.get("CacheSizeMiB")
-                        or _c.get("MaxCacheSizeMiB")
-                        or (round(_raw_kb / 1024, 2) if _raw_kb else 0)
-                    )
-                    try:
-                        _size_mib = float(_size_mib or 0)
-                        if _size_mib.is_integer():
-                            _size_mib = int(_size_mib)
-                    except (TypeError, ValueError):
-                        _size_mib = 0
-                    p_cache_list.append({
-                        "level": str(_c.get("CacheMemoryType") or _c.get("Name") or _c.get("Level") or "").strip(),
-                        "size_mib": _size_mib,
-                        "associativity": str(_c.get("Associativity") or "").strip(),
-                    })
-
-                processors_list.append({
-                    "socket": p_socket,
-                    "model": p_model,
-                    "cores": p_cores,
-                    "threads": p_threads,
-                    "max_speed_mhz": p_max_speed,
-                    "operating_speed_mhz": p_op_speed,
-                    "health": p_health,
-                    "state": p_state,
-                    "processor_id": p_proc_id_str,
-                    "microcode": p_microcode,
-                    "cache_list": p_cache_list,
-                })
-
-            populated_procs = [
-                p for p in processors_list
-                if p.get("state", "").lower() != "absent" and (p.get("model") or p.get("cores") is not None)
-            ]
-            first_proc = populated_procs[0] if populated_procs else (processors_list[0] if processors_list else None)
-
-            if first_proc:
-                _fp_model = first_proc["model"]
-                if _fp_model and _fp_model != cpu_model:
-                    if (
-                        cpu_model == "Unknown"
-                        or re.search(r"\bprocessor\b", cpu_model, re.I)
-                        or len(_fp_model) > len(cpu_model)
-                    ):
-                        cpu_model = _fp_model
-                channels_per_socket = lookup_cpu_memory_channels(cpu_model)
-
-                max_speed_mhz       = first_proc["max_speed_mhz"]
-                operating_speed_mhz = first_proc["operating_speed_mhz"]
-                per_socket_cores    = first_proc["cores"]
-                per_socket_threads  = first_proc["threads"]
-                socket_label        = first_proc["socket"]
-                processor_id_str    = first_proc["processor_id"]
-                cache_list          = first_proc["cache_list"]
-
-            # If some sockets are absent and populated_procs reflects the actual installed CPUs,
-            # align cpu_count to the populated count.
-            if populated_procs and len(populated_procs) < (cpu_count or 1):
-                cpu_count = len(populated_procs)
-
-            if len(populated_procs) > 1:
-                models_set = {p["model"].lower() for p in populated_procs if p.get("model")}
-                cores_set = {p["cores"] for p in populated_procs if p.get("cores") is not None}
-                max_speeds_set = {p["max_speed_mhz"] for p in populated_procs if p.get("max_speed_mhz") is not None}
-                op_speeds_set = {p["operating_speed_mhz"] for p in populated_procs if p.get("operating_speed_mhz") is not None}
-                states_set = {p["state"].lower() for p in populated_procs if p.get("state")}
-
-                if (
-                    len(models_set) > 1
-                    or len(cores_set) > 1
-                    or len(max_speeds_set) > 1
-                    or len(op_speeds_set) > 1
-                    or ("disabled" in states_set)
-                ):
-                    asymmetry_detected = True
-                    asymmetry_note = "CPU socket asymmetry detected: mismatched processor model, core count, speed, or socket state."
-                    if "Asymmetry" not in cpu_verdict:
-                        cpu_verdict += " (⚠️ Socket Asymmetry Detected)"
-
-        # Prefer per-socket values from Processors; fall back to dividing summary totals
-        _safe_count = max(cpu_count or 1, 1)
-        if not total_cores and not per_socket_cores:
-            known_cores = lookup_xeon_e5_e7_cores(cpu_model)
-            if known_cores:
-                per_socket_cores, per_socket_threads = known_cores
-                total_cores = per_socket_cores * _safe_count
-                total_threads = per_socket_threads * _safe_count
-
-        if not total_cores and per_socket_cores:
-            total_cores = per_socket_cores * _safe_count
-        if not total_threads and per_socket_threads:
-            total_threads = per_socket_threads * _safe_count
-
-        cores_ps   = per_socket_cores   or (total_cores   // _safe_count if total_cores   else None)
-        threads_ps = per_socket_threads or (total_threads // _safe_count if total_threads else None)
-        ht_enabled = (threads_ps // cores_ps >= 2) if (cores_ps and threads_ps) else None
-
-        # Base frequency: prefer string in model name, then OperatingSpeedMHz
-        _freq_m = re.search(r'@\s*([\d.]+)\s*GHz', cpu_model, re.I)
-        base_freq_ghz = float(_freq_m.group(1)) if _freq_m else (
-            round(operating_speed_mhz / 1000, 2) if operating_speed_mhz else None
-        )
-        max_freq_ghz = round(max_speed_mhz / 1000, 2) if max_speed_mhz else None
+        cpu_model, cpu_count, channels_per_socket, total_cores, total_threads = processor_summary_seed(data)
+        has_collection = bool(self.sys_uri)
+        processors_list = []
+        for processor in collect_processor_evidence(self):
+            if processor is None:
+                self._has_gpu_processors = True
+            else:
+                processors_list.append(processor)
+        cpu_summary = normalize_processor_summary(cpu_model, cpu_count, channels_per_socket, total_cores, total_threads, processors_list, has_collection)
 
         system_identity = computer_system_inventory(data)
         tpm_badge = system_identity["tpm_status_badge"]
@@ -914,393 +502,21 @@ class _SystemMixin(_CollectorBase):
         bios_version = data.get("BiosVersion", "Unknown")
         bios_date = self.oem_bios_date(data)
 
-        # ── OS detection from OEM fields (requires host-side agent) ──────────
-        # Dell iDRAC: iSM (iDRAC Service Module) must be installed on host OS.
-        # HPE iLO: AMS (Agentless Management Service) must be running on host.
-        # Cisco CIMC: Intersight Device Connector or host driver integration.
-        _oem_blk  = data.get("Oem") or {}
-        _dell_oem = _oem_blk.get("Dell") or {}
-        _hpe_oem  = _oem_blk.get("Hpe") or {}
-        _csc_oem  = _oem_blk.get("Cisco") or {}
-        # Dell exposes OS info under Oem.Dell.DSI (iSM path) or Oem.Dell.DellSystem
-        _dsi      = _dell_oem.get("DSI") or {}
-        _dell_sys = _dell_oem.get("DellSystem") or {}
-        _hpe_host_os = _hpe_oem.get("HostOS") or {}
-        _csc_os_info = _csc_oem.get("OsInfo") or {}
-
-        # Allow OEM hook to query vendor-specific OS endpoints (e.g. Dell $select attribute filtering)
-        _oem_os = self.oem_os_info(data) if hasattr(self, "oem_os_info") else {}
-
-        raw_os_name = str(
-            _oem_os.get("name")
-            or _dsi.get("OSName")
-            or _dell_sys.get("OSName")
-            or _hpe_host_os.get("OsName")
-            or _csc_os_info.get("OSName")
-            or data.get("OSName")
-            or ""
-        ).strip()
-        raw_os_ver = str(
-            _oem_os.get("version")
-            or _dsi.get("OSVersion")
-            or _dell_sys.get("OSVersion")
-            or _hpe_host_os.get("OsVersion")
-            or _csc_os_info.get("OSVersion")
-            or data.get("OSVersion")
-            or ""
-        ).strip()
-        # HPE AMS provides a richer description string (e.g. "Build 20348.2227")
-        raw_os_desc = str(_oem_os.get("description") or _hpe_host_os.get("OsDescription") or "").strip()
-
-        powered_on_sec = _oem_os.get("powered_on_seconds")
-        uptime_days = _oem_os.get("uptime_days")
-        uptime_human = _oem_os.get("uptime_human")
-
-        if _oem_os.get("source"):
-            os_src = _oem_os.get("source")
-        elif _dsi.get("OSName"):
-            os_src = "Dell iSM"
-        elif _dell_sys.get("OSName"):
-            os_src = "Dell OEM"
-        elif _hpe_host_os.get("OsName"):
-            os_src = "HPE AMS"
-        elif _csc_os_info.get("OSName"):
-            os_src = "Cisco OEM"
-        elif data.get("OSName"):
-            os_src = "Redfish"
-        else:
-            os_src = ""
+        os_raw = collect_os_evidence(self, data)
 
         # scan_host resolves and verifies DNS only when explicitly requested.
         # Collection must not perform an implicit PTR lookup.
         dns_name = getattr(self, "server_hostname", None)
 
-        serial_num = str(data.get("SerialNumber", "Unknown")).strip()
-
-        # Fallback for partitioned or scale-up systems where Model / Serial / Manufacturer are missing in Partition0
-        chassis_candidates = []
-        if getattr(self, "chassis_uri", None):
-            chassis_candidates.append(self.chassis_uri)
-        if getattr(self, "chassis_uris", None):
-            for cu in self.chassis_uris:
-                if cu not in chassis_candidates:
-                    chassis_candidates.append(cu)
-
-        _placeholder_vendors = {
-            "TO BE FILLED BY O.E.M.", "DEFAULT STRING", "SYSTEM MANUFACTURER",
-            "UNKNOWN VENDOR", "UNKNOWN", "",
-        }
-
-        if (model in ("Unknown Server", "", None) or vendor.upper().strip() in _placeholder_vendors or serial_num in ("Unknown", "", None, "To Be Filled By O.E.M.")) and chassis_candidates:
-            for c_uri in chassis_candidates:
-                c_obj = self._get(c_uri) or {}
-                if model in ("Unknown Server", "", None):
-                    c_model = c_obj.get("Model") or c_obj.get("Name")
-                    if c_model and str(c_model).lower() not in ("chassis", "enclosure", "unknown"):
-                        model = str(c_model).strip()
-                if vendor.upper().strip() in _placeholder_vendors:
-                    c_vendor = c_obj.get("Manufacturer") or c_obj.get("Vendor")
-                    if c_vendor and str(c_vendor).upper().strip() not in _placeholder_vendors:
-                        vendor = str(c_vendor).strip()
-                if serial_num in ("Unknown", "", None, "To Be Filled By O.E.M."):
-                    c_sn = c_obj.get("SerialNumber")
-                    if c_sn and str(c_sn).upper().strip() not in ("UNKNOWN", "NONE", "", "TO BE FILLED BY O.E.M."):
-                        serial_num = str(c_sn).strip()
-                if model not in ("Unknown Server", "", None) and vendor.upper().strip() not in _placeholder_vendors and serial_num not in ("Unknown", "", None, "To Be Filled By O.E.M."):
-                    break
-
-        # Normalize known whitebox motherboards where SMBIOS vendor was left as default
-        if vendor.upper().strip() in _placeholder_vendors:
-            _model_up = model.upper().strip()
-            if "ROMED8" in _model_up or "EPYCD8" in _model_up or "GENOAD8" in _model_up or "BERGAMOD8" in _model_up or "SP3" in _model_up:
-                vendor = "ASRock Rack"
-            elif _model_up.startswith(("X11", "X12", "X13", "H11", "H12", "H13", "SYS-")):
-                vendor = "Supermicro"
-            elif _model_up.startswith(("MZ31", "MZ32", "MZ71", "MZ72")):
-                vendor = "Gigabyte"
-
-        # FruInfo fallback for whitebox / OEM platforms where SMBIOS DMI was unpopulated
-        _bad_sn = serial_num.upper().strip() in ("UNKNOWN", "", "NONE", "TO BE FILLED BY O.E.M.", "DEFAULT STRING")
-        _bad_vendor = vendor.upper().strip() in _placeholder_vendors
-        _bad_model = model in ("Unknown Server", "", None, "To Be Filled By O.E.M.")
-        fru_board_part = ""
-        if (_bad_sn or _bad_vendor or _bad_model) and self.sys_uri:
-            fru_info = self._get(f"{self.sys_uri}/FruInfo")
-            if isinstance(fru_info, dict):
-                board = fru_info.get("Board") or {}
-                prod = fru_info.get("Product") or {}
-                chassis = fru_info.get("Chassis") or {}
-
-                b_mfg = str(board.get("Manufacturer") or prod.get("Manufacturer") or "").strip()
-                b_prod = str(board.get("ProductName") or prod.get("ProductName") or "").strip()
-                b_sn = str(board.get("SerialNumber") or prod.get("SerialNumber") or chassis.get("SerialNumber") or "").strip()
-                b_part = str(board.get("PartNumber") or prod.get("PartNumber") or "").strip()
-                if b_part:
-                    fru_board_part = b_part
-
-                if _bad_vendor and b_mfg and b_mfg.upper().strip() not in _placeholder_vendors:
-                    if b_mfg.upper() in ("ASROCKRACK", "ASROCK"):
-                        vendor = "ASRock Rack"
-                    else:
-                        vendor = b_mfg
-                if _bad_model and b_prod and b_prod.upper().strip() not in _placeholder_vendors:
-                    model = b_prod
-                if _bad_sn and b_sn and b_sn.upper().strip() not in ("UNKNOWN", "NONE", "", "TO BE FILLED BY O.E.M.", "DEFAULT STRING"):
-                    serial_num = b_sn
-
-        # ── Server SKU / product number ───────────────────────────────────────
-        # DMTF standard: System.SKU  |  HPE OEM fallback: Oem.Hpe.ProductId
-        sku_raw = (
-            self.oem_sku(data)
-            or data.get("SKU")
-            or ((data.get("Oem") or {}).get("Hpe") or {}).get("ProductId")
-            or fru_board_part
-            or ""
-        ).strip().upper()
-        if sku_raw.upper() == serial_num.upper():
-            sku_raw = ""
-        self.sys_sku   = sku_raw
-        self.sys_model = model
-
-        # Chassis label — HPE/Dell: look up by SKU; Dell/Lenovo fallback: look up by model suffix
-        _sku_db = HPE_SKU_CHASSIS_DB.get(sku_raw) or DELL_SKU_CHASSIS_DB.get(sku_raw)
-        if _sku_db:
-            chassis_label = _sku_db[1]
-        else:
-            _mkey = re.sub(r'^(?:PowerEdge|ProLiant|ThinkSystem)\s+', '', model, flags=re.I).upper().strip()
-            _mkey = re.sub(r'[-]\d+$', '', _mkey)   # strip "-10" / "-24" XC variant suffixes
-            _dell_db = DELL_MODEL_CHASSIS_DB.get(_mkey)
-            if _dell_db:
-                chassis_label = _dell_db[1]
-            else:
-                _lenovo_entry = LENOVO_MODEL_CHASSIS_DB.get(_mkey)
-                if _lenovo_entry:
-                    chassis_label = _lenovo_entry.get("label", f"ThinkSystem {_mkey} · {_lenovo_entry.get('form_factor', '')}")
-                else:
-                    chassis_label = ""
-
-        # HCI appliance detection — iLO reports "ProLiant DX…"; iDRAC "XCxxx" / "VxRail Exxx"
-        _model_vendor_str = f"{model} {vendor}".upper()
-        hci_appliance = any(p.upper() in _model_vendor_str for p in HCI_APPLIANCE_PATTERNS)
-
-        # Boot mode & boot target extraction
-        boot_obj = data.get("Boot") or {}
-        override_target = str(boot_obj.get("BootSourceOverrideTarget") or "").strip()
-        override_enabled = str(boot_obj.get("BootSourceOverrideEnabled") or "Disabled").strip()
-        override_mode = str(boot_obj.get("BootSourceOverrideMode") or "").strip()
-
-        is_override_active = (
-            override_enabled.lower() not in ("disabled", "", "none", "null")
-            and override_target.lower() not in ("none", "n/a", "", "null", "nonespecified")
-        )
-        boot_override = {
-            "is_active": is_override_active,
-            "target": override_target if is_override_active else "None",
-            "enabled": override_enabled,
-            "mode": override_mode,
-        }
-
-        # Determine persistent boot_mode (do not assume dormant override_mode=Legacy is persistent)
-        system_boot_mode = str(boot_obj.get("BootMode") or "").strip()
-        if is_override_active and override_mode:
-            boot_mode = override_mode
-        elif system_boot_mode:
-            boot_mode = system_boot_mode
-        elif not is_override_active and override_mode.upper() == "UEFI":
-            boot_mode = "UEFI"
-        else:
-            boot_mode = ""  # Defer to BIOS attributes and boot order details below
-
-        boot_order = boot_obj.get("BootOrder") or []
-        boot_order_details: List[Dict[str, Any]] = []
-        persistent_boot_target = ""
-
-        def _clean_boot_name(raw_name: str) -> str:
-            cleaned = re.sub(r"^(?:Unavailable:\s*)+", "", str(raw_name or "").strip(), flags=re.I).strip()
-            return cleaned or str(raw_name or "").strip()
-
-        boot_opts_ref = boot_obj.get("BootOptions") or {}
-        opts_uri = (
-            boot_opts_ref.get("@odata.id")
-            if isinstance(boot_opts_ref, dict) and boot_opts_ref.get("@odata.id")
-            else f"{self.sys_uri}/BootOptions" if getattr(self, "sys_uri", None) else None
-        )
-
-        if opts_uri:
-            clean_opts_uri = opts_uri.rstrip("/")
-            members = self._get_members(opts_uri, limit=50)
-
-            # Pre-index collection members by BootOptionReference, Id, and URI tail
-            # so servers indexing BootOptions by number (e.g. /BootOptions/1 -> BootOptionReference: Boot0005)
-            # resolve EFI BootOrder entries correctly.
-            boot_opts_by_ref: Dict[str, Dict[str, Any]] = {}
-            for m in members:
-                m_uri = m.get("@odata.id") if isinstance(m, dict) else (m if isinstance(m, str) else None)
-                if not m_uri:
-                    continue
-                if isinstance(m, dict) and len(m) > 2 and (m.get("DisplayName") or m.get("Name") or m.get("BootOptionReference")):
-                    opt_data = m
-                else:
-                    opt_data = self._get(m_uri, critical=False)
-                if not isinstance(opt_data, dict):
-                    continue
-
-                for k in [
-                    str(opt_data.get("BootOptionReference") or "").strip(),
-                    str(opt_data.get("Id") or "").strip(),
-                    str(m_uri).rstrip("/").split("/")[-1].strip(),
-                ]:
-                    if k:
-                        boot_opts_by_ref[k] = opt_data
-                        boot_opts_by_ref[k.lower()] = opt_data
-                        boot_opts_by_ref[k.upper()] = opt_data
-
-            opt_ids_to_fetch = [str(x).strip() for x in boot_order if str(x).strip()] if isinstance(boot_order, list) else []
-            if not opt_ids_to_fetch:
-                for m in members:
-                    if isinstance(m, dict):
-                        m_uri = m.get("@odata.id") or ""
-                        m_id = m.get("Id") or (m_uri.rstrip("/").split("/")[-1] if m_uri else None)
-                        if m_id:
-                            opt_ids_to_fetch.append(str(m_id))
-                    elif isinstance(m, str) and m:
-                        opt_ids_to_fetch.append(m.rstrip("/").split("/")[-1])
-
-            target_cand = None
-            for b_opt_id in opt_ids_to_fetch[:30]:
-                opt_data = (
-                    boot_opts_by_ref.get(b_opt_id)
-                    or boot_opts_by_ref.get(b_opt_id.lower())
-                    or boot_opts_by_ref.get(b_opt_id.upper())
-                )
-                if not opt_data:
-                    item_uri = b_opt_id if b_opt_id.startswith("/") else f"{clean_opts_uri}/{b_opt_id}"
-                    opt_data = self._get(item_uri, critical=False)
-                if not isinstance(opt_data, dict):
-                    continue
-                is_enabled = opt_data.get("BootOptionEnabled") is not False
-                raw_dname = opt_data.get("DisplayName") or opt_data.get("Name") or opt_data.get("Description") or b_opt_id
-                clean_dname = _clean_boot_name(raw_dname)
-                uefi_path = opt_data.get("UefiDevicePath") or ""
-                opt_ref = opt_data.get("BootOptionReference") or opt_data.get("Id") or b_opt_id
-
-                is_current = False
-                if is_enabled and not target_cand:
-                    target_cand = clean_dname
-                    is_current = True
-
-                boot_order_details.append({
-                    "id": str(opt_ref),
-                    "name": clean_dname,
-                    "raw_name": str(raw_dname),
-                    "enabled": is_enabled,
-                    "uefi_path": str(uefi_path),
-                    "is_current": is_current,
-                })
-
-            if target_cand:
-                persistent_boot_target = target_cand
-
-        if not persistent_boot_target:
-            if override_target and override_target.lower() not in ("none", "n/a", "null", "nonespecified"):
-                persistent_boot_target = _clean_boot_name(override_target)
-
-        if is_override_active:
-            boot_target = _clean_boot_name(override_target)
-        elif persistent_boot_target:
-            boot_target = persistent_boot_target
-        else:
-            raw_target = str(boot_obj.get("BootSourceOverrideTarget") or "N/A").strip()
-            boot_target = _clean_boot_name(raw_target) if raw_target.lower() not in ("none", "n/a", "null", "nonespecified") else "None"
-
-        # Infer persistent boot mode if Redfish did not report explicit BootMode or if override was dormant
-        if not boot_mode or boot_mode.lower() in ("unknown", "none", "n/a"):
-            bios_ref = data.get("Bios") or {}
-            bios_uri = bios_ref.get("@odata.id") if isinstance(bios_ref, dict) else (f"{self.sys_uri}/Bios" if self.sys_uri else None)
-            bios_attrs = {}
-            if bios_uri:
-                bios_json = self._get(bios_uri, critical=False) or {}
-                bios_attrs = bios_json.get("Attributes") or {}
-                if not isinstance(bios_attrs, dict):
-                    bios_attrs = {}
-
-            boot_mode_attr = str(bios_attrs.get("BootModeSelect") or bios_attrs.get("BootMode") or bios_attrs.get("SystemBootMode") or "").strip().upper()
-            csm_attr = str(bios_attrs.get("CSMSupport") or "").strip().upper()
-
-            has_uefi_entry = any(
-                ("uefi" in str(b.get("uefi_path", "")).lower())
-                or ("uefi" in str(b.get("name", "")).lower())
-                or ("uefi" in str(b.get("raw_name", "")).lower())
-                or ("esxi" in str(b.get("name", "")).lower())
-                for b in boot_order_details
-            )
-            has_secure_boot = bool(data.get("SecureBoot")) or str(bios_attrs.get("SecureBootEnable", "")).lower() in ("true", "enabled", "1")
-
-            if (
-                boot_mode_attr in ("UEFI", "PURE_UEFI")
-                or (boot_mode_attr and "UEFI" in boot_mode_attr)
-                or has_uefi_entry
-                or has_secure_boot
-            ):
-                boot_mode = "UEFI"
-            elif boot_mode_attr in ("LEGACY", "BIOS", "DUAL"):
-                boot_mode = "Legacy"
-            elif override_mode:
-                boot_mode = override_mode
-            else:
-                boot_mode = "Unknown"
+        identity = resolve_system_identity(self, data, model, vendor)
+        self.sys_sku = identity["sku"]
+        self.sys_model = identity["model"]
+        chassis_label, hci_appliance = normalize_chassis_label(identity["model"], identity["vendor"], identity["sku"])
+        boot = collect_system_boot(self, data)
 
         enclosure_info = self._collect_enclosure_details()
-        model_str = str(model).lower()
-        sku_str = str(sku_raw).lower()
-        is_cisco_b_blade = bool(
-            re.search(r"\bucs[-_\s]?b|ucsb\b", model_str)
-            or re.search(r"\bucs[-_\s]?b|ucsb\b", sku_str)
-        )
-        is_cisco_x_blade = bool(
-            re.search(r"\bucs[-_\s]?x|ucsx\b", model_str)
-            or re.search(r"\bucs[-_\s]?x|ucsx\b", sku_str)
-        )
-        is_blade = bool(
-            enclosure_info.get("is_enclosure_contained")
-            or "e910" in model_str
-            or "blade" in model_str
-            or "sled" in model_str
-            or is_cisco_b_blade
-            or is_cisco_x_blade
-        )
-        if not chassis_label:
-            if is_cisco_b_blade:
-                chassis_label = f"Cisco UCS B-Series Blade ({model})"
-            elif is_cisco_x_blade:
-                chassis_label = f"Cisco UCS X-Series Compute Node ({model})"
-            elif enclosure_info.get("is_enclosure_contained"):
-                chassis_label = f"Blade Sled · {enclosure_info.get('enclosure_name')}"
-                if enclosure_info.get("tray_id"):
-                    chassis_label += f" (Tray {enclosure_info['tray_id']})"
-            elif is_blade:
-                chassis_label = f"Blade Server ({model})"
-
-        # Chassis / board OEM identity (Supermicro BoardID / BoardSerial / GUID)
-        chassis_hardware = {}
-        for c_uri in chassis_candidates[:3]:
-            c_obj = self._get(c_uri) or {}
-            if not isinstance(c_obj, dict) or not c_obj:
-                continue
-            smc = ((c_obj.get("Oem") or {}).get("Supermicro") or {})
-            if not isinstance(smc, dict):
-                smc = {}
-            chassis_hardware = {
-                "manufacturer": str(c_obj.get("Manufacturer") or "").strip(),
-                "model": str(c_obj.get("Model") or "").strip(),
-                "part_number": str(c_obj.get("PartNumber") or "").strip(),
-                "serial_number": str(c_obj.get("SerialNumber") or "").strip(),
-                "board_serial": str(smc.get("BoardSerialNumber") or "").strip(),
-                "board_id": str(smc.get("BoardID") or "").strip(),
-                "guid": str(smc.get("GUID") or "").strip(),
-            }
-            if chassis_hardware.get("part_number") or chassis_hardware.get("board_id"):
-                break
+        chassis_label, is_blade = resolve_blade_evidence(identity["model"], identity["sku"], chassis_label, enclosure_info)
+        chassis_hardware = collect_chassis_hardware(self, identity["chassis_candidates"])
 
         # When TrustedModules is absent, surface BIOS TPM/TXT/TME policy as explicit posture.
         if system_identity.get("tpm_state") == "NotReported":
@@ -1370,9 +586,9 @@ class _SystemMixin(_CollectorBase):
             "ip": self.host,
             "hostname": data.get("HostName", self.host),
             "dns_name": dns_name,
-            "vendor": vendor,
-            "model": model,
-            "sku": sku_raw,
+            "vendor": identity['vendor'],
+            "model": identity['model'],
+            "sku": identity['sku'],
             "chassis_label": chassis_label,
             "is_blade": is_blade,
             "enclosure_info": enclosure_info,
@@ -1381,7 +597,7 @@ class _SystemMixin(_CollectorBase):
             "chassis_hardware": chassis_hardware,
             "tpm_posture_note": tpm_posture_note,
             "fixed_boot_order": fixed_boot_order,
-            "serial_number": serial_num,
+            "serial_number": identity['serial_number'],
             "system_uuid": str(data.get("UUID") or "").strip(),
             "asset_tag": system_identity["asset_tag"],
             "power_state": system_identity["power_state"],
@@ -1394,14 +610,14 @@ class _SystemMixin(_CollectorBase):
             "bios_version": bios_version,
             "bios_release_date": bios_date,
             "bios_eval": {},
-            "raw_boot_mode": boot_mode,
-            "boot_mode": boot_mode,
+            "raw_boot_mode": boot["boot_mode"],
+            "boot_mode": boot['boot_mode'],
             "boot_eval": {},
-            "boot_target": boot_target,
-            "persistent_boot_target": persistent_boot_target,
-            "boot_order": boot_order,
-            "boot_order_details": boot_order_details,
-            "boot_override": boot_override,
+            "boot_target": boot['boot_target'],
+            "persistent_boot_target": boot['persistent_boot_target'],
+            "boot_order": boot['boot_order'],
+            "boot_order_details": boot['boot_order_details'],
+            "boot_override": boot['boot_override'],
             "total_memory_gb": (
                 (data.get("MemorySummary") or {}).get("TotalSystemMemoryGiB")
                 or (round(((data.get("MemorySummary") or {}).get("TotalSystemMemoryKiB") or 0) / 1048576) if (data.get("MemorySummary") or {}).get("TotalSystemMemoryKiB") else 0)
@@ -1409,37 +625,8 @@ class _SystemMixin(_CollectorBase):
                 or 0
             ),
             "tpm_status_badge": tpm_badge,
-            "os_raw": {
-                "name":               raw_os_name,
-                "version":            raw_os_ver,
-                "description":        raw_os_desc,
-                "source":             os_src,
-                "powered_on_seconds": powered_on_sec,
-                "uptime_days":        uptime_days,
-                "uptime_human":       uptime_human,
-            },
-            "cpu_summary": {
-                "count":             cpu_count,
-                "core_count":        total_cores   if total_cores is not None else 0,
-                "logical_count":     total_threads if total_threads is not None else 0,
-                "cores_per_socket":  cores_ps      if cores_ps is not None else 0,
-                "threads_per_socket": threads_ps   if threads_ps is not None else 0,
-                "ht_enabled":        ht_enabled,
-                "base_freq_ghz":     base_freq_ghz,
-                "max_freq_ghz":      max_freq_ghz,
-                "model":             cpu_model,
-                "architecture":      arch_label,
-                "channels_per_socket": channels_per_socket,
-                "max_ram_speed_mhz": max_ram_speed_mhz,
-                "max_pcie_lanes_per_socket": max_pcie_lanes_per_socket,
-                "verdict":           cpu_verdict,
-                "processor_id":      processor_id_str,
-                "cache_list":        cache_list,
-                "socket_label":      socket_label,
-                "processors":        processors_list,
-                "asymmetry_detected": asymmetry_detected,
-                "asymmetry_note":    asymmetry_note,
-            },
+            "os_raw": os_raw,
+            "cpu_summary": cpu_summary,
         }
         if "boot_progress" in system_identity:
             summary["boot_progress"] = system_identity["boot_progress"]
@@ -2492,7 +1679,5 @@ class _SystemMixin(_CollectorBase):
                 "related_items": related_items,
             })
         return parsed_items
-
-
 
 

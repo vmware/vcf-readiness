@@ -12,6 +12,7 @@ JS_SCAN = """
   var _isRetryScan = false;
   var _isImportScan = false;
   var _isRemoteScan = false;
+  var _scanCancelRequested = false;
 
   function appendLog(msg) {
     var box = document.getElementById('logBox');
@@ -37,9 +38,19 @@ JS_SCAN = """
     if (isImport !== undefined) {
       _isImportScan = !!isImport;
     }
-    var safeDone = (total > 0 && done > total) ? total : done;
+    total = Math.max(0, Number(total) || 0);
+    done = Math.max(0, Number(done) || 0);
+    var safeDone = total > 0 ? Math.min(total,done) : done;
     var pct = total ? Math.min(100, Math.round(safeDone / total * 100)) : 0;
     document.getElementById('progressBar').style.width = pct + '%';
+    var progress = document.getElementById('scanHostProgress') || document.getElementById('progressBar').parentElement;
+    progress.setAttribute('role','progressbar'); progress.setAttribute('aria-label','Hosts processed in current pass'); progress.setAttribute('aria-busy','true');
+    progress.setAttribute('aria-valuemin','0'); progress.setAttribute('aria-valuemax','100');
+    if (total) progress.setAttribute('aria-valuenow',String(pct)); else progress.removeAttribute('aria-valuenow');
+    progress.setAttribute('aria-valuetext',total ? safeDone + ' of ' + total + ' hosts processed' : 'Preparing assessment; host total not available');
+    progress.classList.toggle('progress-indeterminate',!total);
+    var outcome = document.getElementById('scanProgressOutcome');
+    if (outcome) outcome.textContent = 'Progress counts processed hosts. Readiness and collection outcomes appear separately below.';
     if (_isImportScan) {
       document.getElementById('progressLabel').textContent = 'Importing & Rendering…';
       document.getElementById('runBtn').textContent = '⏳ Importing…';
@@ -47,16 +58,24 @@ JS_SCAN = """
       var sumBtn = document.getElementById('importSummaryBtn');
       if (scanBtn) { scanBtn.disabled = true; scanBtn.textContent = '⏳ Importing…'; }
       if (sumBtn) { sumBtn.disabled = true; sumBtn.textContent = '⏳ Importing…'; }
-      document.getElementById('progressText').textContent = 'Importing: ' + safeDone + ' / ' + total + ' hosts  (' + pct + '%)';
+      document.getElementById('progressText').textContent = 'Importing: ' + safeDone + ' / ' + total + ' hosts processed  (' + pct + '%)';
     } else if (_isRetryScan) {
       document.getElementById('progressLabel').textContent = 'Auto-retrying incomplete / failed hosts…';
       document.getElementById('runBtn').textContent = '⏳ Auto-Retrying…';
-      document.getElementById('progressText').textContent = 'Auto-Retrying: ' + safeDone + ' / ' + total + ' hosts  (' + pct + '%)';
+      document.getElementById('progressText').textContent = 'Retry pass: ' + safeDone + ' / ' + total + ' hosts processed  (' + pct + '%)';
     } else {
       document.getElementById('progressLabel').textContent = 'Scanning…';
       document.getElementById('runBtn').textContent = '⏳ Scanning…';
-      document.getElementById('progressText').textContent = safeDone + ' / ' + total + ' hosts  (' + pct + '%)';
+      document.getElementById('progressText').textContent = safeDone + ' / ' + total + ' hosts processed  (' + pct + '%)';
     }
+    if (_scanCancelRequested) document.getElementById('progressLabel').textContent = 'Cancellation requested — waiting for the collector to stop';
+    else if (total && safeDone >= total) document.getElementById('progressLabel').textContent = 'Host processing finished — preparing final results';
+  }
+
+  function endScannerProgress(message) {
+    var bar = document.getElementById('scanHostProgress') || document.getElementById('progressBar').parentElement;
+    bar.classList.remove('progress-indeterminate'); bar.setAttribute('aria-busy','false');
+    if (message) bar.setAttribute('aria-valuetext',message);
   }
 
   function esc(s) {
@@ -314,6 +333,7 @@ JS_SCAN = """
       textEl.textContent = "Lost connection to '" + hostName + "' (VPN dropped). Remote assessment is still running or completed on the jump host.";
     }
     show(el);
+    document.getElementById('progressLabel').textContent = 'Connection interrupted — reconnect to retrieve the latest collection status';
     show(document.getElementById('progressSection'));
   }
 
@@ -337,8 +357,10 @@ JS_SCAN = """
   }
 
   function onScanDone(d) {
+    if (typeof refreshServerGroups === 'function') { refreshServerGroups(); refreshGroupFleet(true); }
     if (!d) d = {};
     _scanRunning = false;
+    _scanCancelRequested = false;
     _isRemoteScan = false;
     var renderedRowCount = document.querySelectorAll('#resultsBody tr[data-ip]').length;
     var resultsCount = (d.results && Array.isArray(d.results)) ? d.results.length : 0;
@@ -359,21 +381,26 @@ JS_SCAN = """
     }
     var isCancelled = !!(d && (d.cancelled || d.error === 'Cancelled by user'));
     var isRescan = !!(d && (d.is_retry || d.had_auto_retry || _isRetryScan));
+    var finalTotal = Number(d.n_total) || _scanTotal;
+    var failedCount = Array.isArray(d.failed_hosts) ? d.failed_hosts.length : 0;
+    var processed = isCancelled || d.error ? Math.min(finalTotal, _scanDone || (Number(d.n_ok) || 0) + failedCount) : finalTotal;
+    updateProgress(processed,finalTotal,isRescan,wasImport);
+    _isImportScan = false;
+    var finalLabel = document.getElementById('progressLabel');
+    var finalText = document.getElementById('progressText');
     if (isCancelled) {
-      document.getElementById('progressLabel').textContent =
-        '🛑 Scan cancelled — ' + (d.n_ok || 0) + '/' + (d.n_total || 0) + ' hosts completed.';
-      document.getElementById('progressText').textContent = 'Cancelled';
-    } else if (wasImport) {
-      document.getElementById('progressBar').style.width = '100%';
-      document.getElementById('progressText').textContent = '100% Imported';
-      document.getElementById('progressLabel').textContent =
-        '✔ Finished import — ' + (d.n_ok || 0) + '/' + (d.n_total || 0) + ' hosts processed.';
+      finalLabel.textContent = 'Scan cancelled — collected evidence remains available';
+      finalText.textContent = processed + ' / ' + finalTotal + ' hosts processed before cancellation';
+    } else if (d.error) {
+      finalLabel.textContent = 'Assessment stopped — review the collection error';
+      finalText.textContent = processed + ' / ' + finalTotal + ' hosts processed';
     } else {
-      document.getElementById('progressBar').style.width = '100%';
-      document.getElementById('progressText').textContent = isRescan ? '100% Rescanned' : '100% Scanned';
-      document.getElementById('progressLabel').textContent =
-        '✔ Finished ' + (isRescan ? 'rescan' : 'scan') + ' — ' + (d.n_ok || 0) + '/' + (d.n_total || 0) + ' hosts succeeded.';
+      finalLabel.textContent = wasImport ? 'Finished import' : 'Finished ' + (isRescan ? 'retry pass' : 'scan');
+      finalText.textContent = finalTotal + ' / ' + finalTotal + ' hosts processed';
     }
+    endScannerProgress(finalText.textContent);
+    var finalOutcome = document.getElementById('scanProgressOutcome');
+    if (finalOutcome) finalOutcome.textContent = (Number(d.n_ok) || 0) + ' successful collection(s). Review failed hosts, incomplete evidence and readiness verdicts below.';
     hide(document.getElementById('scanSpinner'));
     hide(document.getElementById('cancelBtn'));
     document.getElementById('cancelBtn').disabled = false;
@@ -382,7 +409,7 @@ JS_SCAN = """
     document.getElementById('runBtn').textContent = '▶  Run Assessment';
     var scanBtn = document.getElementById('importScanBtn');
     var sumBtn = document.getElementById('importSummaryBtn');
-    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '📁 Import prior scan'; }
+    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = 'Import prior scan'; }
     if (sumBtn) { sumBtn.disabled = false; sumBtn.textContent = '📁 Import Summary'; }
 
     if (d && d.results && Array.isArray(d.results) && d.results.length > 0) {
@@ -612,6 +639,7 @@ JS_SCAN = """
     }
 
     show(document.getElementById('openFolderBtn'));
+    ['executivePdfBtn','executiveHtmlBtn','executiveObfPdfBtn'].forEach(function(id) { show(document.getElementById(id)); });
     show(document.getElementById('exportXlsxBtn'));
     show(document.getElementById('exportObfXlsxBtn'));
     show(document.getElementById('exportObfZipBtn'));
@@ -1261,7 +1289,7 @@ JS_SCAN = """
       ? _certPinCheckedHosts.join(',')
       : (document.getElementById('rangeInput').value.trim() || _certPinRangeText);
     if (!raw) {
-      alert('Enter a target range first.');
+      showContextMessage('Enter a target range first.');
       return;
     }
     var pinBtn = document.getElementById('pinCertsAndScanBtn');
@@ -1476,7 +1504,7 @@ JS_SCAN = """
           fn();
         }
       }).catch(function(err) {
-        alert('Failed to terminate remote scan: ' + (err.message || err));
+        showContextMessage('Failed to terminate remote scan: ' + (err.message || err));
         killAndRestartScanBtn.disabled = false;
         killAndRestartScanBtn.textContent = 'Terminate & Restart';
       });
@@ -1499,7 +1527,7 @@ JS_SCAN = """
       }).then(function(r) {
         closeActiveScanConflictModal();
         if (r.error) {
-          alert('Failed to reattach: ' + r.error);
+          showContextMessage('Failed to reattach: ' + r.error);
           resetRunBtnToIdle();
         } else {
           hideJumpReconnectAlert();
@@ -1518,7 +1546,7 @@ JS_SCAN = """
           startSSE(r.scan_id);
         }
       }).catch(function(err) {
-        alert('Reconnect error: ' + (err.message || err));
+        showContextMessage('Reconnect error: ' + (err.message || err));
         resumeActiveScanBtn.disabled = false;
         resumeActiveScanBtn.textContent = '⚡ Reattach & Stream';
       });
@@ -1537,6 +1565,7 @@ JS_SCAN = """
 
   // ── Run assessment ────────────────────────────────────────────────────────
   document.getElementById('runBtn').addEventListener('click', function() {
+    if (_scanRunning) { showContextMessage('An assessment or import is already running.'); return; }
     var targets = document.getElementById('rangeInput').value.trim();
     // If hosts were discovered and some are checked, use those; else use the range text
     var checkedBoxes = Array.from(document.querySelectorAll('.host-chk:checked'));
@@ -1577,7 +1606,7 @@ JS_SCAN = """
     }
 
     if (!targets && !checkedHosts.length) {
-      alert('Enter a target range or run Probe Hosts first.');
+      showContextMessage('Enter a target range or run Probe Hosts first.');
       return;
     }
 
@@ -1591,13 +1620,13 @@ JS_SCAN = """
     var isRemoteExec = !!(execRemoteEl && execRemoteEl.checked);
     if (isRemoteExec) {
       if (typeof _vaultState !== 'undefined' && !_vaultState.unlocked) {
-        alert('Remote jump host execution requires an unlocked credential vault with at least one jump host profile.\\n\\nPlease unlock or create a vault in the Credential Vault panel below before running.');
+        showContextMessage('Remote jump host execution requires an unlocked credential vault with at least one jump host profile.\\n\\nPlease unlock or create a vault in the Credential Vault section before running.');
         openAndHighlightVault('vaultUnlockPass');
         return;
       }
       var jSelect = document.getElementById('jumpHostSelect');
       if (jSelect && jSelect.options.length <= 1 && (!jSelect.value || jSelect.value === 'auto')) {
-        alert('No jump hosts are configured in your credential vault.\\n\\nPlease add a jump host profile under "Jump Hosts (Remote Execution)" in the Credential Vault panel below.');
+        showContextMessage('No jump hosts are configured in your credential vault.\\n\\nPlease add a jump host profile under "Jump Hosts (Remote Execution)" in the Credential Vault section.');
         openAndHighlightVault('jumpId');
         return;
       }
@@ -1676,6 +1705,7 @@ JS_SCAN = """
       hide(document.getElementById('postScanActions'));
       show(document.getElementById('progressSection'));
       _isRetryScan = false;
+      _scanCancelRequested = false; clearContextMessage('scanner');
       updateProgress(0, 0);
 
       document.getElementById('progressLabel').textContent = 'Scanning…';
@@ -1739,7 +1769,8 @@ JS_SCAN = """
         _isRemoteScan = (body.execution === 'remote');
         post('/api/scan', body).then(function(r) {
           if (r.error) {
-            alert('Error: ' + r.error);
+            endScannerProgress('Assessment could not start'); document.getElementById('progressLabel').textContent = 'Assessment could not start';
+            showContextMessage('Error: ' + r.error);
             document.getElementById('runBtn').disabled = false;
             document.getElementById('runBtn').textContent = '▶  Run Assessment';
             hide(document.getElementById('scanSpinner'));
@@ -1752,7 +1783,8 @@ JS_SCAN = """
           startSSE(r.scan_id);
         }).catch(function(e) {
           var msg = (e && e.message) ? e.message : String(e);
-          alert('Scan request failed: ' + msg);
+          endScannerProgress('Assessment could not start'); document.getElementById('progressLabel').textContent = 'Assessment could not start';
+          showContextMessage('Scan request failed: ' + msg);
           document.getElementById('runBtn').disabled = false;
           document.getElementById('runBtn').textContent = '▶  Run Assessment';
           hide(document.getElementById('scanSpinner'));
@@ -1788,10 +1820,15 @@ JS_SCAN = """
 
   document.getElementById('cancelBtn').addEventListener('click', function() {
     this.disabled = true;
-    this.textContent = 'Stopping…';
-    hideJumpReconnectAlert();
+    this.textContent = 'Cancellation requested…';
+    _scanCancelRequested = true;
+    document.getElementById('progressLabel').textContent = 'Cancellation requested — waiting for the collector to stop';
     post('/api/cancel', {}).then(function() {
       appendLog('  [!] Cancel request sent…');
+    }).catch(function(error) {
+      _scanCancelRequested = false; document.getElementById('cancelBtn').disabled = false;
+      document.getElementById('cancelBtn').textContent = 'Cancel Scan';
+      showContextMessage('Could not request cancellation: ' + (error.message || error),'progressSection');
     });
   });
 

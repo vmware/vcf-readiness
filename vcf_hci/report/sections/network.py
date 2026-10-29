@@ -65,7 +65,7 @@ def render_fc_hba_card(
         _e_port_s = "port" if len(_emulex_hbas) == 1 else "ports"
         _fc_hba_card_html += (
             f"<div class='card'>"
-            f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+            f"<div class='report-card-header'>"
             f"<h3 style='margin:0'>Broadcom Emulex FC HBA</h3>"
             f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
@@ -88,7 +88,7 @@ def render_fc_hba_card(
         _m_port_s = "port" if len(_marvell_hbas) == 1 else "ports"
         _fc_hba_card_html += (
             f"<div class='card'>"
-            f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+            f"<div class='report-card-header'>"
             f"<h3 style='margin:0'>Marvell QLogic FC HBA</h3>"
             f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
@@ -113,7 +113,7 @@ def render_fc_hba_card(
         _v_speed_str = f" @ {', '.join(_v_speeds)}" if _v_speeds else ""
         _fc_hba_card_html += (
             f"<div class='card'>"
-            f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+            f"<div class='report-card-header'>"
             f"<h3 style='margin:0'>Cisco VIC FC (vHBA)</h3>"
             f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
@@ -140,7 +140,7 @@ def render_fc_hba_card(
         _c_speed_str = f" @ {', '.join(_c_speeds)}" if _c_speeds else ""
         _fc_hba_card_html += (
             f"<div class='card'>"
-            f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+            f"<div class='report-card-header'>"
             f"<h3 style='margin:0'>Converged Network Adapter (vHBA)</h3>"
             f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"
@@ -165,7 +165,7 @@ def render_fc_hba_card(
         _o_speed_str = f" @ {', '.join(_o_speeds)}" if _o_speeds else ""
         _fc_hba_card_html += (
             f"<div class='card'>"
-            f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+            f"<div class='report-card-header'>"
             f"<h3 style='margin:0'>Fibre Channel HBA</h3>"
             f"<a href='#tab-hba' data-jump-tab='tab-hba' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to HBA section'>Details &rarr;</a>"
             f"</div>"

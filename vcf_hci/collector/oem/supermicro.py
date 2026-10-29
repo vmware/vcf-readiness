@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 from ...logging_utils import get_nested
 from .generic import GenericCollector
+from .supermicro_pcie import with_supermicro_pcie_evidence
 
 # Paths that always 404 on Supermicro/Nutanix NX BMCs in SM Scan (seed negative cache).
 _SUPERMICRO_ALWAYS_404_SUFFIXES = (
@@ -54,6 +55,10 @@ class SupermicroCollector(GenericCollector):
         neg = getattr(self, "_negative_endpoints", None)
         if isinstance(neg, set):
             neg.update(_SUPERMICRO_ALWAYS_404_SUFFIXES)
+
+    def collect_pcie_devices(self) -> list:
+        """Retain per-port maximum link evidence without treating it as negotiated."""
+        return [with_supermicro_pcie_evidence(device) for device in super().collect_pcie_devices()]
 
     def oem_expandable_collections(self) -> dict:
         """Supermicro BMC does not support collection expansion on storage."""

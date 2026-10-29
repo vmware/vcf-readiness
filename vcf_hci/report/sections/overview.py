@@ -3,11 +3,12 @@ VCF Readiness Tool — header, banners & alert rollup report section builders (L
 """
 from typing import Any, Dict, List, Optional, Tuple
 
+from vcf_hci.bios.x2apic import LEGACY_X2APIC_WARNING, x2apic_recommendation
 from vcf_hci.branding import MARK_SVG
-from vcf_hci.constants import MTAT_GITHUB_URL, VCF_OPS_DEMO_URL
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h, host_has_redfish_latency
 from vcf_hci.report.inventory_tables import _is_boot_ctrl
+from vcf_hci.ui_clarity import icon_html
 
 
 def render_protocol_diagnostics_badges(
@@ -73,7 +74,7 @@ def render_header_and_banners(
     collector_class: Optional[str] = None,
     data: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
-    """Render PII labels, obfuscation banner, header HTML, banners and callout box."""
+    """Render compact host identity, metadata and assessment notices."""
     host_display_label = sys_info.get("dns_name") or sys_info.get("hostname") or sys_info.get("ip") or "Unknown"
     _ip = sys_info.get("ip", "")
     _serial_val = str(sys_info.get("serial_number") or "").strip()
@@ -94,23 +95,14 @@ def render_header_and_banners(
         _pii_serial     = _pii_span(page_salt, _serial_val, "SN")
         _pii_sku        = _pii_span(page_salt, _sku_val, "SKU") if _has_sku else ""
 
-    _obf_banner = (
-        '<div class="alert alert-danger" style="border-width:2px;border-style:solid;text-align:center;margin-bottom:1.5rem;padding:1rem 1.5rem">'
-        '<strong style="color:var(--danger,#dc2626);font-size:1.05rem">&#128274; OBFUSCATED REPORT</strong>'
-        '<p style="margin:.3rem 0 0;font-size:.82rem;color:var(--tint-danger-text,#991b1b)">'
-        'Host identifiers have been replaced with hash tokens. '
-        'Identical tokens&nbsp;=&nbsp;identical real values. '
-        'Hardware specs and VCF verdicts are unmodified.</p></div>'
-    ) if obfuscated else ""
-
     _obf_controls = (
-        '<span class="badge cyber-recovery" style="font-size:.8rem;padding:.25rem .6rem;border:1px solid #7c3aed">🔒 Obfuscated Report</span>'
+        '<details class="report-obfuscation"><summary>' + icon_html("lock") + ' Obfuscated Report</summary>'
+        '<p>Host identifiers have been replaced with hash tokens. Identical tokens represent '
+        'identical values. Hardware specifications and readiness verdicts are unchanged.</p></details>'
     ) if obfuscated else (
-        '<label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.8rem;color:var(--text-muted)" title="Cosmetic in-browser view mask. For external sharing, use generated OBFUSCATED_*.html reports.">'
-        '<input type="checkbox" id="maskPII" style="cursor:pointer">'
-        'Obfuscate view (client-side)'
-        '</label>'
-        '<a id="dlObf" href="#" style="display:none;font-size:.8rem;color:var(--primary);text-decoration:none;border:1px solid var(--primary);border-radius:4px;padding:.15rem .5rem" title="Download obfuscated HTML copy">&#11015; Save obfuscated copy</a>'
+        '<label class="report-view-mask" title="Cosmetic in-browser mask. Use generated obfuscated reports for sharing.">'
+        '<input type="checkbox" id="maskPII"> Obfuscate view</label>'
+        '<a id="dlObf" href="#" style="display:none" class="btn-link" title="Download obfuscated HTML copy">Save obfuscated copy</a>'
     )
 
     scan_data = data or {}
@@ -208,10 +200,17 @@ def render_header_and_banners(
     _os_eol_b   = host_os.get("eol_badge", "")
     _os_kb_url  = host_os.get("kb_url", "")
 
-    _os_header_disp = ((_os_upd_lbl or _os_name) + ' &nbsp;' + _os_eol_b + ((' &nbsp;<a href="' + _os_kb_url + '" target="_blank" class="btn-link" style="font-size:.78rem">🔗 KB ↗</a>') if _os_kb_url else '')) if _os_name else '<span style="color:var(--text-muted)">Not Reported</span>'
+    _os_present = bool(_os_name.strip() and _os_name.strip().lower() not in
+                       ("unknown", "n/a", "not reported", "notreported", "none"))
+    _os_header_disp = (
+        '<span class="report-host-os">' + icon_html("computer") + ' OS: ' + (_os_upd_lbl or _os_name)
+        + ' ' + _os_eol_b
+        + (('<a href="' + _h(_os_kb_url) + '" target="_blank" rel="noopener noreferrer" class="btn-link">KB ↗</a>') if _os_kb_url else '')
+        + '</span>'
+    ) if _os_present else ''
 
     _chassis_lbl = sys_info.get("chassis_label", "")
-    _enc = sys_info.get("enclosure_info") or (data.get("system") or {}).get("enclosure_info") or {}
+    _enc = sys_info.get("enclosure_info") or (scan_data.get("system") or {}).get("enclosure_info") or {}
     _blade_banner = ""
     if _enc.get("is_enclosure_contained"):
         _enc_name = _enc.get("enclosure_name") or "Blade Enclosure Infrastructure"
@@ -237,55 +236,37 @@ def render_header_and_banners(
             f'</div>'
             f'</div>'
         )
-    _chassis_span = f' &nbsp;<span style="font-size:.82rem;color:#64748b">· {_h(str(_chassis_lbl))}</span>' if _chassis_lbl else ""
+    _chassis_span = f' &nbsp;<span style="font-size:.82rem;color:var(--text-muted)">· {_h(str(_chassis_lbl))}</span>' if _chassis_lbl else ""
 
-    _proto_badges_html = ""
-    if not data_src.startswith("wsman"):
-        _exp_b, _pipe_b, _pacing_b = render_protocol_diagnostics_badges(data, data_src)
-        _proto_badges_html = (
-            f'<div style="margin-top:.35rem;display:flex;gap:.35rem;justify-content:flex-end;flex-wrap:wrap;align-items:center">'
-            f'{_exp_b} {_pipe_b} {_pacing_b}'
-            f'</div>'
-        )
-
+    _detail_rows = [
+        (_sn_label, f'<code>{_pii_serial}</code>'),
+        ("SKU", f'<code>{_pii_sku}</code>' if _has_sku else ''),
+        ("BIOS", _h(str(sys_info.get("bios_version") or ''))),
+        ("Power", _h(str(sys_info.get("power_state") or ''))),
+        ("Health", _h(str(sys_info.get("health") or ''))),
+        ("Health rollup", _h(str(sys_info.get("health_rollup") or ''))),
+        ("Boot", _h(str((sys_info.get("boot_progress") or {}).get("last_state") or ''))),
+        ("Collection protocol", _h(wsman_proto_label if data_src.startswith("wsman") else "Redfish")),
+    ]
+    _watchdog = sys_info.get("watchdog") or {}
+    if isinstance(_watchdog, dict) and isinstance(_watchdog.get("function_enabled"), bool):
+        _detail_rows.append(("Watchdog", "Enabled" if _watchdog["function_enabled"] else "Disabled"))
+    _detail_html = ''.join(f'<dt>{_h(label)}</dt><dd>{value}</dd>' for label, value in _detail_rows if value)
     header_html = (
-        f'{_obf_banner}'
         f'{_warning_banner}'
-        f'<div class="header">'
-        f'<div>'
-        f'<h1 style="margin:0 0 .25rem;display:flex;align-items:center">{MARK_SVG}VCF / vSphere 9.1 Readiness Assessment</h1>'
-        f'<span style="color:var(--text-muted)">Host: <strong>{_pii_host_label}</strong>'
-        f'{(" &nbsp;|&nbsp; Target IP: <strong>" + _pii_ip_label + "</strong>") if (_ip and _ip not in host_display_label) else ""}'
-        f' &nbsp;|&nbsp; Model: <strong>{_h(str(sys_info.get("vendor", "")))} {_h(str(sys_info.get("model", "")))}</strong>'
-        f'{(" &nbsp;|&nbsp; " + sys_info.get("liquid_cooling_badge")) if sys_info.get("liquid_cooling_badge") else ""}'
-        f'{_chassis_span}'
-        f' &nbsp;|&nbsp; {_sn_label}: <code>{_pii_serial}</code>'
-        f'{(" &nbsp;|&nbsp; SKU: <code>" + _pii_sku + "</code>") if _has_sku else ""}</span>'
-        f'<div style="margin-top:.35rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">'
-        f'{_obf_controls}'
-        f'<button id="themeToggle" title="Toggle dark/light mode">🌙 Dark</button>'
-        f'</div>'
-        f'</div>'
-        f'<div style="text-align:right">'
-        f'<div>BIOS: <code>v{_h(str(sys_info.get("bios_version", "")))} ({_h(str(sys_info.get("bios_release_date", "")))})</code>'
-        f'{(" &nbsp;|&nbsp; Power: <strong>" + _h(str(sys_info.get("power_state"))) + "</strong>") if sys_info.get("power_state") else ""}'
-        f'{(" &nbsp;|&nbsp; Health: <strong>" + _h(str(sys_info.get("health"))) + "</strong>") if sys_info.get("health") else ""}'
-        f'{(" &nbsp;|&nbsp; Rollup: <strong>" + _h(str(sys_info.get("health_rollup"))) + "</strong>") if sys_info.get("health_rollup") else ""}'
-        f'{(" &nbsp;|&nbsp; Boot: <strong>" + _h(str((sys_info.get("boot_progress") or {}).get("last_state") or "")) + "</strong>") if isinstance(sys_info.get("boot_progress"), dict) and (sys_info.get("boot_progress") or {}).get("last_state") else ""}'
-        f'{(" &nbsp;|&nbsp; Watchdog: <strong>" + _h("Enabled" if (sys_info.get("watchdog") or {}).get("function_enabled") is True else ("Disabled" if (sys_info.get("watchdog") or {}).get("function_enabled") is False else "Not reported")) + "</strong>") if isinstance(sys_info.get("watchdog"), dict) else ""}'
-        f' &nbsp;|&nbsp; <span class="badge {"info" if data_src.startswith("wsman") else "success"}" style="font-size:.78rem">{"🔌 " + wsman_proto_label if data_src.startswith("wsman") else "🔵 Redfish"}</span>'
-        f'</div>'
-        f'<div style="margin-top:.3rem;font-size:.85rem">'
-        f'💻 OS: {_os_header_disp}'
-        f'</div>'
-        f'{_proto_badges_html}'
-        f'<div style="margin-top:.5rem">'
-        f'<a href="{bcg_server_url}" target="_blank" class="btn-link" style="font-size:.85rem">🔗 BCG Server Search ↗</a>&nbsp;&nbsp;'
-        f'<a href="{bcg_cpu_url}" target="_blank" class="btn-link" style="font-size:.85rem">🧠 BCG CPU Search ↗</a>'
-        f'{("&nbsp;&nbsp;" + f"""<a href="redfish_explorer_{_h(_ip)}.html" target="_blank" class="btn-link" style="font-size:.85rem;color:var(--accent,#38bdf8);font-weight:600;border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect raw Redfish API payloads for this server">🧭 Redfish Explorer ↗</a>""") if _ip and (data or {}).get("_explorer_written") else ""}'
-        f'</div>'
-        f'</div>'
-        f'</div>'
+        f'<header class="header report-host-header">'
+        f'<div class="report-host-title"><h1>{MARK_SVG}VCF / vSphere 9.1 Readiness Assessment</h1>'
+        f'{_obf_controls}<button id="themeToggle" title="Toggle dark/light mode">Dark</button></div>'
+        f'<div class="report-host-identity"><strong>{_pii_host_label}</strong>'
+        f' · {_h(str(sys_info.get("vendor", "")))} {_h(str(sys_info.get("model", "")))}{_chassis_span}'
+        f'{(" · Target IP: " + _pii_ip_label) if (_ip and _ip not in host_display_label) else ""}'
+        f'{(" · " + sys_info.get("liquid_cooling_badge")) if sys_info.get("liquid_cooling_badge") else ""}</div>'
+        f'<div class="report-host-actions">'
+        f'<details class="report-host-details"><summary>Host details</summary><dl>{_detail_html}</dl></details>'
+        f'{_os_header_disp}'
+        f'<a href="{bcg_server_url}" target="_blank" rel="noopener noreferrer" class="btn-link">{icon_html("host")} BCG Server Search ↗</a>'
+        f'<a href="{bcg_cpu_url}" target="_blank" rel="noopener noreferrer" class="btn-link">{icon_html("cpu")} BCG CPU Search ↗</a>'
+        f'</div></header>'
     )
 
     quick_banner = (
@@ -393,11 +374,11 @@ def render_header_and_banners(
             for k, v in _rows
         )
         hci_posture_card = (
-            '<div style="background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);'
+            '<details class="report-posture-card" style="background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);'
             'border-left:4px solid #ea580c;padding:.75rem 1rem;border-radius:6px;margin-bottom:1rem;font-size:.85rem">'
-            '<div style="font-weight:700;margin-bottom:.4rem;color:#c2410c">Nutanix Appliance · Supermicro Chassis Posture</div>'
+            '<summary class="report-posture-heading">Nutanix Appliance · Supermicro Chassis Posture</summary>'
             f'<table style="border-collapse:collapse;width:100%">{_row_html}</table>'
-            '</div>'
+            '</details>'
         )
 
     generic_banner = (
@@ -407,16 +388,6 @@ def render_header_and_banners(
         '<span>No OEM adapter matched this BMC. Inventory is DMTF Redfish only. Capture a sanitized dump with <code>tools/redfishMockupCreate.py</code> and see <code>docs/adding-oem-support.md</code>.</span>'
         '</div>'
     ) if collector_class == "GenericCollector" else ""
-
-    callout_box = (
-        f'<div class="callout-box">'
-        f'<h3 style="margin:0 0 .5rem;color:var(--primary)">💡 Memory Tiering &amp; Sizing Resources</h3>'
-        f'<p style="margin:0;font-size:.9rem;line-height:1.6">'
-        f'For memory tiering workload sizing use <strong>VCF Operations 9.1</strong> or the open-source <a href="{MTAT_GITHUB_URL}" target="_blank" class="btn-link">Memory Tiering Assessment Tool (MTAT) ↗</a>.'
-        f' For a VCF Ops 9 demo, see this <a href="{VCF_OPS_DEMO_URL}" target="_blank" class="btn-link">Video ↗</a>.'
-        f'</p>'
-        f'</div>'
-    )
 
     _multi_sock = (data or {}).get("multi_socket_telemetry") or (sys_info.get("cpu_summary") or {}).get("multi_socket_telemetry") or {}
     _cpu_cnt = int((sys_info.get("cpu_summary") or {}).get("count") or 1)
@@ -443,21 +414,25 @@ def render_header_and_banners(
             f'</div>'
         )
 
-    _finding_rows = ""
-    for _f in (data or {}).get("hardware_findings") or []:
+    _findings = []
+    for _f in scan_data.get("hardware_findings") or []:
         if isinstance(_f, dict):
-            _finding_rows += f"<li><code>{_h(str(_f.get('tag') or ''))}</code> {_h(str(_f.get('detail') or ''))}</li>"
-    for _rf in (data or {}).get("readiness_findings") or []:
-        _finding_rows += f"<li>{_h(str(_rf))}</li>"
-    for _rw in (data or {}).get("readiness_warnings") or []:
-        _finding_rows += f"<li>{_h(str(_rw))}</li>"
+            _findings.append(f"<li><code>{_h(str(_f.get('tag') or ''))}</code> {_h(str(_f.get('detail') or ''))}</li>")
+    _warnings = list(scan_data.get("readiness_findings") or []) + list(scan_data.get("readiness_warnings") or [])
+    for _rw in dict.fromkeys(str(w) for w in _warnings):
+        if _rw == LEGACY_X2APIC_WARNING:
+            _rw = x2apic_recommendation(sys_info.get("cpu_summary") or {})
+        _findings.append(f"<li>{_h(_rw)}</li>")
     findings_banner = (
-        f'<div style="margin-bottom:1rem"><b>Hardware findings</b><ul>{_finding_rows}</ul></div>'
-        if _finding_rows else ""
+        '<details class="report-findings alert alert-warning"><summary>'
+        + icon_html("warning-standard") + f' Hardware findings · {len(_findings)} '
+        + ('item' if len(_findings) == 1 else 'items')
+        + ' — review recommended</summary><ul>' + ''.join(_findings) + '</ul></details>'
+        if _findings else ""
     )
     banners_html = (
         f"{_blade_banner}{_quad_banner}{quick_banner}{wsman_banner}"
-        f"{appliance_banner}{hci_posture_card}{generic_banner}{findings_banner}{callout_box}"
+        f"{appliance_banner}{hci_posture_card}{generic_banner}{findings_banner}"
     )
     return header_html, banners_html
 
@@ -634,7 +609,7 @@ def render_alert_rollup(
             "warning",
             "⚠️ BIOS: x2APIC Disabled",
             "tab-bios",
-            "x2APIC Mode is Disabled on a multi-socket / high-core server. Must be Enabled in BIOS for vSphere 9.1 interrupt scaling.",
+            x2apic_recommendation(((data or {}).get("system") or {}).get("cpu_summary") or {}),
         ))
     if _mst.get("is_quad_socket"):
         _snc_desc = _mst.get("snc_mode") or "Standard"

@@ -14,7 +14,7 @@ Processor selection directly dictates hypervisor scheduling efficiency, per-core
 | **Socket Count** | Total physical CPU sockets populated on the server motherboard (typically 1P or 2P). | Direct multiplier for per-socket VMware Cloud Foundation core licensing metrics. | [VCF Licensing Overview](https://docs.vmware.com/en/VMware-Cloud-Foundation/index.html) |
 | **Physical Cores** | Total physical execution cores across all installed processor sockets (e.g. 32, 64, 128 cores). | vSAN ESA requires minimum 16 cores (ESA-XS/S), 32 cores (ESA-M), or 48 cores (ESA-L). | [vSAN ESA ReadyNode Guidance](https://core.vmware.com/resource/vmware-vsan-esa-readynode-hardware-guidance) |
 | **Logical Threads** | Total virtual execution threads enabled via Intel Hyper-Threading (HT) or AMD Simultaneous Multithreading (SMT). | Multiplies virtual CPU (vCPU) capacity available to hypervisor scheduling queues. | [Broadcom KB 55806](https://kb.vmware.com/s/article/55806) |
-| **Base & Turbo Clocks** | Rated fundamental frequency (GHz) and maximum single-core turbo frequency. | High base clock (>2.6 GHz) prevents CPU wait states under intense I/O transactions. | [VMware Performance Best Practices](https://core.vmware.com/resource/vsphere-performance-best-practices) |
+| **Base & Turbo Clocks** | Rated fundamental frequency (GHz) and maximum single-core turbo frequency. | Clock speed is one sizing input; sustained performance also depends on core count, workload, power policy and memory/I/O behavior. | [VMware Performance Best Practices](https://core.vmware.com/resource/vsphere-performance-best-practices) |
 | **Microarchitecture** | Processor generation (e.g. `Cascade Lake`, `Ice Lake`, `Sapphire Rapids`, `Emerald Rapids`, `Zen 3`, `Zen 4`). | Governs instruction set support and EVC (Enhanced vMotion Compatibility) baselines. | [Broadcom KB 1003212](https://kb.vmware.com/s/article/1003212) |
 | **Instruction Extensions** | Detected hardware acceleration flags: `AVX-512`, `Intel AMX`, `VMX`, `SVM`, `SHA`, `AES-NI`. | Hardware cryptography and matrix acceleration for encryption, vSAN compression, and AI. | [Intel Architecture Instruction Extensions](https://www.intel.com/) |
 | **L1/L2/L3 Cache** | Granular cache hierarchy: per-core L1 instruction/data, per-core L2, and shared L3 Smart Cache. | Large L3 cache buffers reduce RAM bus accesses, directly improving storage I/O throughput. | [vSphere CPU Sizing](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-host-administration/index.html) |
@@ -22,16 +22,23 @@ Processor selection directly dictates hypervisor scheduling efficiency, per-core
 
 ---
 
-### 4.2 Spectre / Meltdown CVE Microcode Tiers {#cve-microcode-tiers}
+### 4.2 Historical BIOS Date Estimates {#cve-microcode-tiers}
 
-The assessment engine evaluates installed processor microcode against Broadcom security advisories to protect against speculative execution side-channel vulnerabilities:
+The reported CVE tier is a **BIOS release-date heuristic**, implemented by `_cve_tier_from_date()` in `vcf_hci/compat/bios_boot.py` with cutoffs in `_CVE_TIERS` in `vcf_hci/constants.py`. It does not read the installed CPU microcode revision, prove mitigation activation in ESXi, or establish coverage of every current side-channel vulnerability.
 
-| CVE Microcode Tier | Security Baseline & Mitigation Coverage | Platform Vulnerability Posture | Required Action |
-|---|---|---|---|
-| **Tier 1 (Legacy / Insecure)** | Original unmitigated silicon microcode; vulnerable to Spectre v1 (CVE-2017-5753), Spectre v2 (CVE-2017-5715), and Meltdown (CVE-2017-5754). | **Critical Security Vulnerability:** Allows malicious VM guest workloads to read host hypervisor memory. | Mandatory BIOS/microcode update prior to cluster joining. |
-| **Tier 2 (Basic Mitigations)** | Includes basic Speculative Store Bypass Disable (SSBD / Spectre v4, CVE-2018-3639) and Rogue System Register Read (Spectre v3a). | **Elevated Risk:** Vulnerable to advanced microprocessor cache and buffer side-channels. | Update BIOS to Tier 4 certified microcode. |
-| **Tier 3 (Intermediate Mitigations)** | Adds Microarchitectural Data Sampling (MDS / ZombieLoad, RIDL, Fallon, CVE-2019-11091) and L1 Terminal Fault (L1TF, CVE-2018-3620). | **Moderate Risk:** Missing Special Register Buffer Data Sampling (SRBDS) and modern transient execution mitigations. | Upgrade to latest vendor BIOS release. |
-| **Tier 4 (Current Certified Baseline)** | Comprehensive microcode coverage: incorporates SRBDS (CVE-2020-0543), Processor MMIO Stale Data, and Retbleed mitigations. | **Compliant Security Posture:** Full hardware and microcode defense against all published transient execution side-channels. | No action required; certified for VCF 9.1 production deployment. |
+| Reported Tier | BIOS Date Window | Local Label |
+|---|---|---|
+| 0 | Before 2018-01-05 | Pre-2018 BIOS Date Estimate |
+| 1 | 2018-01-05 through 2018-08-13 | 2018 Initial BIOS Date Estimate |
+| 2 | 2018-08-14 through 2019-05-13 | 2018-2019 BIOS Date Estimate |
+| 3 | 2019-05-14 through 2020-06-08 | 2019-2020 BIOS Date Estimate |
+| 4 | 2020-06-09 through 2024-03-11 | 2020-2024 BIOS Date Estimate |
+| 5 | From 2024-03-12, through today | 2024+ BIOS Date Estimate |
+| Not Assessed | Missing, invalid, unrecognized or future date | No date-based conclusion |
+
+All date estimates use neutral informational styling. Legacy `cve_*` field names are retained for compatibility; `cve_mitigations_verified` is false. Offline report and workbook generation recalculates the estimate from date evidence rather than trusting a cached green CVE label.
+
+Confirm the exact CPU, OEM BIOS/microcode release notes, ESXi build and mitigation configuration against current vendor advisories. A newer BIOS date alone cannot establish that a specific vulnerability is mitigated.
 
 > 📖 **Broadcom Reference:** For full details on hypervisor mitigations, see [Broadcom KB 330041 — VMware ESXi Speculative Execution Mitigations](https://kb.vmware.com/s/article/330041).
 

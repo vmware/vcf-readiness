@@ -22,6 +22,7 @@ from vcf_hci.report.schema_registry import (
     FLEET_SUMMARY_FIELDS,
     strip_html,
 )
+from vcf_hci.storage_capacity import drive_capacity_display
 
 
 def generate_fleet_summary_csv(
@@ -41,7 +42,7 @@ def generate_fleet_summary_csv(
                 val = field.extractor(data)
             except Exception:
                 val = ""
-            if isinstance(val, str):
+            if isinstance(val, str) and field.group != "Groups":
                 val = strip_html(val)
             row.append(val if val is not None else "")
         writer.writerow(row)
@@ -67,6 +68,7 @@ def generate_drives_csv(
         "Endurance Life %", "TBW Written (TB)", "Power-On Hours", "Temperature (°C)",
         "Unsafe Shutdowns", "Behind Tri-Mode", "Form Factor", "Firmware",
         "Media Errors", "Power Cycles", "Available Spare %", "Available Spare Raw", "Thermal Throttled",
+        "Source Reported Capacity GB", "Capacity Data Quality",
     ]
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
@@ -103,7 +105,7 @@ def generate_drives_csv(
                     str(d.get("part_number") or "").strip(),
                     str(d.get("media_type") or "").strip(),
                     str(d.get("protocol") or "").strip(),
-                    d.get("capacity_gb", ""),
+                    drive_capacity_display(d),
                     strip_html(d.get("category", "")),
                     strip_html(d.get("hcl_str") or d.get("status_badge", "")),
                     strip_html(d.get("drive_health", "")),
@@ -120,6 +122,8 @@ def generate_drives_csv(
                     d.get("available_spare_pct") if isinstance(d.get("available_spare_pct"), (int, float)) and 0 <= d["available_spare_pct"] <= 100 else "Unknown",
                     d.get("available_spare_pct_raw") if d.get("available_spare_pct_raw") is not None else "",
                     d.get("thermal_throttled") if d.get("thermal_throttled") is not None else "Unknown",
+                    d.get("source_reported_capacity_gb", ""),
+                    d.get("capacity_data_quality_note", ""),
                 ])
 
     csv_content = buf.getvalue()

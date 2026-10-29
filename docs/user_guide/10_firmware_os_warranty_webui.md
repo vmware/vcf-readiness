@@ -170,7 +170,7 @@ python3 vcfr_collector.py --from-summary ~/Desktop/VCF-Scans
 python3 vcfr_collector.py --from-summary ~/Desktop/VCF-Scans --assemble-only --site "Consolidated-Cluster"
 ```
 In the Web UI:
-- Click **"Open Fleet Library"** in the top navigation or Discovery card.
+- Select **Scan Library** in the top navigation. Use **Import prior scan** for JSON, gzip, or ZIP imports, or **Discover Scans** to assemble scan folders and archives from a library directory.
 - Inspect discovered scan drops, host counts, execution dates, and site tags.
 - Select scans to assemble and click **"Assemble Fleet Deliverables"**.
 - Single-host reports are rendered lazily on demand, and an optional **"Pre-render All Reports"** action bakes all HTML files for offline portability.
@@ -206,10 +206,49 @@ python3 vcfr_collector.py --targets 192.0.2.0/24 --vault
 ```
 
 #### Web UI Credential Vault Integration
-- Expand the **🔐 Encrypted Credential Vault** accordion under the Credentials card.
+- Open **Credential Vault** in the scanner navigation.
 - Enter your passphrase to **Unlock Vault** (or **Create Vault** if first time).
 - Add individual targets or use **Import CSV** (paste text or choose file with *Skip invalid rows* protection).
 - Check the **"Use encrypted credential vault for this scan"** box.
 - The vault coverage indicator previews how many target hosts match `exact`, `cidr`, or `default` credentials, highlighting unmatched IPs.
 - Vault auto-locks after 60 minutes of inactivity and upon server shutdown.
 
+
+#### Forgotten Vault Passphrase
+
+Open **Credential Vault → Forgot the vault passphrase?** to see the configured vault-file location and reset instructions. The default is `~/.vcf-readiness/credentials.vault` on macOS/Linux, or `%USERPROFILE%\.vcf-readiness\credentials.vault` on Windows; CLI users with `--vault PATH` must use their custom file.
+
+Quit the application/web server completely before changing the file; closing its browser tab does not stop an unlocked in-memory vault. Rename only the vault file to an unused backup name, or delete only that file. Restart the tool, create a new vault, and reenter/import credentials. Re-add jump-host profiles and verify their SSH fingerprints. The old encrypted file cannot be read without its old passphrase. Resetting removes access to its saved credentials and jump-host records; it does not reset passwords on managed systems. Keep the rest of `.vcf-readiness`, scan reports, external SSH keys and keychain items.
+
+See [Forgotten passphrase: reset the local vault](../CREDENTIAL_VAULT.md#forgotten-passphrase-reset-the-local-vault) for the full procedure.
+
+### 10.7 Scanner and Report Icons {#scanner-report-emoji-preferences}
+
+Scanner and HTML reports display local Clarity SVG icons by default. Legacy emoji display controls have been retired; old saved preferences are ignored. Icons identify hardware and actions beside their labels, while status words, shapes and narrow color accents remain readable in both themes.
+
+Drive-media icons follow observed protocol and media: NVMe, SSD, known rotating HDD, or a neutral enclosure for unknown media. An NVMe icon does not imply a particular connector, direct attachment, HCL support or readiness. SAS/SATA transport alone does not imply SSD. Physical chassis/bay diagrams retain their existing geometry, and crowded status-dot tabs remain restrained.
+
+Collected JSON, user group labels, copied paths, code and CSV/Excel text preserve their original values. The executive PDF retains its text-oriented format.
+
+### 10.8 Finished Scan Summary and Offline HCL Transfer
+
+The finished summary pairs **Standard** and **Obfuscated** report actions on the same rows for executive, fleet and combined-host reports. Excel exports use the same pairing; CSV, summary JSON, obfuscated ZIP and file utilities are grouped below. Theme-aware outline buttons and aligned details improve readability, with stacked actions on narrow screens. Obfuscated Excel downloads include a key: keep that key private when sharing the workbook.
+
+To transfer HCL datasets without the CLI, open **Advanced Configuration → Broadcom HCL Database & Dark-Site Bundle** (or the wizard's HCL controls). On the connected scanner, refresh if needed and choose **Export Dark-Site HCL ZIP**. Copy the ZIP to the destination scanner and choose **Import Dark-Site HCL ZIP**. Check the imported source, age and coverage. The ZIP contains active compatibility data and provenance, not collected scans, credentials or the scanner application. Existing limited or stale data remains limited or stale. CPU policy follows the scanner version.
+
+The expandable offline-HCL help includes terminal alternatives. For example, <code>python3 vcfr_web.py --import-hcl /approved-transfer/vcf_hcl_bundle.zip</code> preloads the data when starting the Web UI; <code>python3 vcfr_collector.py --import-hcl /approved-transfer/vcf_hcl_bundle.zip --targets 192.0.2.10</code> uses it for a CLI scan. On Windows use <code>python</code> instead of <code>python3</code>.
+
+
+### 10.9 Server Groups, Display Controls and Collection Progress {#server-groups-display-progress}
+
+In **Scanner** or the wizard's Targets step, expand **+ Server groups (optional)**. Enter targets normally; discovery probing is optional. Choose the parsed targets that should receive a tag, enter a name, and use **+ Add group**. Use the searchable existing-group list to assign or remove further groups. Servers can belong to several groups. Grouping changes organization metadata; it does not select scan targets or change assessment verdicts.
+
+In **Scan Library → Groups in the current fleet**, search hosts and filter by named groups or **Ungrouped**. Multiple selected group filters match any membership and combine with host search. Bulk changes apply only to explicitly selected hosts on the current page; changing pages or filters clears selection. Assemble or import scans first to populate the current fleet. Renaming a group preserves memberships; deleting one removes its tag while keeping the servers.
+
+Memberships travel with saved scan metadata, imports, fleet assembly and JSON/CSV/Excel/HTML outputs. The local registry is `~/.vcf-readiness/server_groups.json`. Stable hardware identity is preferred over display names; a reused BMC address does not transfer a known server's membership to different identified hardware. A server with no usable hardware identifier can initially be matched only to its target address. Explicit local removals take precedence when older observations are imported. Obfuscated exports replace private group labels while retaining membership relationships.
+
+Use the top-right **Compact** toggle to switch between comfortable and compact table spacing. Its pressed state is also shown with an underline. The adjacent sun/moon button displays the current **Light** or **Dark** mode; click it to switch themes. Generated reports keep these controls available above every tab, and the Compact toggle stays synchronized with the Detailed Inventory density selector. Preferences persist where browser storage is available. Reports continue to work offline. Help uses left-aligned content and section navigation; on narrow screens expand its **On this page** navigation.
+
+The scanner progress bar measures **hosts processed in the current pass**, including hosts with collection failures. It is not a count of healthy hosts or an estimate of elapsed runtime. Retry passes are labelled separately. Report preparation, cancellation and reconnect states have their own messages.
+
+VDT collection shows stages with an indeterminate indicator while duration is unknown. Its setup step number is separate from collection progress. Retrieved evidence, findings and remote cleanup outcomes remain distinct; review any retained temporary-directory message. Operations with no measurable total show activity and elapsed time without inventing a completion percentage. Collection logs and detailed evidence remain available in expandable sections.

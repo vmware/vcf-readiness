@@ -10,6 +10,12 @@ KNOWN_VSPHERE_OEMS = {
 }
 
 
+def cpu_verdict_unassessed(verdict: object) -> bool:
+    """Keep absent or explicitly unverified CPU evidence distinct from support."""
+    text = str(verdict or '').strip().lower()
+    return not text or any(word in text for word in ('unknown', 'not assessed', 'unverified'))
+
+
 def chassis_qualification(system: dict, cpu_verdict: str = '') -> dict:
     """Reuse host-card qualification; a vendor approval note is not a denial.
 

@@ -1,10 +1,10 @@
 ## 6. Network Interfaces & Top-of-Rack Discovery {#network-interfaces}
 
-The network assessment verifies physical network controller models, certified driver/firmware baselines, per-port link capabilities, 25 GbE qualification criteria for vSAN ESA, ToR switch fabric adjacency via LLDP and Cisco CDP, and Fibre Channel Host Bus Adapter (FC HBA) connectivity.
+The network assessment verifies physical network controller models, certified driver/firmware baselines, per-port link capabilities, profile-dependent 10/25 GbE readiness criteria for vSAN ESA, ToR switch fabric adjacency via LLDP and Cisco CDP, and Fibre Channel Host Bus Adapter (FC HBA) connectivity.
 
 ---
 
-### 6.1 Network Adapters & ESA 25 GbE Baseline {#network-adapters}
+### 6.1 Network Adapters & ESA Profile Network Baselines {#network-adapters}
 
 High-performance software-defined storage in vSAN ESA relies on high-speed network transports with minimal latency and high frame processing efficiency.
 
@@ -14,7 +14,7 @@ High-performance software-defined storage in vSAN ESA relies on high-speed netwo
 | **Vendor / Manufacturer** | OEM network silicon manufacturer (Intel, Broadcom, NVIDIA/Mellanox, Marvell/QLogic). | Determines driver architecture (`native` vs `vmkusb`) and hardware offload engines. | [vSphere Networking Guide](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-networking/index.html) |
 | **Installed Firmware** | Current controller firmware/NVM release installed on the adapter. | Must match certified releases on the VMware Compatibility Guide to prevent link dropouts. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
 | **Driver / FW Alignment** | Evaluates whether installed firmware matches certified driver pairing in the Broadcom HCL database. | Mismatched combinations risk kernel panics, packet drops, or link negotiation failures. | [vSphere Lifecycle Manager](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-lifecycle-manager/index.html) |
-| **vSAN ESA 25 GbE Baseline**| Network bandwidth assessment: flags whether server has &ge;2 dedicated or shared 25 GbE ports. | **Mandatory Requirement:** vSAN ESA requires minimum 25 GbE interfaces; 10 GbE is restricted to vSAN OSA. | [vSAN ESA Networking Guide](https://core.vmware.com/resource/vsan-esa-networking) |
+| **vSAN ESA Profile Network Baselines**| Compares reported maximum NIC speed with the selected profile baseline; it does not prove two active uplinks or end-to-end fabric bandwidth. | The tool uses &ge;10 GbE for Small/Edge and &ge;25 GbE for Medium/Large sizing. Confirm the exact ReadyNode and release requirements. | [vSAN ESA Networking Guide](https://core.vmware.com/resource/vsan-esa-networking) |
 
 ---
 

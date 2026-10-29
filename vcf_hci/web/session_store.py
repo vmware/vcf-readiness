@@ -296,7 +296,8 @@ def _load_session() -> dict:
     target_file = _get_session_file()
     try:
         with open(target_file, encoding="utf-8") as fh:
-            return json.load(fh)
+            data = json.load(fh)
+        return {k: v for k, v in data.items() if k not in ("no_emojis", "scanner_emojis")} if isinstance(data, dict) else {}
     except Exception:
         return {}
 
@@ -320,6 +321,8 @@ def _save_session(data: dict) -> bool:
     target_file = _get_session_file()
     try:
         sanitized = _sanitize_session_dict(data) if isinstance(data, dict) else {}
+        sanitized.pop("no_emojis", None)
+        sanitized.pop("scanner_emojis", None)
         sanitized["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         sess_dir = os.path.dirname(os.path.abspath(target_file))
         os.makedirs(sess_dir, exist_ok=True)

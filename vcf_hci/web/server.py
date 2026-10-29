@@ -40,6 +40,7 @@ logger = logging.getLogger("vcf_assess")
 from vcf_hci.constants import TOOL_VERSION
 from vcf_hci.fleet_library import assemble_fleet, discover_scans, write_scan_manifest  # noqa: F401
 from vcf_hci.logging_utils import get_default_output_dir, is_root_user
+from vcf_hci.plugins.vdt import default_plugin_root, discover_vdt
 from vcf_hci.report.csv_export import generate_fleet_summary_csv  # noqa: F401
 from vcf_hci.report.excel_export import (  # noqa: F401
     _build_excel_sheets,
@@ -54,6 +55,10 @@ from vcf_hci.web.desktop import (  # noqa: F401
     _is_safe_desktop_folder,
     _open_folder_in_desktop,
 )
+from vcf_hci.web.group_api import GroupApiMixin
+from vcf_hci.web.hcl_export_api import HclExportApiMixin
+from vcf_hci.web.plugin_api import PluginApiMixin
+from vcf_hci.web.remote_vdt_api import RemoteVdtApiMixin, cancel_remote_jobs
 from vcf_hci.web.scan_worker import (  # noqa: F401
     _broadcast,
     _cancel_event,
@@ -80,6 +85,7 @@ from vcf_hci.web.session_store import (  # noqa: F401
     _SecretStore,
 )
 from vcf_hci.web.update_check import ReleaseUpdateChecker
+from vcf_hci.web.vdt_setup_api import VdtSetupApiMixin
 
 _COLLECTOR_OK = True
 
@@ -221,6 +227,12 @@ def _session_is_known(token: str) -> bool:
 # HTTP Server & Request Handler
 # =============================================================================
 class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    vdt_plugin: dict
+    vdt_lock: Any
+    vdt_sessions: dict
+    vdt_plugin_root: str
+    vdt_remote_jobs: dict
+
     daemon_threads = True
     allow_reuse_address = True
 
@@ -240,6 +252,10 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         self.update_checker = ReleaseUpdateChecker(TOOL_VERSION)
         super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
+    def server_close(self):
+        cancel_remote_jobs(self, wait=25)
+        super().server_close()
+
     def handle_error(self, request, client_address):
         exc_type, exc_val, _ = sys.exc_info()
         if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
@@ -248,7 +264,7 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         super().handle_error(request, client_address)
 
 
-class AppHandler(ApiMixin, BaseHTTPRequestHandler):
+class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtApiMixin, PluginApiMixin, ApiMixin, BaseHTTPRequestHandler):
     server_version = f"VCFReadiness/{TOOL_VERSION}"
 
     def handle(self):
@@ -608,7 +624,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
                 self._redirect_strip_token(cookie_hdr)
                 return
             self._send_html(
-                build_app_html(TOOL_VERSION, _COLLECTOR_OK, oem_mode=_OEM_MODE),
+                build_app_html(TOOL_VERSION, _COLLECTOR_OK, oem_mode=_OEM_MODE, vdt_available=self.server.vdt_plugin["present"]),
                 extra_headers={"Set-Cookie": cookie_hdr}
             )
 
@@ -702,6 +718,9 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         elif path == "/api/profiles":
             self._send_json(_load_profiles())
 
+        elif path == "/api/groups":
+            self._api_groups_get()
+
         elif path == "/api/session":
             sess = _load_session()
             if _OEM_MODE:
@@ -718,6 +737,9 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
             else:
                 self._send_json({"available": _SecretStore.backend() != "none",
                                  "label": _SecretStore.label()})
+
+        elif path == "/api/hcl/export":
+            self._api_hcl_export()
 
         elif path in ("/api/hcl", "/api/hcl/status"):
             self._send_json(_get_active_hcl_metadata())
@@ -744,6 +766,21 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
                 "sudo_user": sudo_user,
                 "default_outdir": default_outdir,
             })
+
+        elif path == "/api/plugins":
+            self._api_plugins()
+
+        elif path == "/api/plugins/vdt/remote/status":
+            self._api_remote_vdt("status")
+
+        elif path == "/api/plugins/vdt/runs":
+            self._api_vdt("runs")
+
+        elif path == "/api/plugins/vdt/hybrid":
+            self._api_vdt("hybrid")
+
+        elif path == "/api/export-executive":
+            self._api_export_executive()
 
         elif path == "/api/export-summary-json":
             self._api_export_summary_json()
@@ -821,7 +858,17 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path   = parsed.path.rstrip("/")
 
-        if path == "/api/scan":
+        if path == "/api/plugins/vdt/install":
+            self._api_vdt_install()
+        elif path == "/api/plugins/vdt/discover":
+            self._api_vdt_discover()
+        elif path in ("/api/plugins/vdt/remote/probe", "/api/plugins/vdt/remote/preflight", "/api/plugins/vdt/remote/run", "/api/plugins/vdt/remote/cancel"):
+            self._api_remote_vdt(path.rsplit("/", 1)[-1])
+        elif path in ("/api/plugins/vdt/import", "/api/plugins/vdt/remove", "/api/plugins/vdt/clear"):
+            self._api_vdt(path.rsplit("/", 1)[-1])
+        elif path == "/api/groups":
+            self._api_groups_post()
+        elif path == "/api/scan":
             self._api_scan()
         elif path == "/api/scan/preflight":
             self._api_scan_preflight()
@@ -851,6 +898,9 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
             self._api_export_obfuscated_zip()
         elif path == "/api/export-csv":
             self._api_export_csv()
+        elif path == "/api/export-executive":
+            self._api_export_executive()
+
         elif path == "/api/export-summary-json":
             self._api_export_summary_json()
         elif path == "/api/import-summary":
@@ -902,6 +952,7 @@ class AppHandler(ApiMixin, BaseHTTPRequestHandler):
         elif path in ("/api/fleet/ingest", "/api/v1/fleet/ingest"):
             self._api_fleet_ingest()
         elif path == "/api/shutdown":
+            cancel_remote_jobs(self.server)
             _cancel_event.set()
             vault_session.lock()
             self._send_json({"ok": True})
@@ -944,6 +995,7 @@ def make_server(
     allow_hosts: Optional[set] = None,
     tls_cert: Optional[str] = None,
     tls_key: Optional[str] = None,
+    plugins_dir: Optional[str] = None,
 ) -> _ThreadingHTTPServer:
     """Create a ThreadingHTTPServer bound to the given host and port.
 
@@ -957,6 +1009,11 @@ def make_server(
         allow_remote=allow_remote,
         allow_hosts=allow_hosts,
     )
+    server.vdt_plugin = discover_vdt(plugins_dir)
+    server.vdt_lock = threading.Lock()
+    server.vdt_sessions = {}
+    server.vdt_plugin_root = os.path.abspath(plugins_dir) if plugins_dir is not None else str(default_plugin_root())
+    server.vdt_remote_jobs = {}
     if tls_cert and tls_key:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -1029,6 +1086,7 @@ def main() -> None:
     parser.add_argument(
         "--crawl", "--crawl-endpoints", action="store_true", dest="crawl", help="Launch with deep Redfish crawling enabled by default"
     )
+    parser.add_argument("--plugins-dir", default=None, help="Optional plugin folder (default: Plugins beside the source or executable)")
     args = parser.parse_args()
 
     # Safety check: Prevent accidental wildcard network exposures unless --allow-remote is provided
@@ -1094,6 +1152,7 @@ def main() -> None:
             allow_remote=args.allow_remote,
             tls_cert=args.tls_cert if exposed else None,
             tls_key=args.tls_key if exposed else None,
+            plugins_dir=args.plugins_dir,
         )
     except (OSError, ssl.SSLError, ValueError) as exc:
         print(f"\n  [✗] SECURITY BLOCK: could not start the TLS listener: {exc}\n", file=sys.stderr)
@@ -1141,6 +1200,7 @@ def main() -> None:
             print("\n[!] Force exit requested.")
             os._exit(1)
         _cancel_event.set()
+        cancel_remote_jobs(server)
         print("\n[→] Shutting down…")
         _shutdown_event.set()
 
@@ -1150,5 +1210,8 @@ def main() -> None:
     _shutdown_event.wait()  # blocks until Quit button or Ctrl-C
 
     vault_session.lock()   # drop any unlocked credential vault from memory
-    server.shutdown()
+    try:
+        server.shutdown()
+    finally:
+        server.server_close()
     print("[✓] Server stopped.")

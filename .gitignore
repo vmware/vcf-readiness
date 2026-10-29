@@ -31,6 +31,10 @@ samples/
 fixtures/
 scans/
 curated_fleet*/
+Plugins/
+Redfish-Library/
+Other-tools/
+vdt-review/
 docs/plans/
 docs/decisions/
 *.zip

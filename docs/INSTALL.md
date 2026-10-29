@@ -1,6 +1,6 @@
 # Install and run from source
 
-Running the tracked Python source is the supported, auditable path. This checkout does not promise a prebuilt executable or a local build script.
+Running the Python source is the supported, auditable path. Release archives may also provide platform executables; check the actual assets for your release. Developer build tooling lives in the development checkout and is not required for source execution.
 
 ## Requirements
 
@@ -127,7 +127,21 @@ set VCF_READINESS_CHECK_UPDATES=0
 python vcfr_web.py
 ```
 
-To import an approved offline bundle:
+In the browser, open **Advanced Configuration → Broadcom HCL Database & Dark-Site Bundle**:
+
+1. On a connected scanner, choose **Refresh Live HCL** if newer data is needed, then **Export Dark-Site HCL ZIP**.
+2. Transfer the downloaded ZIP to the disconnected scanner.
+3. Choose **Import Dark-Site HCL ZIP** there and review its source, dataset age and coverage before scanning. The same HCL controls are available from the Scan Wizard.
+
+Export snapshots the active custom bundle, existing local bundle or local cache without downloading new data. It includes compatibility catalogs and provenance/hashes, not scan results, credentials or application code. Exporting does not make old data fresh. CPU policy and built-in supplements belong to the scanner version; use matching scanner versions for consistent policy results. Browser exports are capped at 23 MiB so the existing browser importer can accept them.
+
+To preload a transferred bundle when starting the Web UI from a terminal:
+
+```bash
+python3 vcfr_web.py --import-hcl /approved-transfer/vcf_hcl_bundle.zip
+```
+
+To import an approved offline bundle for a CLI scan:
 
 ```bash
 python3 vcfr_collector.py \
@@ -141,6 +155,10 @@ On an internet-connected staging host, these commands explicitly allow a public 
 python3 vcfr_collector.py --bundle-hcl
 python3 vcfr_collector.py --targets 192.0.2.50 --refresh-hcl
 ```
+
+The default output is `vcf_hcl_bundle_YYYYMMDD.zip` under `~/.vcf-readiness/hcl/` (`%USERPROFILE%/.vcf-readiness/hcl/` on Windows). On Windows, use `python` instead of `python3`. Transfer the ZIP to the scanner workstation and select **Scan Wizard → HCL readiness → Import Dark-Site HCL Zip**. The same import control is available in **Advanced Configuration**.
+
+The generator can fall back to an existing cache or a limited baseline when download fails. New bundles retain the cached dataset timestamp; the wizard flags known baselines and missing, unknown, or stale evidence. Confirm the data source and coverage before treating results as certification evidence. Older bundles may only record packaging time rather than the original dataset age.
 
 Transfer generated data through your organization's approved process. HCL bundles are local archives, not encrypted containers.
 
@@ -207,3 +225,9 @@ Check the final output directory printed by the application. The default is unde
 ### The HCL appears stale
 
 Default-offline operation intentionally does not refresh data. Use an approved imported bundle or explicitly run an HCL refresh from a network where public egress is allowed.
+
+### Scanner appearance and forgotten vault passphrases
+
+Scanner and HTML reports use local Clarity SVG icons by default. No icon download is needed in a darksite. The legacy emoji display controls have been retired; old saved settings are ignored. Collected data, user labels, copied paths and text exports preserve their original Unicode.
+
+If the vault passphrase is forgotten, open **Credential Vault → Forgot the vault passphrase?** for the actual file path and reset procedure. Quit the app first, then rename or delete only that encrypted vault file, restart and create a new vault. Stored credentials and jump-host data must be recreated; scan/report files need not be deleted. See [vault reset instructions](CREDENTIAL_VAULT.md#forgotten-passphrase-reset-the-local-vault).

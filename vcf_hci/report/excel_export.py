@@ -95,7 +95,7 @@ def _build_excel_sheets(
                 val = f.extractor(data)
             except Exception:
                 val = ""
-            if isinstance(val, str):
+            if isinstance(val, str) and f.group != "Groups":
                 val = strip_html(val)
             if f.color_rule and val:
                 c_style = f.color_rule(val)

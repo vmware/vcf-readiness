@@ -1,5 +1,7 @@
 # VCF Readiness Assessment Tool
 
+Experimental VDT integration: see **Help → VDT** in the scanner for installation, native JSON import, hybrid reports, and current limitations.
+
 <p align="center">
   <img src="docs/branding/branding-kit/production/vcf-r-readme-header.svg" alt="VCF-R - VCF Readiness Assessment" width="720">
 </p>
@@ -8,7 +10,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
-[![Download v9.11.0](https://img.shields.io/badge/Download-v9.11.0-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.11.0)
+[![Download v9.12.0](https://img.shields.io/badge/Download-v9.12.0-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.12.0)
 
 ---
 
@@ -40,8 +42,8 @@ Watch short step-by-step video guides to get up and running, launch on macOS, an
 The recommended and verified installation runs directly from source using the Python 3.9+ standard library (zero external dependencies).
 
 <p align="center">
-  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.11.0/Distribution-VCF-Readiness.zip" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.11.0_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
+  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.12.0/Distribution-VCF-Readiness.zip" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.12.0_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
   </a>
 </p>
 <p align="center">
@@ -51,10 +53,10 @@ The recommended and verified installation runs directly from source using the Py
 <details>
 <summary><strong>Alternative: Pre-compiled standalone binaries (unsigned developer builds)</strong></summary>
 
-If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.11.0 page](https://github.com/vmware/vcf-readiness/releases/tag/9.11.0):
+If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.12.0 page](https://github.com/vmware/vcf-readiness/releases/tag/9.12.0):
 
-- **Windows:** `VCF-Readiness-Web-v9.11.0-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
-- **macOS:** `VCF-Readiness-Web-v9.11.0-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
+- **Windows:** `VCF-Readiness-Web-v9.12.0-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
+- **macOS:** `VCF-Readiness-Web-v9.12.0-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
 
 *Note: These are unsigned community convenience builds. To avoid operating system security prompts, running directly from source with Python 3.9+ is strongly recommended.*
 
@@ -137,6 +139,24 @@ Open the generated scan directory. A successful scan normally contains:
 - `data/`: structured data when the selected options produce it.
 
 Exact files depend on scan success and options such as `--save-json`, `--csv-export`, `--obfuscate`, `--crawl`, and `--no-combined`.
+
+## Browser navigation and Scan Wizard
+
+Use **Scanner** for direct scan setup, **Scan Library** to import prior scans or assemble a fleet from a folder, and **Credential Vault** to manage saved BMC credentials and jump hosts. **Advanced Configuration** contains saved profiles, scan depth, TLS, HCL, export, and warranty settings.
+
+**Scan Wizard** walks through targets, credentials and execution, HCL readiness, scan options and output, and review before running. It shares settings with Scanner. New scans use manual credentials and local execution by default; vault credentials and remote jump-host execution are explicit choices.
+
+The HCL step checks local data and offers **Refresh Live HCL** or **Import Dark-Site HCL Zip**. If download fails, expand **Cannot download? Generate a dark-site HCL ZIP** in that step. Missing, outdated, baseline, or unverified HCL data requires acknowledgment before continuing; it does not establish hardware certification. See the [offline installation guide](docs/INSTALL.md#offline-and-air-gapped-operation).
+
+Use **+ Server groups** to tag selected targets without requiring a probe, then filter or bulk-manage memberships in Scan Library. Scanner and report density/theme controls persist independently of assessment data. Reviewed UI symbols use always-on, offline Clarity SVG icons. See [Server Groups and Display](docs/SCANNER_GROUPS_AND_DISPLAY.md).
+
+## Executive summary and report presentation
+
+After a scan, import, or fleet assembly, choose **Executive summary (PDF)** for a condensed environment brief with CPU support, vSAN ESA readiness, BMC security coverage, and up to ten prioritized action groups. **View executive summary** opens the printable HTML version; **Executive PDF — obfuscated** masks host identifiers for sharing. Fleet summary generation also writes `00_executive_summary.pdf` and `.html` beside the detailed reports.
+
+Scanner and HTML reports use Clarity SVG icons by default, including hardware and evidence-based drive-media symbols. Legacy emoji display controls have been retired; old saved preferences cannot disable icons. Collected values, group names, copied paths and CSV/Excel data retain their original text. The executive PDF keeps its text-oriented layout.
+
+The visual design uses neutral surfaces and label text, reserving status color for small accents. The executive brief is an assessment snapshot, not a hardware certification decision. [Executive report details and ranking](docs/EXECUTIVE_REPORT.md).
 
 ## Command-line scan
 
@@ -231,7 +251,7 @@ Evaluates storage controllers, RAID pass-through modes, and NVMe SSDs. Performs 
 ---
 
 ### 6. Network Interfaces & Top-of-Rack (ToR) Switch Fabric
-Identifies network adapters and port speeds (verifying ≥25 GbE ESA requirements), queries LLDP and Cisco CDP neighbor data to discover connected Top-of-Rack switches, and correlates leaf switch pairs to highlight single-homed hosts and cabling miswires.
+Identifies network adapters and port speeds (10 GbE for the tool’s Small/Edge readiness baseline; 25 GbE for Medium/Large profiles), queries LLDP and Cisco CDP neighbor data to discover connected Top-of-Rack switches, and correlates leaf switch pairs to highlight single-homed hosts and cabling miswires.
 
 ![NIC Inventory and Dedicated BMC Management Port](docs/images/06-nic-tor-mapping.png)
 
@@ -288,7 +308,7 @@ A read-only BMC account is still required. A vendor may restrict some inventory 
 
 An ordinary scan contacts the targets you provide and writes reports locally. It does not send analytics, telemetry, crash reports, or scan results to the project.
 
-Public-network egress is explicit:
+The browser server also checks GitHub release metadata once per launch by default. Set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable it. The CLI does not start this check. Other public-network egress requires an operator action:
 
 - `--refresh-hcl`, `--bundle-hcl`, or the equivalent web action downloads public Broadcom HCL data.
 - Dell TechDirect warranty enrichment contacts Dell only after credentials are supplied and the feature is enabled.
@@ -324,9 +344,9 @@ Collectors include generic DMTF Redfish plus OEM handling for vendors represente
 - Compatibility data can become stale. The default-offline behavior does not refresh it automatically.
 - Self-signed TLS is accepted unless verification is enabled.
 - Some BMCs omit fields, rate-limit requests, require extra licenses, or return partial inventory.
-- The tool does not configure hardware, remediate findings, install software, or change firmware.
+- Native BMC collection does not configure hardware, remediate findings, or change firmware. Optional VDT appliance diagnostics deploy an operator-supplied, reviewed payload into owned temporary storage; see the scanner's **Help → VDT** page.
 - Remote jump-host execution is experimental and available through the local web UI; there is no standalone remote-scan CLI.
-- This repository does not promise prebuilt binaries or release assets. Run from source unless a separately verified distribution is supplied by your organization.
+- Release assets vary by tag and platform. Use the linked release’s actual asset list; run from source when an appropriate verified executable is unavailable.
 
 ## Troubleshooting
 
@@ -391,7 +411,7 @@ The local dataset may be absent or stale. Import an approved offline bundle with
 - **Phong Le** — For answering 40,000 hardware HCL questions.
 - **Onur Yuzseven & Brock Peterson** — For the vCommunity plugins and VMware Aria/VCF Operations guidance.
 - **Spiceworks Community** — For community hardware discussions and insights on server repurposing.
-- Built with [Clarity Design System](https://clarity.design/) design tokens (VMware/Broadcom, Apache-2.0 license).
+- Built with [Clarity Design System](https://clarity.design/) assets from `@cds/core` 5.7.0 (MIT; see [third-party notices](THIRD_PARTY_LICENSES.md)).
 
 ---
 

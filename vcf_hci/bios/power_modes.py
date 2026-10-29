@@ -177,8 +177,8 @@ _CPU_POWER_RULES: List[Tuple[str, str, Dict[str, Tuple[str, str, str]], Optional
 
     # Architecture-agnostic: Processor x2APIC Mode (>255 cores / logical processors)
     ("procx2apic", "Processor x2APIC Mode", {
-        "enabled":  ("success", "x2APIC Mode Enabled",  "Extended interrupt controller active. Required for systems with >255 logical processors."),
-        "disabled": ("warning", "x2APIC Mode Disabled", "Standard APIC limits interrupt delivery to 255 processors. Must be enabled on high-core-count servers."),
+        "enabled":  ("success", "x2APIC Mode Enabled",  "BIOS reports x2APIC enabled. Supports extended CPU addressing and interrupt delivery; verify the active ESX mode separately."),
+        "disabled": ("warning", "x2APIC Mode Disabled", "Consider enabling x2APIC where supported by the server vendor for interrupt delivery and CPU scaling. Legacy xAPIC uses 8-bit APIC IDs; this BIOS setting alone does not establish the active ESX mode or a vSphere compatibility failure."),
     }, None, None),
 
     # Architecture-agnostic: PCIe ASPM (Active State Power Management)

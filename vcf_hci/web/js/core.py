@@ -15,11 +15,12 @@ JS_CORE = """
   var savedTheme = (function() {
     try { return localStorage.getItem('vcf-theme'); } catch(e) { return null; }
   })();
-  var currentTheme = savedTheme || 'dark';
+  var currentTheme = ['dark','light'].indexOf(savedTheme) >= 0 ? savedTheme : 'dark';
 
   function applyTheme(t) {
     root.setAttribute('data-theme', t);
-    themeBtn.textContent = (t === 'dark') ? '☀️ Light' : '🌙 Dark';
+    if (t === 'dark') root.setAttribute('cds-theme','dark'); else root.removeAttribute('cds-theme');
+    window.VCFAppearance.theme(themeBtn,t==='dark');
     try { localStorage.setItem('vcf-theme', t); } catch(e) {}
     currentTheme = t;
   }
@@ -27,6 +28,8 @@ JS_CORE = """
   themeBtn.addEventListener('click', function() {
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   });
+
+  window.addEventListener('storage',function(event) { if (event.key === 'vcf-theme' && ['dark','light'].indexOf(event.newValue) >= 0) applyTheme(event.newValue); });
 
   // ── Quit ──────────────────────────────────────────────────────────────────
   document.getElementById('shutdownBtn').addEventListener('click', function() {
@@ -39,6 +42,34 @@ JS_CORE = """
   function show(el) { if(el) el.classList.remove('hidden'); }
   function hide(el) { if(el) el.classList.add('hidden'); }
   function toggle(el, cond) { cond ? show(el) : hide(el); }
+
+  document.querySelector('.skip-link').addEventListener('click', function(event) {
+    event.preventDefault();
+    document.getElementById('mainContent').focus();
+  });
+
+  // Section links retain form nodes and active scan connections.
+  function showAppSection(focusHeading) {
+    var name = window.location.hash.slice(1);
+    var section = document.getElementById(name);
+    if (!section || !section.hasAttribute('data-app-section')) {
+      name = 'scanner';
+      section = document.getElementById(name);
+    }
+    if (typeof syncWizardLayout === 'function') syncWizardLayout(name);
+    document.querySelectorAll('[data-app-section]').forEach(function(panel) {
+      panel.hidden = panel !== section;
+    });
+    document.querySelectorAll('[data-section-link]').forEach(function(link) {
+      if (link.dataset.sectionLink === name) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
+    if (name === 'credential-vault' && typeof _vaultState !== 'undefined') refreshVaultStatus();
+    if (name === 'scan-library' && typeof _discoveredScans !== 'undefined') discoverFleetScans();
+    if (focusHeading) section.querySelector('h1').focus({preventScroll: true});
+  }
+  window.addEventListener('hashchange', function() { showAppSection(true); });
+  showAppSection(false);
 
   // ── Anchor Navigation & Pulse Highlight ───────────────────────────────────
   function highlightAnchor(element) {
@@ -67,19 +98,8 @@ JS_CORE = """
   }
 
   function openAndHighlightVault(targetInputId) {
-    var advBody = document.getElementById('advancedBody');
-    if (advBody && !advBody.classList.contains('open')) {
-      advBody.classList.add('open');
-      var advArr = document.getElementById('advancedArrow');
-      if (advArr) advArr.textContent = '▼';
-    }
-    var vBody = document.getElementById('vaultBody');
-    if (vBody && !vBody.classList.contains('open')) {
-      vBody.classList.add('open');
-      var vArr = document.getElementById('vaultArrow');
-      if (vArr) vArr.textContent = '▼';
-      if (typeof refreshVaultStatus === 'function') refreshVaultStatus();
-    }
+    window.location.hash = 'credential-vault';
+    showAppSection(false);
     var targetEl = null;
     if (targetInputId) {
       targetEl = document.getElementById(targetInputId);
@@ -340,6 +360,7 @@ JS_CORE = """
     if (typeof syncTlsUi === 'function') syncTlsUi();
     if ('dark_mode' in s)       applyTheme(s.dark_mode ? 'dark' : 'light');
     updateHostGates();
+    if (typeof refreshServerGroups === 'function') { refreshServerGroups(); refreshGroupFleet(true); }
   }
   get('/api/session').then(restoreSession).catch(function(){});
 
@@ -431,4 +452,43 @@ JS_CORE = """
       .then(refreshProfiles);
   });
 
+
+  // Keyboard and focus support shared by scanner dialogs and disclosures.
+  document.querySelectorAll('.vcf-modal-backdrop').forEach(function(backdrop) {
+    var previousFocus = null;
+    var dialog = backdrop.querySelector('[role="dialog"]');
+    if (!dialog) return;
+    new MutationObserver(function() {
+      if (!backdrop.classList.contains('hidden')) {
+        previousFocus = document.activeElement;
+        var first = dialog.querySelector('button, input, select, textarea, a[href]');
+        (first || dialog).focus();
+      } else if (previousFocus && previousFocus.isConnected) {
+        previousFocus.focus();
+        previousFocus = null;
+      }
+    }).observe(backdrop, {attributes:true, attributeFilter:['class']});
+    dialog.addEventListener('keydown', function(event) {
+      var controls = Array.from(dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]')).filter(function(el) { return el.getClientRects().length > 0; });
+      if (event.key === 'Escape') {
+        var close = controls.find(function(el) { return /^(close|cancel)/i.test(el.id); });
+        if (close) { event.preventDefault(); close.click(); }
+      }
+      if (event.key !== 'Tab') return;
+      var first = controls[0], last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); dialog.focus(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+  });
+  [['dellToggle','dellBody'], ['vaultEntriesToggle','vaultEntriesBody']].forEach(function(pair) {
+    var toggle = document.getElementById(pair[0]), body = document.getElementById(pair[1]);
+    if (!toggle || !body) return;
+    toggle.setAttribute('role', 'button'); toggle.tabIndex = 0;
+    toggle.setAttribute('aria-controls', pair[1]);
+    function sync() { toggle.setAttribute('aria-expanded', String(body.classList.contains('open'))); }
+    sync();
+    new MutationObserver(sync).observe(body, {attributes:true, attributeFilter:['class']});
+    toggle.addEventListener('keydown', function(event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle.click(); } });
+  });
 """

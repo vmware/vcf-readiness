@@ -154,6 +154,8 @@ def _load_failed_hosts(directory: str) -> List[dict]:
 
 def _process_scan_results(effective: str) -> Tuple[List[dict], Dict[str, int], List[dict], List[dict], str]:
     summary = load_fleet_summary(effective)
+    from vcf_hci.server_groups import hydrate_groups
+    hydrate_groups(summary)
     vcf_sup = vcf_dep = vcf_unsup = 0
     partial_hosts = []
     for r in summary:
@@ -191,6 +193,12 @@ def _process_scan_results(effective: str) -> Tuple[List[dict], Dict[str, int], L
             zip_path = candidates[0]
     except OSError:
         pass
+    if any(host.get("server_groups") for host in summary):
+        from vcf_hci.web.scan_worker import _regenerate_fleet_artifacts
+        _, _, zip_path, _ = _regenerate_fleet_artifacts(
+            summary, failed_hosts, effective, combined=True, save_json=True,
+            obfuscate=any(name.startswith("00_OBFUSCATED_") for name in os.listdir(effective)),
+        )
     return summary, vcf_readiness, failed_hosts, partial_hosts, zip_path
 
 

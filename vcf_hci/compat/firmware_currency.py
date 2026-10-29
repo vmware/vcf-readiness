@@ -10,7 +10,10 @@ from datetime import date
 from typing import Any, Dict, Optional, Tuple
 
 _HUU_RE = re.compile(r"(\d+)\.(\d+)\((\d+)\.(\d+)\)")
-_CISCO_BIOS_RE = re.compile(r"C\d+M\d+[A-Z]?\.(\d+)\.(\d+)\.(\d+)", re.IGNORECASE)
+_CISCO_BIOS_RE = re.compile(
+    r"([BC]\d+M\d+[A-Z]?)\.(\d+)\.(\d+)\.(\d+)([a-z]*)"
+    r"(?:\.(\d+)\.(\d{10}))?", re.IGNORECASE,
+)
 _HPE_RE = re.compile(
     r"(?<![A-Z])([A-Z]\d{2})\s*v?\s*(\d+(?:\.\d+)+)",
     re.IGNORECASE,
@@ -73,7 +76,13 @@ def parse_version(value: str) -> Tuple[Optional[str], Tuple[int, ...], str]:
         return None, tuple(int(g) for g in huu.groups()), "huu"
     cisco = _CISCO_BIOS_RE.search(text)
     if cisco:
-        return None, tuple(int(g) for g in cisco.groups()), "cisco_bios"
+        platform, major, minor, patch, suffix, revision, stamp = cisco.groups()
+        nums = (int(major), int(minor), int(patch))
+        nums += tuple(ord(c) - ord("a") + 1 for c in suffix.lower()) or (0,)
+        if stamp:
+            # BIOS stamps are MMDDYYHHMM; compare chronologically across years.
+            nums += (int(revision), int(stamp[4:6] + stamp[:4] + stamp[6:]))
+        return platform.upper(), nums, "cisco_bios"
     x_bmc = _X_BMC_RE.match(text.upper())
     if x_bmc:
         return "X", _nums(x_bmc.group(1)), "x_bmc"
@@ -89,7 +98,11 @@ def parse_version(value: str) -> Tuple[Optional[str], Tuple[int, ...], str]:
         return lenovo_bld.group(1).upper(), (rev_num,), "family"
     dotted = _DOTTED_RE.search(text)
     if dotted:
-        return None, _nums(dotted.group(0)), "dotted"
+        nums = _nums(dotted.group(0))
+        suffix = re.match(r"([a-z]+)(?:$|\s)", text[dotted.end():], re.IGNORECASE)
+        if suffix:
+            nums += tuple(ord(c) - ord("a") + 1 for c in suffix.group(1).lower())
+        return None, nums, "dotted"
     return None, (), "empty"
 
 
@@ -205,8 +218,8 @@ def classify_currency(installed: str, baseline: dict, installed_date: str = "") 
     ``below_minimum`` is the only failure.
     """
     latest = str(baseline.get("latest") or "")
-    minimum = str(baseline.get("min_recommended") or latest)
-    if baseline.get("unverified_family"):
+    minimum = str(baseline.get("min_recommended", latest) or "")
+    if baseline.get("unverified_family") or baseline.get("currency_unverified"):
         return {
             "currency": "unverified",
             "age_note": "",
@@ -230,8 +243,32 @@ def classify_currency(installed: str, baseline: dict, installed_date: str = "") 
     lat_fam, lat_nums, lat_kind = parse_version(latest)
     _min_fam, min_nums, _min_kind = parse_version(minimum)
     note = age_note(installed_date, str(baseline.get("released") or ""), latest)
+    if inst_fam in baseline.get("unverified_installed_families", ()):
+        return _result("unverified", "Resolve the reported platform/ROM identity before selecting an update", latest)
+
+    # A bare Lenovo build ID and its full build-version form must compare in
+    # build space, rather than comparing IVE184 to the semantic version 4.30.
+    build_pattern = r"^([A-Z]{3})(\d{3})([A-Z]*)(?:-|$)"
+    ib = re.match(build_pattern, raw.upper())
+    lb = re.match(build_pattern, latest.upper())
+    if ib and lb and ib.group(1) == lb.group(1) and (
+        _LENOVO_BUILD_RE.fullmatch(raw) or _LENOVO_BUILD_RE.fullmatch(latest)
+    ):
+        def build_nums(match):
+            return (int(match.group(2)),) + tuple(ord(c) - ord("A") + 1 for c in match.group(3))
+        inst_nums, lat_nums = build_nums(ib), build_nums(lb)
+        # A catalog floor like IVE186P-3.00 records a semantic floor with a
+        # release build prefix. It does not establish the build ID for 3.00.
+        mb = _LENOVO_BUILD_RE.fullmatch(minimum.upper())
+        min_nums = build_nums(mb) if mb and mb.group(1) == ib.group(1) else ()
+
+    if lat_kind == "cisco_bios" and inst_kind == "huu":
+        return _result("unverified", "HUU bundle version is not an installed BIOS component version", latest)
+    if inst_kind == lat_kind == "cisco_bios" and inst_fam != lat_fam:
+        return _result("unverified", "Cisco BIOS platform does not match the catalog component", latest)
 
     if inst_kind == "cisco_bios" and lat_kind == "huu" and inst_nums and lat_nums:
+        inst_nums = inst_nums[:3]
         train = lat_nums[:3]
         train_cmp = _cmp(inst_nums, train)
         if train_cmp == 0:

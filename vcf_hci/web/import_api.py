@@ -50,6 +50,7 @@ from vcf_hci import (
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.summary_io import load_summary, write_fleet_summary
 from vcf_hci.web.desktop import _is_safe_desktop_folder
+from vcf_hci.web.job_guard import exclusive_fleet_change
 from vcf_hci.web.scan_worker import (
     _broadcast,
     _get_active_hcl_metadata,
@@ -145,6 +146,7 @@ class ImportApiMixin(_ApiMixinBase):
             logger.error("Error refreshing live HCL: %s", exc, exc_info=True)
             self._send_json({"error": "Failed to refresh live HCL; see server log for details"}, 500)
 
+    @exclusive_fleet_change
     def _process_imported_results(self, results: List[Dict[str, Any]], base_outdir: str, source_label: str = "summary") -> None:
         scan_id = "import_" + os.urandom(4).hex()
         outdir = create_scan_output_dir(base_dir=base_outdir, host_count=len(results), save_json=True)
@@ -167,6 +169,7 @@ class ImportApiMixin(_ApiMixinBase):
                 "completed_hosts": set(),
                 "skipped_ips": set(),
                 "results": [],
+                "fleet_index": None,
                 "report_paths": [],
                 "failed_hosts": [],
                 "partial_hosts": [],
@@ -216,6 +219,9 @@ class ImportApiMixin(_ApiMixinBase):
                 csv_db = load_optional_vsan_csv()
             except Exception as _exc:
                 logger.debug("Failed loading default vSAN HCL: %s", _exc)
+
+        from vcf_hci.server_groups import hydrate_groups
+        hydrate_groups(results)
 
         # Re-evaluate CPU verdict and compute readiness
         vcf_sup = vcf_dep = vcf_unsup = 0

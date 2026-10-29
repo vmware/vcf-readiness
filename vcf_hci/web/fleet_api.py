@@ -54,8 +54,10 @@ from vcf_hci.report.excel_export import (
     _write_xlsx,
 )
 from vcf_hci.report.readme import write_scan_readme
+from vcf_hci.server_groups import normalize_groups, portable_host_id
 from vcf_hci.summary_io import write_fleet_summary
 from vcf_hci.web.desktop import _is_safe_desktop_folder
+from vcf_hci.web.job_guard import exclusive_fleet_change
 from vcf_hci.web.scan_worker import (
     _broadcast,
     _get_dispatch,
@@ -96,6 +98,8 @@ def _build_compact_host_row(idx: int, host: Dict[str, Any], reports_dir: str = "
 
     return {
         "idx": idx,
+        "host_id": portable_host_id(host),
+        "server_groups": normalize_groups(host.get("server_groups")),
         "ip": ip,
         "hostname": hostname,
         "vendor": vendor,
@@ -184,6 +188,7 @@ class FleetApiMixin(_ApiMixinBase):
 
     # ── /api/fleet/assemble (POST) ───────────────────────────────────────────
 
+    @exclusive_fleet_change
     def _api_fleet_assemble(self) -> None:
         body = self._read_json_body()
         if not isinstance(body, dict):
@@ -435,7 +440,7 @@ class FleetApiMixin(_ApiMixinBase):
             pass
 
         # 8. Build compact index rows
-        compact_rows = [_build_compact_host_row(i, h, reports_dir) for i, h in enumerate(results, 1)]
+        compact_rows = [_build_compact_host_row(i, h, reports_dir) for i, h in enumerate(effective_results, 1)]
 
         # Compute readiness counts
         vcf_sup = vcf_dep = vcf_unsup = 0
@@ -525,6 +530,7 @@ class FleetApiMixin(_ApiMixinBase):
 
     # ── /api/fleet/prerender (POST) ──────────────────────────────────────────
 
+    @exclusive_fleet_change
     def _api_fleet_prerender(self) -> None:
         """Pre-generate all single-host HTML reports across the fleet for fully offline portable bundles."""
         with _state_lock:
@@ -638,6 +644,7 @@ class FleetApiMixin(_ApiMixinBase):
         site_filter = qs.get("site", [""])[0].strip()
         vendor_filter = qs.get("vendor", [""])[0].strip()
         verdict_filter = qs.get("verdict", [""])[0].strip()
+        group_filters = set(qs.get("group", []))
 
         if ":" in facet_param:
             f_parts = facet_param.split(":", 1)
@@ -665,8 +672,16 @@ class FleetApiMixin(_ApiMixinBase):
         sites_map: Dict[str, int] = {}
         vendors_map: Dict[str, int] = {}
         verdicts_map: Dict[str, int] = {}
+        groups_map: Dict[str, dict] = {}
+        ungrouped = 0
 
         for it in all_items:
+            memberships = normalize_groups(it.get("server_groups"))
+            if not memberships:
+                ungrouped += 1
+            for group in memberships:
+                entry = groups_map.setdefault(group["id"], dict(group, count=0))
+                entry["count"] += 1
             s_name = it.get("site") or "Unassigned"
             v_name = it.get("vendor") or "Unknown"
             vd_name = it.get("verdict") or "Unknown"
@@ -677,6 +692,10 @@ class FleetApiMixin(_ApiMixinBase):
         # Apply filters
         filtered: List[Dict[str, Any]] = []
         for it in all_items:
+            memberships = normalize_groups(it.get("server_groups"))
+            member_ids = {g["id"] for g in memberships}
+            if group_filters and not (member_ids & group_filters or ("__ungrouped__" in group_filters and not memberships)):
+                continue
             if site_filter:
                 it_site = it.get("site") or "Unassigned"
                 if it_site.lower() != site_filter.lower():
@@ -698,6 +717,7 @@ class FleetApiMixin(_ApiMixinBase):
                     str(it.get("site") or ""),
                     str(it.get("source_scan") or ""),
                     str(it.get("verdict") or ""),
+                    " ".join(g["name"] for g in memberships),
                 ]).lower()
                 if search_param not in search_haystack:
                     continue
@@ -713,6 +733,8 @@ class FleetApiMixin(_ApiMixinBase):
             "limit": limit,
             "items": paged_items,
             "facets": {
+                "groups": list(groups_map.values()),
+                "ungrouped": ungrouped,
                 "sites": sites_map,
                 "vendors": vendors_map,
                 "verdicts": verdicts_map,
