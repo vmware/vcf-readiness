@@ -23,17 +23,21 @@ from vcf_hci.hcl import evaluate_drive_hcl_tier, lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.helpers import _h, badge  # noqa: F401
 from vcf_hci.report.switch_topology import classify_switch
+from vcf_hci.storage_capacity import drive_capacity_display, normalize_storage_capacities
+from vcf_hci.storage_media import drive_type_display
+from vcf_hci.storage_pcie import drive_link_description, drive_pcie_view
+from vcf_hci.ui_clarity import drive_icon_html, icon_html
 
 
 def _rn_dim_row(icon, label, actual, needed, ok):
     cls  = "success" if ok else "warning"
     mark = "✅" if ok else "⚠️"
     return (
-        f"<div style='display:flex;justify-content:space-between;align-items:center;"
-        f"padding:.18rem 0;border-bottom:1px solid var(--border);font-size:.8rem'>"
-        f"<span>{icon} {label}</span>"
-        f"<span class='badge {cls}' style='font-size:.73rem;padding:.1rem .4rem'>"
-        f"{mark} {actual}</span></div>"
+        "<div class='rn-dimension'>"
+        f"<span class='rn-dimension-label'>{icon} {label}</span>"
+        "<span class='rn-dimension-value'>"
+        f"<span class='badge {cls}'>{mark} {actual}</span>"
+        "</span></div>"
     )
 
 
@@ -282,7 +286,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if pci_eval.get("rdma_badge"):
             pci_verdict_html += f"<br>{pci_eval['rdma_badge']}"
         if pci_eval.get("recommended_driver"):
-            pci_verdict_html += f"<br><small style='color:var(--text-muted);font-size:.75rem;'>🚗 Driver (9.1): <code>{_h(pci_eval['recommended_driver'])}</code></small>"
+            pci_verdict_html += f"<br><small style='color:var(--text-muted);font-size:.75rem;'>Driver (9.1): <code>{_h(pci_eval['recommended_driver'])}</code></small>"
         if pci_eval.get("recommended_firmware") and pci_eval.get("fw_badge"):
             pci_verdict_html += f"<br>{pci_eval['fw_badge']}"
         if pci_eval.get("action_required"):
@@ -383,7 +387,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
 
         ports_html += (
             "<div style='margin-top:.4rem;padding:.35rem .55rem;background:var(--code-bg,#f8fafc);border-left:3px solid #0284c7;border-radius:3px;font-size:.73rem;line-height:1.45;'>"
-            "<strong style='color:#0284c7;display:block;margin-bottom:.2rem;'>Virtual Interfaces:</strong>"
+            "<strong style='color:var(--primary);display:block;margin-bottom:.2rem;'>Virtual Interfaces:</strong>"
             + "<br>".join(vic_lines)
             + "</div>"
         )
@@ -434,7 +438,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         f"<td>{ports_html}</td>"
         f"<td><a href='{bcg_nic}' target='_blank' class='btn-link'>BCG IO ↗</a>"
         f"<br><a href='{bcg_vsan_nic}' target='_blank' class='btn-link'"
-        f" style='font-size:.78rem;opacity:.8' title='vSAN RDMA HCL — match indicates RDMA/RoCE qualification'>vSAN RDMA ↗</a>"
+        f" style='font-size:.78rem;' title='vSAN RDMA HCL — match indicates RDMA/RoCE qualification'>vSAN RDMA ↗</a>"
         f"{cna_links}</td></tr>"
     )
 
@@ -681,11 +685,9 @@ def _chassis_svg(
                 end_s = "N/A"
             else:
                 end_s = str(end)
-            gen   = d.get("pcie_gen", "")
-            lanes = d.get("pcie_lanes_in_use") or d.get("pcie_max_lanes")
-            lane_s= f" {gen}x{lanes}" if (gen or lanes) else ""
+            lane_s = " · " + drive_link_description(d) if is_nv else ""
 
-            tip = _h(f"Slot {lbl}: {model} ({cap}GB {proto}{lane_s}) · PN: {pn} · Ctrl: {ctrl} · Health: {hlth} · Endurance: {end_s}".strip())
+            tip = _h(f"Slot {lbl}: {model} ({drive_capacity_display(d, include_unit=True)} {proto}{lane_s}) · PN: {pn} · Ctrl: {ctrl} · Health: {hlth} · Endurance: {end_s}".strip())
             _d_cat = str(d.get("category") or "")
             _d_is_boot = bool(d.get("is_boot") or _d_cat == "Boot Device")
             _d_is_consumer = bool(d.get("is_consumer") or _d_cat == "Unsupported Consumer SSD")
@@ -784,44 +786,40 @@ def _chassis_svg(
 
 def _pcie_info_html(drive: dict) -> str:
     """Render a small PCIe gen / lane-width / PCI ID sub-line for the Type/Bus cell."""
-    lanes = drive.get("pcie_lanes_in_use")
-    gen   = drive.get("pcie_gen") or ""
+    evidence = drive_pcie_view(drive)
     proto = str(drive.get("protocol") or "")
     pci_quad = drive.get("pci_quad") or (f"{drive.get('vendor_id')}:{drive.get('device_id')}" if drive.get("vendor_id") and drive.get("device_id") else "")
     if "NVME" not in proto.upper() and "PCIE" not in proto.upper() and not pci_quad:
         return ""
-    gen_str = gen.replace("Gen", "PCIe Gen") if gen else ""
-    lane_html = ""
-    if lanes == 1:
-        lane_html = f"<span style='color:var(--danger);font-weight:700'>x{lanes} ⚠️</span>"
-    elif lanes == 2:
-        lane_html = f"<span style='color:var(--warning)'>x{lanes}</span>"
-    elif lanes is not None:
-        lane_html = f"x{lanes}"
-    pci_html = f"<code style='font-size:.73rem;background:var(--pci-bg);color:var(--pci-color);padding:1px 4px;border-radius:3px;'>PCI: {_h(pci_quad)}</code>" if pci_quad else ""
-    parts = [p for p in [gen_str, lane_html, pci_html] if p]
-    return f"<br><small>{'&nbsp;'.join(parts)}</small>" if parts else ""
+    parts = []
+    if "NVME" in proto.upper() or "PCIE" in proto.upper():
+        parts.append(f"<span class='report-drive-link'>{_h(drive_link_description(evidence))}</span>")
+    if pci_quad:
+        parts.append(f"<code style='font-size:.73rem;background:var(--pci-bg);color:var(--pci-color);padding:1px 4px;border-radius:3px;'>PCI: {_h(pci_quad)}</code>")
+    return f"<br><small>{' · '.join(parts)}</small>" if parts else ""
 
 def _trimode_banner_html(ctrl: dict) -> str:
     if not ctrl.get("is_trimode"):
         return ""
-    protos   = " / ".join(ctrl.get("device_protocols") or []) or "N/A"
-    fw       = ctrl.get("ctrl_firmware") or "N/A"
-    gen      = ctrl.get("pcie_gen") or ""
-    lanes    = ctrl.get("pcie_lanes_in_use") or ctrl.get("pcie_max_lanes")
-    pcie_str = " ".join(p for p in [gen, f"x{lanes}" if lanes else ""] if p) or "N/A"
+    name = str(ctrl.get("name") or "").upper()
+    protocols = {str(d.get("protocol") or "").upper() for d in ctrl.get("drives") or []}
+    guidance = ""
+    if "THINKSYSTEM RAID 940" in name and any("NVME" in protocol for protocol in protocols) and protocols.intersection({"SAS", "SATA"}):
+        guidance = (
+            "<details class='report-drive-link-guidance'><summary>Drive link guidance</summary>"
+            "<p>Lenovo documents x1 NVMe connections in mixed SAS/SATA/NVMe Tri-Mode mode. "
+            "This is manufacturer guidance, not a measurement of these drive links. "
+            "The separate x4 NVMe configuration excludes SAS/SATA drives. "
+            "<a href='https://lenovopress.lenovo.com/lp1282-thinksystem-raid-940-series-internal-raid-adapters' "
+            "target='_blank' rel='noopener'>Lenovo RAID 940 documentation ↗</a></p></details>"
+        )
     return (
         "<div class='alert alert-danger' style='margin-bottom:.75rem'>"
-        "🔴 <strong>Tri-Mode RAID Controller</strong> — NVMe drives attached to this "
+        "<strong>Tri-Mode RAID Controller</strong> — NVMe drives attached to this "
         "controller are <strong>NOT supported for vSAN</strong>. "
         "NVMe must be directly CPU-attached or behind a native NVMe HBA. "
-        f"<a href='{KB_TRIMODE}' target='_blank' style='color:var(--tint-danger-text,#991b1b);font-weight:600'>"
-        "KB314305 ↗</a>"
-        f"<br><small style='color:var(--tint-danger-text,#991b1b);opacity:.85'>"
-        f"Supported Protocols: <strong>{_h(protos)}</strong>&emsp;"
-        f"PCIe: <strong>{_h(pcie_str)}</strong>&emsp;"
-        f"Firmware: <code style='font-size:.8rem'>{_h(fw)}</code>"
-        f"</small></div>"
+        f"<a href='{KB_TRIMODE}' target='_blank'>KB314305 ↗</a>"
+        f"</div>{guidance}"
     )
 
 def _software_raid_banner_html(ctrl: dict) -> str:
@@ -903,6 +901,7 @@ def _vmd_banner_html(ctrl: dict, bios_checks: Optional[dict] = None) -> str:
     )
 
 def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
+    normalize_storage_capacities([ctrl])
     rows = ""
     for drive in ctrl.get("drives", []):
         if not drive.get("populated", True):   # skip empty bay placeholders
@@ -1036,8 +1035,8 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
             f"<td style='text-align:center;white-space:nowrap'>{_bay_cell}</td>"
             f"<td><strong>{_h(drive.get('model','Unknown'))}</strong>"
             f"<br><small style='color:var(--text-muted)'>PN: {_h(drive.get('product_id','N/A'))}</small>{hcl_str}{smart_html}</td>"
-            f"<td>{_h(drive.get('media_type','?'))} / {_h(drive.get('protocol','?'))}{_conn_tag}{pcie_html}</td>"
-            f"<td><b>{drive.get('capacity_gb',0)} GB</b></td>"
+            f"<td><span class='report-media'>{drive_icon_html(drive.get('protocol'), drive.get('media_type'))}<span class='report-media-label' data-preserve-emojis>{_h(drive_type_display(drive.get('media_type'), drive.get('protocol')))}</span></span>{_conn_tag}{pcie_html}</td>"
+            f"<td title='{_h(drive.get('capacity_data_quality_note', ''))}'><b>{drive_capacity_display(drive, include_unit=True)}</b></td>"
             f"<td>{_fw_cell}</td>"
             f"<td>{end_badge}</td><td>{_health_cell}</td><td>{vsan_badge}</td>"
             f"<td><a href='{bcg_ssd}' target='_blank' class='btn-link'>BCG ↗</a></td></tr>"
@@ -1054,10 +1053,13 @@ def _ctrl_meta_html(ctrl: dict, hcl_data: Optional[dict] = None) -> str:
     if protos:
         parts.append("Protocols: " + " / ".join(_h(p) for p in protos))
     gen   = ctrl.get("pcie_gen") or ""
-    lanes = ctrl.get("pcie_lanes_in_use") or ctrl.get("pcie_max_lanes")
+    lanes = ctrl.get("pcie_lanes_in_use")
     pcie_tokens = " ".join(p for p in [_h(gen), f"x{lanes}" if lanes else ""] if p)
     if pcie_tokens:
-        parts.append(f"PCIe: {pcie_tokens}")
+        shared = " · shared" if ctrl.get("is_trimode") or len(ctrl.get("drives") or []) > 1 else ""
+        parts.append(f"<span class='report-controller-uplink'>Controller uplink: PCIe {pcie_tokens}{shared}</span>")
+    if ctrl.get("pcie_max_lanes") and not lanes:
+        parts.append(f"Controller uplink capability: x{_h(str(ctrl['pcie_max_lanes']))}")
 
     cvid = ctrl.get("vendor_id", "")
     cdid = ctrl.get("device_id", "")
@@ -1119,7 +1121,7 @@ def _ctrl_meta_html(ctrl: dict, hcl_data: Optional[dict] = None) -> str:
     if bcg_vsan_url:
         parts.append(f"<a href='{bcg_vsan_url}' target='_blank' class='btn-link' style='font-size:.8rem'>vSAN HBA BCG ↗</a>")
     if bcg_io_url:
-        parts.append(f"<a href='{bcg_io_url}' target='_blank' class='btn-link' style='font-size:.78rem;opacity:.8'>I/O BCG ↗</a>")
+        parts.append(f"<a href='{bcg_io_url}' target='_blank' class='btn-link' style='font-size:.78rem;'>I/O BCG ↗</a>")
 
     if not parts:
         return ""
@@ -1162,10 +1164,10 @@ def build_dimm_slot_diagram(memory_subsystem: dict, cpu_summary: Optional[dict] 
 
     html_parts = [
         "<div class='card' style='margin:1rem 0;border:1px solid var(--border);border-radius:6px;background:var(--card)'>",
-        "  <div class='card-block' style='padding:.85rem 1.1rem'>",
+        "  <div class='report-tor-body'>",
         "    <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem'>",
         "      <h4 class='card-title' style='margin:0;font-size:.95rem;display:flex;align-items:center;gap:.4rem'>",
-        "        <span>🧠</span> Physical Motherboard DIMM Slot & Channel Map",
+        f"        {icon_html('memory')} Physical Motherboard DIMM Slot & Channel Map",
         "      </h4>",
         "      <span style='font-size:.78rem;color:var(--text-muted)'>Legend: "
         "<span style='color:var(--success, #16a34a);font-weight:600'>● Populated (OK)</span> &nbsp; "
@@ -1391,7 +1393,7 @@ def build_tor_switch_card(lldp_neighbors: list, network_adapters: Optional[list]
     )
 
     html = [
-        "<div class='card' style='margin:1.25rem 0;border:1px solid var(--border);border-radius:6px;background:var(--card)'>",
+        "<div class='card report-tor-card'>",
         "  <div class='card-block' style='padding:.85rem 1.1rem'>",
         "    <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem'>",
         "      <h4 class='card-title' style='margin:0;font-size:.95rem;display:flex;align-items:center;gap:.4rem'>",
@@ -1399,7 +1401,7 @@ def build_tor_switch_card(lldp_neighbors: list, network_adapters: Optional[list]
         "      </h4>",
         f"      <div>{redundancy_badge}</div>",
         "    </div>",
-        "    <div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));gap:1rem'>"
+        "    <div class='report-tor-grid'>"
     ]
 
     for sw_name, ports in switches.items():
@@ -1419,8 +1421,8 @@ def build_tor_switch_card(lldp_neighbors: list, network_adapters: Optional[list]
         svg_graphic = render_switch_chassis_svg(110, 48) if info["is_chassis"] else render_switch_leaf_svg(110, 24)
 
         html.append(
-            f"      <div style='background:var(--code-bg);border:1px solid var(--border);border-radius:6px;padding:.85rem'>"
-            f"        <div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.4rem;gap:.5rem'>"
+            f"      <div class='report-switch-panel'>"
+            f"        <div class='report-switch-heading'>"
             f"          <div>"
             f"            <div style='font-weight:600;font-size:.88rem;color:var(--primary);margin-bottom:.2rem'>🌐 {_h(sw_name)}</div>"
             f"            <div style='font-size:.76rem;color:var(--text-muted)'>"

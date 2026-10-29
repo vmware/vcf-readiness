@@ -43,6 +43,8 @@ from vcf_hci.report.inventory_tables import (
     build_compact_fleet_inventory,
     clean_model_code,
 )
+from vcf_hci.storage_pcie import storage_pcie_view
+from vcf_hci.ui_clarity import icon_html
 
 logger = logging.getLogger("vcf_assess")
 
@@ -58,7 +60,7 @@ def build_detailed_inventory_html(
     sibling_xlsx: Optional[str] = None,
 ) -> str:
     """Render the Detailed Inventory tab panel (matrix + Drives/NICs/BIOS/Health/Security panes)."""
-    all_results = all_results or []
+    all_results = [storage_pcie_view(host) for host in (all_results or [])]
     salt = page_salt or os.urandom(16).hex()
 
     if obfuscated and all_results:
@@ -167,6 +169,20 @@ def build_detailed_inventory_html(
     render_rows = rows[:render_limit] if len(rows) > render_limit else rows
     render_results = all_results[:render_limit] if len(all_results) > render_limit else all_results
 
+    group_catalog = {}
+    host_groups = {}
+    for host_index, host in enumerate(all_results):
+        groups = host.get("server_groups") if isinstance(host, dict) else []
+        normalized = []
+        for group in groups if isinstance(groups, list) else []:
+            if not isinstance(group, dict) or not group.get("id") or not group.get("name"):
+                continue
+            group_id, group_name = str(group["id"]), str(group["name"])
+            group_catalog[group_id] = group_name
+            normalized.append({"id": group_id, "name": group_name})
+        host_groups[host_index] = normalized
+    group_opts = "".join(f"<option data-preserve-emojis value='{_xe(key)}'>{_xe(name)}</option>" for key, name in sorted(group_catalog.items(), key=lambda item: item[1].casefold()))
+
     matrix_rows = []
     for r in render_rows:
         idx = int(r.get("host_idx") or 0)
@@ -230,6 +246,11 @@ def build_detailed_inventory_html(
         else:
             os_td = "<span class='inv-muted' title='Host OS not reported via BMC agent'>—</span>"
 
+        groups = host_groups.get(idx, [])
+        group_ids = _xe(json.dumps([group["id"] for group in groups]))
+        group_cell = '<div class="report-group-tags" data-preserve-emojis>' + ''.join(
+            f'<span class="report-group-tag">{_xe(group["name"])}</span>' for group in groups
+        ) + '</div>' if groups else '<span class="inv-muted">Ungrouped</span>'
         matrix_rows.append(
             f"<tr class='inv-row' data-oem='{_xe(r.get('facet_oem') or '')}' "
             f"data-cpu='{_xe(r.get('facet_cpu') or '')}' "
@@ -239,10 +260,11 @@ def build_detailed_inventory_html(
             f"data-nic='{_xe(r.get('facet_nic') or '')}' "
             f"data-link='{_xe(r.get('facet_link') or '')}' "
             f"data-sec-posture='{_xe(sec_posture)}' "
-            f"data-host-idx='{idx}'>"
+            f"data-host-idx='{idx}' data-server-groups='{group_ids}'>"
             f"<td data-column-key='hostname' class='inv-sticky'><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-overview' style='color:inherit;text-decoration:none;display:block'>"
             f"<strong>{_pii(hostname, 'host')}</strong>"
             f"<br><small style='color:var(--text-muted,#64748b)'>{_pii(ip, 'ip')}</small></a></td>"
+            f"<td data-column-key='server_groups'>{group_cell}</td>"
             f"<td data-column-key='model' title='{_xe(full_model)}'><strong>{_xe(clean_m)}</strong></td>"
             f"<td data-column-key='cpu_model'><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-cpu' style='color:inherit;text-decoration:none;display:inline-block'>{_cpu_dot(r.get('cpu_tier') or '', r.get('cpu_model') or '', r.get('cpu_verdict') or '')}</a></td>"
             f"<td data-column-key='host_os'>{os_td}</td>"
@@ -258,9 +280,9 @@ def build_detailed_inventory_html(
             f"<td data-column-key='gpu_count' style='text-align:center'>{_xe(gpu_td)}</td>"
             f"</tr>"
         )
-    colspan = 13 if has_fc_hbas else 12
+    colspan = 14 if has_fc_hbas else 13
     tbody = "\n".join(matrix_rows) if matrix_rows else (
-        f"<tr><td colspan='{colspan}' style='color:#94a3b8'>No hosts</td></tr>"
+        f"<tr><td colspan='{colspan}' style='color:var(--text-muted)'>No hosts</td></tr>"
     )
     n_hosts = len(rows)
     inv_shown_count = len(render_rows)
@@ -323,7 +345,7 @@ def build_detailed_inventory_html(
 [data-theme='light'] .inv-filters select,[data-theme='light'] .inv-filters input{{background:#ffffff;color:#1e293b;border-color:#cbd5e1}}
 [data-theme='light'] .inv-btn{{background:#ffffff;color:#1e293b;border-color:#cbd5e1}}
 [data-theme='light'] .inv-btn:hover{{background:#f1f5f9}}
-[data-theme='light'] .inv-seg button{{background:#f8fafc;color:#64748b;border-color:#cbd5e1}}
+[data-theme='light'] .inv-seg button{{background:#f8fafc;color:var(--text-muted);border-color:#cbd5e1}}
 [data-theme='light'] .inv-seg button.active{{background:#ffffff;color:#0f172a;border-color:#2563eb}}
 .inv-count{{font-size:var(--inv-secondary-size,12px);color:var(--text-muted,#94a3b8);margin-left:auto}}
 .inv-row-perc7xx{{background:rgba(220,38,38,0.22) !important;color:#fca5a5}}
@@ -363,7 +385,7 @@ def build_detailed_inventory_html(
     <strong>Detailed Inventory</strong>
     {export_buttons}
     <div class="inv-layout">
-      <details class="inv-columns" id="invColumnsChooser"><summary class="inv-btn">Columns</summary>
+      <details class="inv-columns" id="invColumnsChooser"><summary class="inv-btn">{icon_html("view-columns")} Columns</summary>
         <div class="inv-column-options" id="invColumnOptions"><p>Choose host comparison columns. Host identity stays visible.</p></div>
       </details>
       <label>Density <select id="invDensity"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
@@ -391,6 +413,8 @@ def build_detailed_inventory_html(
   </div>
   {inv_banner}
   <div class="inv-filters">
+    <label>Groups (match any) <select id="invGroups" multiple aria-label="Filter server groups; match any selected"><option value="__ungrouped__">Ungrouped</option>{group_opts}</select></label>
+    <button type="button" class="inv-btn" id="invClearFilters">Clear filters</button>
     <label>OEM <select id="invOem"><option value="">All</option>{oem_opts}</select></label>
     <label>CPU <select id="invCpu">
       <option value="">All</option>
@@ -447,6 +471,7 @@ def build_detailed_inventory_html(
       <table class="inv-table" id="invHostTable">
         <thead><tr>
           <th data-column-key="hostname" class="inv-sticky" title="Host system hostname and BMC IP address (Click to view full host assessment report)">Host</th>
+          <th data-column-key="server_groups" title="Named server group membership">Groups</th>
           <th data-column-key="model" title="Server hardware manufacturer and chassis model">Model</th>
           <th data-column-key="cpu_model" title="Processor model and VCF 9.1 CPU architecture compatibility tier">CPU</th>
           <th data-column-key="host_os" data-default-visible="false" title="Installed operating system or hypervisor release and lifecycle support status">Host OS</th>
@@ -602,6 +627,8 @@ def build_detailed_inventory_html(
   var hostFilterActive = false;
 
   function evaluateHostMatches() {{
+    var groupControl = document.getElementById('invGroups');
+    var selectedGroups = groupControl ? Array.from(groupControl.selectedOptions).map(function(option){{return option.value;}}) : [];
     var oem = (document.getElementById('invOem') || {{}}).value || '';
     var cpu = (document.getElementById('invCpu') || {{}}).value || '';
     var esa = (document.getElementById('invEsa') || {{}}).value || '';
@@ -611,10 +638,12 @@ def build_detailed_inventory_html(
     var sec = (document.getElementById('invSec') || {{}}).value || '';
     var text = ((document.getElementById('invFilter') || {{}}).value || '').toLowerCase();
 
-    hostFilterActive = !!(oem || cpu || esa || ctrl || nic || link || sec || text || (window.VCFReportUI && window.VCFReportUI.hasSelection()));
+    hostFilterActive = !!(selectedGroups.length || oem || cpu || esa || ctrl || nic || link || sec || text || (window.VCFReportUI && window.VCFReportUI.hasSelection()));
     var matching = {{}};
     document.querySelectorAll('#invHostTable tbody tr.inv-row').forEach(function(tr){{
       var ok = !window.VCFReportUI || window.VCFReportUI.matchesHost(tr);
+      var rowGroups = [];try{{rowGroups=JSON.parse(tr.getAttribute('data-server-groups')||'[]');}}catch(error){{}}
+      if(selectedGroups.length && !selectedGroups.some(function(id){{return id==='__ungrouped__' ? !rowGroups.length : rowGroups.indexOf(id)>=0;}}))ok=false;
       if (oem && tr.getAttribute('data-oem') !== oem) ok = false;
       if (cpu && tr.getAttribute('data-cpu') !== cpu) ok = false;
       if (sec && tr.getAttribute('data-sec-posture') !== sec) ok = false;
@@ -807,9 +836,14 @@ def build_detailed_inventory_html(
   window.showInvView = showInvView;
   window.showInvTab = showInvView;
 
-  ['invOem','invCpu','invEsa','invCtrl','invNic','invLink','invSec'].forEach(function(id){{
+  ['invGroups','invOem','invCpu','invEsa','invCtrl','invNic','invLink','invSec'].forEach(function(id){{
     var el = document.getElementById(id);
     if (el) el.addEventListener('change', applyInvFilters);
+  }});
+  var clearFilters = document.getElementById('invClearFilters');
+  if(clearFilters)clearFilters.addEventListener('click',function(){{
+    document.querySelectorAll('#invRoot .inv-filters select').forEach(function(select){{if(select.multiple)Array.from(select.options).forEach(function(option){{option.selected=false;}});else select.value='';}});
+    document.getElementById('invFilter').value='';applyInvFilters();
   }});
   var filt = document.getElementById('invFilter');
   if (filt) filt.addEventListener('input', applyInvFilters);

@@ -1,0 +1,2053 @@
+{
+  "scope": "sanitized-source-snapshot",
+  "version": "9.11.0",
+  "generated_at": "2026-10-29T05:40:55Z",
+  "inventory_sha256": "c6c558ec8bea6899aec32e8266a51e804767e70f760fef0693612f47fc853b40",
+  "exclusions": [
+    ".git",
+    "__pycache__",
+    "docs/sbom"
+  ],
+  "files": [
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.md",
+      "sha256": "179340365d47b37e9fc5e9eae66b2ae097f31133944109ec6617944ac42a754b",
+      "sha1": "3ee75cdb52d45ab5f62792ef2b3610788b5b31e6",
+      "size": 1176
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.md",
+      "sha256": "ab348e1b215648a0e2b81a5e241ab138f73eb43caea67a21bae1812c715d5884",
+      "sha1": "22579d7705e43112db45ce35ffea68931c0f9425",
+      "size": 839
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/oem_support_request.md",
+      "sha256": "6701795e8e07d7d4bd1facb9c09afb64118c6810d7b3f86eac9dde5bcbe68d70",
+      "sha1": "685153eeaa66fab8bc2ce513e13052c145bb631e",
+      "size": 1294
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "0edb2b6c300ba1101e142e60e17504127751ae9806c9dcd5d58ace69ffa0ce31",
+      "sha1": "3a0f0cb2b47aa39d21723e6aabe8a15d1e0f36cf",
+      "size": 558
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "e9cca62539eea5b05739b59e1f634777fdde4ee401f772b34bb4156f54d9bb3a",
+      "sha1": "6eb90616c7dbfbb3680b443c3d7c4b419a52e4f6",
+      "size": 447
+    },
+    {
+      "path": "00_HOWTOLAUNCH.TXT",
+      "sha256": "6cdf2f00bf6d4ced2763898a4a95cab402a65e5058130e09b2445ae8e5447a58",
+      "sha1": "a2f7c04d3fa9a2dfa836a9b60c77ec886c51aa70",
+      "size": 2528
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "sha256": "e9aedd02af0d9114ac9254e2b60da01ef925c127281ddbac7545cea000752e56",
+      "sha1": "d629e237a3eed8f558029dc670bbbe3f9b59d51d",
+      "size": 13028
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "7831f4d2e117276b0a353fe0050eebef12fb3ca6d272ab43f82e5df2ce9fe8c9",
+      "sha1": "1cb1c91fd6b7db01406de4b1b820e37213120c55",
+      "size": 929
+    },
+    {
+      "path": "LICENSE.md",
+      "sha256": "744cc2b2f33ec39b00141eeda91ed9b48e642e1ce99424c34dd8611e01679ecc",
+      "sha1": "ee4ddabf847ab40396b28e740582659320780980",
+      "size": 864
+    },
+    {
+      "path": "Launch-VCF-Readiness-Web.bat",
+      "sha256": "35646dee39606063cd4d2e6f0e20eb1696aba832deb0d8699a986a54378c03d3",
+      "sha1": "64cea5cf6ca51f2e83f857e3d1648f83d3f76163",
+      "size": 1369
+    },
+    {
+      "path": "NOTICE",
+      "sha256": "49b0ccd190d00529a4f0d89f495263741c240c386a1f0786da55cf289862a569",
+      "sha1": "2f669115d951c8ff787a61c37ab1751510ace6df",
+      "size": 295
+    },
+    {
+      "path": "README.md",
+      "sha256": "385fab763770387b10d2fa9bae95e0c6a04fdd31be987131b2c637cebb5d7597",
+      "sha1": "fda08ad5828096f3797745a7f5b8abeb47ccd522",
+      "size": 24692
+    },
+    {
+      "path": "THIRD_PARTY_LICENSES.md",
+      "sha256": "797a656b6a887f7fe3a7e2817a9374ead5cb90ec97f85ef02912bb17789dd894",
+      "sha1": "aa099c9346cb3526508d22b7ff477d2f0d44b802",
+      "size": 8858
+    },
+    {
+      "path": "docs/CREDENTIAL_VAULT.md",
+      "sha256": "7ddc932c18adbfadcd44bff368c3f239117019f9d59c1465e2eaff0b2b8b2372",
+      "sha1": "b5ce15ab207360090bad0627f1b718b6f82d14df",
+      "size": 14369
+    },
+    {
+      "path": "docs/CUSTOMER_DELIVERABLE_SBOM.md",
+      "sha256": "772ecb5688f2543b27634aaed3519331e01097ff40687a808653cf8da1d4d044",
+      "sha1": "2e34659820544ed5e0e4df0481b912c1bda693cc",
+      "size": 6341
+    },
+    {
+      "path": "docs/INSTALL.md",
+      "sha256": "39760060603aa6b025ad21b4b93991c0a9693ca29f6444110c1f6967ed98ae2b",
+      "sha1": "0145dce3cd363cb95d19c4d925f162e8658d9cd7",
+      "size": 9446
+    },
+    {
+      "path": "docs/INVENTORY_REFERENCE.md",
+      "sha256": "aeb475ff507653be34ed138d40c89661a266b045d9a4dc7f251a8e81a9b8eb16",
+      "sha1": "02b4560adbf98e8b65ca8932d12b15b629b7b08e",
+      "size": 19807
+    },
+    {
+      "path": "docs/OEM_REFERENCE.md",
+      "sha256": "5a13fd249ae6c102f24720f875e89d2a823bae0b6548c6c3a056a5f7afa83fb8",
+      "sha1": "2fd656c3441d957e0d33f9dff0f4953ef402340c",
+      "size": 24522
+    },
+    {
+      "path": "docs/REDFISH_MONITORING_GUIDE.md",
+      "sha256": "27afee7c9577a9c7079102e3d29701b170262ec9d04dff92ddc387766ea11bb8",
+      "sha1": "66416c872d5136ec8ad285d70b87cad29a716bef",
+      "size": 13824
+    },
+    {
+      "path": "docs/REMOTE_JUMP_HOST_GUIDE.md",
+      "sha256": "5ce6ea48e4d191b55d24dfcae99d41691b4515a1634a990a45c9eb732b032026",
+      "sha1": "866638c82fc171ee14f4c7da50c0f4d4b5dc7764",
+      "size": 5054
+    },
+    {
+      "path": "docs/SCANNER_GROUPS_AND_DISPLAY.md",
+      "sha256": "0f88f82eb55e1c8b78febb7bcfe36f997596aed250199d8885af72d0c8a49a65",
+      "sha1": "2a88778acb1b8c9973a7a63c74c3a63b572c56df",
+      "size": 3417
+    },
+    {
+      "path": "docs/SECURITY_ARCHITECTURE.md",
+      "sha256": "4b008af4d40d89b3dc907b287697388c3677d3919624d59ce0d2bb81004aceba",
+      "sha1": "3c8431d6599d7393f3df0e9fbd5fc2e26a992948",
+      "size": 45549
+    },
+    {
+      "path": "docs/USER_GUIDE_REFERENCE.md",
+      "sha256": "8982f0b41ab1779025265f8f80a0e5f127f6b7d20336e302d0d286e62049e3d9",
+      "sha1": "cc14b3f421fd36c567c20e0e38a9916eadc9e037",
+      "size": 177567
+    },
+    {
+      "path": "docs/adding-oem-support.md",
+      "sha256": "632a1a933836074aa36bf12e8fdb987da75de35574415528b2dc257c59b1388c",
+      "sha1": "8bd4a45f06549b722fe65dfebc158b1489af244b",
+      "size": 15601
+    },
+    {
+      "path": "docs/assets/screenshots/bios-golden-baseline-drift.png",
+      "sha256": "8edbf4c201010485812ef5c03f4b43a40de7591b8bbe24ce55d93ed4c4ef1456",
+      "sha1": "443aecdc774c8c9f0e2e95fc6755eaf6fcc80773",
+      "size": 559445
+    },
+    {
+      "path": "docs/assets/screenshots/bios-performance-settings.png",
+      "sha256": "f38b67db76b0336068cdfedf9c22ba6c02b2c533a7e4d0bb7add6f9147531cc3",
+      "sha1": "7775b91b4e07804778f65e5c2936881aedca038d",
+      "size": 537973
+    },
+    {
+      "path": "docs/assets/screenshots/bmc-hardware-security-audit.png",
+      "sha256": "b510c1e91a27b2a41aa12d007e07675d54b3e5ab1141d755716d43eeb8ed514e",
+      "sha1": "6ce773489578cdf54e9f0cfb88bbe88b35a7069f",
+      "size": 526515
+    },
+    {
+      "path": "docs/assets/screenshots/fleet-health-dashboard.png",
+      "sha256": "2877e99cc85430f3995f7c517171bd4c13bcd02cef56ecd393256d4b11164299",
+      "sha1": "f70d9d5fd1c54353c89c61a4d844b58139cbc348",
+      "size": 491721
+    },
+    {
+      "path": "docs/assets/screenshots/fleet-metric-tiles.png",
+      "sha256": "6dc57e00d26f683ce8c27d6748675c40d4ad5c99de6d6064037539280f04ef57",
+      "sha1": "def9c7541eb86bc32d85b9a5c01c348ddf06a66b",
+      "size": 532087
+    },
+    {
+      "path": "docs/assets/screenshots/fleet-multi-host-capture.png",
+      "sha256": "f652689fd4b92cec5931c1a25c85e8066d66a30b8a29dee55ed8a75c5b8af963",
+      "sha1": "f6357d4f7f5cf9329e6308319b3994b42bdd840f",
+      "size": 327399
+    },
+    {
+      "path": "docs/assets/screenshots/hardware-security-baseline.png",
+      "sha256": "0a49a0d59e445a2df6d27251dacefdd12f8b4f1ed9f4c94b21a9bbaa43893ddd",
+      "sha1": "b846154747312d744dcb6b70e0c62b023ea3c903",
+      "size": 440504
+    },
+    {
+      "path": "docs/assets/screenshots/lldp-cdp-switch-neighbors.png",
+      "sha256": "fabefc56ea84f44849c90eea851688cfafbe52a7e5aa6f752ce26e5d16417910",
+      "sha1": "d8a6bc4117566039a533d7a0822320205f229f36",
+      "size": 354173
+    },
+    {
+      "path": "docs/assets/screenshots/memory-channel-topology.png",
+      "sha256": "bdbea0ae37e8bcc376fc920a5bd545d48e532693a3b0a26adb78bf575e8267dc",
+      "sha1": "ceb69fab0d3427aba4e07f72b40b2da3a9ebb278",
+      "size": 550522
+    },
+    {
+      "path": "docs/assets/screenshots/nic-optics-lldp-detection.png",
+      "sha256": "95c4e911f0f1dca223733fbfd68f1b4741f937f4d2066664050043f09120a3ac",
+      "sha1": "61bc3f5fa34cf8787c03bb316cbfd22853e3fcc7",
+      "size": 602013
+    },
+    {
+      "path": "docs/assets/screenshots/nvme-smart-health-telemetry.png",
+      "sha256": "373c9ca3b2b79cef624552d696c3f9cc747ade08b3de0a98aedce3e3845a82fb",
+      "sha1": "3c36150c685d11ad6a301747890f7ef6d32fe41e",
+      "size": 488150
+    },
+    {
+      "path": "docs/assets/screenshots/pcie-lane-inventory.png",
+      "sha256": "72f969897239ac7cae5d7fe5e678299b291bd8aef68122c23866e9fc53f63504",
+      "sha1": "b8d6d5e7347d286f14f66c6eac43a5d7c89f7c68",
+      "size": 315480
+    },
+    {
+      "path": "docs/assets/screenshots/single-host-server-tiles.png",
+      "sha256": "6cc722623e06242dbf1d0f7e3b5d1f6f137c50123cbcdfdb649db5708e8f38c7",
+      "sha1": "cc0020ef56dd3d55f38529cf464691ab39a870fb",
+      "size": 705088
+    },
+    {
+      "path": "docs/assets/screenshots/sub-category-system-overview.png",
+      "sha256": "0c052cf5101d26e4f0e360e95f1c21722953bcd4dea68c4481a4f6881efc11ad",
+      "sha1": "e8ad7338379ec22393d2a3e04e692504a33daa67",
+      "size": 477138
+    },
+    {
+      "path": "docs/assets/screenshots/system-event-log-monitoring.png",
+      "sha256": "62e6b345635e8c888a107bf4c86f2db524642d968d65c3de2af58559b3c64e59",
+      "sha1": "dd7b261e71dc055606af8fea05d902034910547a",
+      "size": 128073
+    },
+    {
+      "path": "docs/assets/screenshots/video-mac-launch.jpg",
+      "sha256": "01d1756e2afc48c69676b7ffe72b5c7c5097a5f4cc6c0ad238e77a9549b2017e",
+      "sha1": "be07baca8658e66a58a5afbcaaad382b93bd9d0e",
+      "size": 29200
+    },
+    {
+      "path": "docs/assets/screenshots/video-report-overview.jpg",
+      "sha256": "fb11746e9482d085bab8703f9338f40a8a2b690315fa4a9d526f7b0ce03b831b",
+      "sha1": "4b3bb995a096fc0db4fa1282f375fb9257c51d57",
+      "size": 99912
+    },
+    {
+      "path": "docs/assets/screenshots/video-scanner-quickstart.jpg",
+      "sha256": "3c5563bb589d5619affdab221e10778aafa359d6c91dfea4f6c28b43ce0fdaac",
+      "sha1": "fd14d2e51e7d4b6621311c7c4cdb4a4ff42b547f",
+      "size": 66258
+    },
+    {
+      "path": "docs/assets/screenshots/vsan-esa-drive-compliance.png",
+      "sha256": "782d9b77ea12413d31a950a32d70033e2c3369ea7179915cf74848f02358023e",
+      "sha1": "c372757c2facd20a5c540362835045eb598d4867",
+      "size": 458235
+    },
+    {
+      "path": "docs/assets/vcf_readiness_showcase.gif",
+      "sha256": "7b3035adc8ad5ca5e259469b3fe32a87614ac564eeb30e4c7cff253eb4b44f7e",
+      "sha1": "be0d7242912d9b7f4ba62fe9ee2c7efa678c4c60",
+      "size": 4611923
+    },
+    {
+      "path": "docs/assets/vcf_readiness_showcase.webp",
+      "sha256": "40f2cae32de0d108e0c7aff7a3448c29800aea49572afb2b76c1b3f17d661f44",
+      "sha1": "d47506eaffef65fd9f18794d60a3fec80324f9ef",
+      "size": 2864496
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-app-icon.svg",
+      "sha256": "ebcb01aebb358163e3aa42d5a824fd18ffecc0d6f0813acec500aff363059878",
+      "sha1": "9d095b950d9c5eb1e135d97a1842a824321224d3",
+      "size": 775
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-avatar.svg",
+      "sha256": "c28e2613a3e9ff7954e9fde51fd1fa54b165095458e1b0cb9116ad28d3b3501b",
+      "sha1": "785d567bc818df68eb7e4bdcde635db8c6a1355f",
+      "size": 370
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-badge-lockup-reverse.svg",
+      "sha256": "7349c79f2583c0696d267a03a007a397513afb650da48ee6239a94822fa8613f",
+      "sha1": "0031c96fcf5ea2b153b8dd082de27da72196b308",
+      "size": 621
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-badge-lockup.svg",
+      "sha256": "b69d20dcbcad693901a28576ce28901540f4aadf4dc55dbb9ca200a68f954342",
+      "sha1": "081e97fe049f17674cfb244d8358380aedf08e12",
+      "size": 612
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-favicon.svg",
+      "sha256": "20967d683e928a29d317e62c853b9151e0ffa652c967d2d3a0280eb9e6f12034",
+      "sha1": "60c74c34ac1f8a4eda8f4dea96976a2086e1e1ba",
+      "size": 389
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-mark.svg",
+      "sha256": "7ba240d41c13b79b705396d6666910b76bdf16daf055a68acd940cec1389431e",
+      "sha1": "b4fe663d6dfcaa9168b67b940f039df129254405",
+      "size": 389
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-monogram.svg",
+      "sha256": "feefbdbaf710737d89d2a1aa8eb919b5b6c7be2745ab483615340be52b13933b",
+      "sha1": "b6b59107c87fa374bf6066691ffdb593736662bd",
+      "size": 750
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-nav.svg",
+      "sha256": "1b394e1635268fea2fe9e1088c3f32be62f2585230a75836f249429752e43b5d",
+      "sha1": "efebd29229d0aa977d466059311f937b7452afda",
+      "size": 623
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-og-banner.svg",
+      "sha256": "1b036b1ae74cf366eff1b0c05f615fb2600e2e5073f9d699c2a57647d0b27840",
+      "sha1": "e538ff8ef842b68082874d521e4a1064f0430b86",
+      "size": 1574
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-readme-header.svg",
+      "sha256": "28f3df6c0f57130b36bbd469da544b8e9d595e9079342d3c457526b79d4fb003",
+      "sha1": "0c4bc027851424378f8f102a471490c487623800",
+      "size": 882
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-scan-reverse.svg",
+      "sha256": "dd26df91b191189a499f00cba10491ee31c0c1e7ed8868a7f0251ba8861ef7f3",
+      "sha1": "e916178a8591bba0ea83c17a9660e0284da790c5",
+      "size": 639
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-scan.svg",
+      "sha256": "59e018ebee8a861a2d81d2a6b82a09a9fda30366da30081bee0c500932adc587",
+      "sha1": "d81b9dfa4df4ed9902ad3789fda43141ed7c1765",
+      "size": 630
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-stacked.svg",
+      "sha256": "2e2f2a1596213f55706d6a1c5aed3fd29bfb7dff28d90a9cadc12f25e5ac6bae",
+      "sha1": "f5f40f683f2b4619d9fc207848b233c88d4d8fa0",
+      "size": 895
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-wordmark-reverse.svg",
+      "sha256": "dfb48b1f74e56207c2cf8483a4889d546d1f0fbeac0ae483104fa7865964ad20",
+      "sha1": "150dfaa96b711bea878f23d2287378c6d89972c0",
+      "size": 458
+    },
+    {
+      "path": "docs/branding/branding-kit/production/vcf-r-wordmark.svg",
+      "sha256": "475417240d1de0b560778719bf82b3438f7de4a4481948d756fa364479284b95",
+      "sha1": "ecb8a247fd257293dafd7b3c14cf6f0f343330a0",
+      "size": 482
+    },
+    {
+      "path": "docs/images/01-fleet-health-tiles.png",
+      "sha256": "c5b3d335ffd00c524dcb7ef19afaa4af65c17b2cf46aba8dbe8695c28b43dcf1",
+      "sha1": "ae6edd6c9c77ed1b84957f55028edb9f41e36cc7",
+      "size": 492780
+    },
+    {
+      "path": "docs/images/02-fleet-power-sel-tor.png",
+      "sha256": "81520c5b2777cbc4d467074a7706f297139fabf8221a39bbad038d13354633a1",
+      "sha1": "3967c4f66cfd110fdaad52684657cd3550cb81d1",
+      "size": 374361
+    },
+    {
+      "path": "docs/images/03-per-host-table.png",
+      "sha256": "3dec549950af7bf3420af1100288c09978d268c7b9be5908ccd322cd2dfd751f",
+      "sha1": "ede469045e1a1c44f97829d99c46d58d5917dda0",
+      "size": 409120
+    },
+    {
+      "path": "docs/images/04-dimm-slot-visualizer.png",
+      "sha256": "9760410418d16653f6c6264878e3df352aaf93cf777e2ba199744954403513d7",
+      "sha1": "b34a61cb1748bc5b06bbf245c2a63a173193dbfb",
+      "size": 424303
+    },
+    {
+      "path": "docs/images/05-storage-vsan-esa.png",
+      "sha256": "f44c8bd3fc3c0620f7c42f2d86015d1bb6d3c875006ea294288573a9045895d4",
+      "sha1": "08bc88011449baff54fbf3366bc6dd6a0b9837c8",
+      "size": 379991
+    },
+    {
+      "path": "docs/images/06-nic-tor-mapping.png",
+      "sha256": "bb57ee127e1d1bad7056c2522442af633a8227ea30a593fbcda78ce0a3e69d69",
+      "sha1": "a3d10c6ecefff8b89af53737aab29974987e1254",
+      "size": 378896
+    },
+    {
+      "path": "docs/images/07-bmc-security-audit.png",
+      "sha256": "fe5809f2cbbf268845f3fb77dc52cebadadf22d3e4df8e1fbc8d9604afb90f3b",
+      "sha1": "08dc0088bfafffd90fdf5c065376570182f4f72b",
+      "size": 382773
+    },
+    {
+      "path": "docs/images/08-host-scorecards.png",
+      "sha256": "bb95f441b5362a439cb908e35b4481a8e85a43a7da8d074b4a563fb59a91ba66",
+      "sha1": "715390e9ddc5f4f103470772fb95784fc2766170",
+      "size": 543466
+    },
+    {
+      "path": "docs/images/09-system-assessment-sel.png",
+      "sha256": "ba234a91dfce137fbb77ad964c3a95164d88a5dc98e1d05238d5813b74ed3b6a",
+      "sha1": "26432606aabf144f9f4965b7ead50200d7400bb4",
+      "size": 399422
+    },
+    {
+      "path": "docs/images/10-tor-switch-fabric.png",
+      "sha256": "1fd936d2b5e980124f57e7593e37fb017e9af67e699c7183d69fc1a84d08d048",
+      "sha1": "cf3b6d39f045d8b358fe8a881de2d60c573149d7",
+      "size": 475358
+    },
+    {
+      "path": "docs/redfish_oem_map.svg",
+      "sha256": "276bb5d8028a6ff002d3ab6527e742881e765867f60a2b0b6b14ff7f138098da",
+      "sha1": "2a8b314b0d25d771751be7fa64c10ea88f0c06d0",
+      "size": 13212
+    },
+    {
+      "path": "docs/scg/vcf-911-bmc-controls.csv",
+      "sha256": "2e157fdf8f0cd4e525d22a0d30d89a3141814cb01d6cb02c4ee01a36c4376894",
+      "sha1": "d19a8fbb2dfc91d36a94dc5e96b9b73b93875b66",
+      "size": 12504
+    },
+    {
+      "path": "docs/scg/vcf-911-bmc-hardening-guidance.md",
+      "sha256": "132f79bd21574eb867bd54d069595867077fcf8226c2c53e8b24e5706865a288",
+      "sha1": "a466001826ff986acbeddeac3a5bc278520cad46",
+      "size": 26840
+    },
+    {
+      "path": "docs/scg/vcf-911-redfish-audit-reference.md",
+      "sha256": "56e7c49aee065a72e83e99fdd87a8d781c7c03557b2a0cc7301df4568e53700b",
+      "sha1": "c9632b0ecd881ca4eba856b27b5035c7a352783a",
+      "size": 18061
+    },
+    {
+      "path": "docs/user_guide/00_introduction_and_toc.md",
+      "sha256": "83f0b5c4e5b08f542df7c4ade302e069f218dddd888a18c2f1a71bce1a096c57",
+      "sha1": "2abdc772b4fc8079b65ed8d71178fc2b69f3ea56",
+      "size": 4456
+    },
+    {
+      "path": "docs/user_guide/01_fleet_dashboard.md",
+      "sha256": "e216c8a1222298886503131efc5900dc5b59a88ae4f087561e9af6e73064da61",
+      "sha1": "1df6e34c452fa73378ca10c92eacbfe3dd9f2eec",
+      "size": 19495
+    },
+    {
+      "path": "docs/user_guide/02_detailed_inventory.md",
+      "sha256": "3dd33debc519c2a37de190f933efb3822e07dc1c4486d4921f9ad87d4aaf5dbe",
+      "sha1": "054e78f256a94597ee0f812e3726525879de0f00",
+      "size": 25130
+    },
+    {
+      "path": "docs/user_guide/03_host_overview_and_cards.md",
+      "sha256": "0e93680cc823accd02a3530c0a521aad53604494abefac35aa2ded13d497b206",
+      "sha1": "81a915c53752ffff81d3cb2e76f53357e7cf4d60",
+      "size": 12820
+    },
+    {
+      "path": "docs/user_guide/04_cpu_and_memory.md",
+      "sha256": "dfb582832de18f7eace6acd81413ae2277122be45bad0cf93a5e94504a5901b3",
+      "sha1": "3c6c6f44f84dbc6b294df1624e8f8a9209b2e0e8",
+      "size": 9774
+    },
+    {
+      "path": "docs/user_guide/05_storage_and_nvme_smart.md",
+      "sha256": "e38e94f8d71126aba86223d8599c46d593b33a80263cd984d7efd682be5c4754",
+      "sha1": "2754166dd453b6f70ebb9cbfb3ec500a980e8c45",
+      "size": 13815
+    },
+    {
+      "path": "docs/user_guide/06_networking_and_tor_fc.md",
+      "sha256": "467fce191792700cb003ba106529736242710affb0cc70f083024d26c6c9c66a",
+      "sha1": "07199752b400a6e50fccfa36d0b398f45c961583",
+      "size": 8551
+    },
+    {
+      "path": "docs/user_guide/07_pcie_gpus_psu_thermal.md",
+      "sha256": "98015529cfb429635ba94359fc0700030d856390d909b6d028e327ffa2f5fdb4",
+      "sha1": "fe3e4cf5952598afc7bf516faf7b1255af2292d9",
+      "size": 13027
+    },
+    {
+      "path": "docs/user_guide/08_bios_and_platform.md",
+      "sha256": "8bb0f0436e0898fbf65167ddad52529bcc1f535edeb882134ce80e0f612d93ef",
+      "sha1": "e51ba231b3dda6f17f28f47fa813c5df9934bf5c",
+      "size": 15168
+    },
+    {
+      "path": "docs/user_guide/09_security_and_bmc_audit.md",
+      "sha256": "cbd10109558bb2d2bf8cce11060a51ff4eb0b94f8e19c90abd15ec41ed1f046d",
+      "sha1": "054b3758e35f14c3eb79d4af9248c25b58979134",
+      "size": 30014
+    },
+    {
+      "path": "docs/user_guide/10_firmware_os_warranty_webui.md",
+      "sha256": "afbb6d12b36d25357059379c18830f2b42400bf75098e9271b0b94885d251cef",
+      "sha1": "fbab708c0fd9080d0bd91b9f08d99c404e44b955",
+      "size": 25277
+    },
+    {
+      "path": "hcl/CPU Series_07-22-2026.csv",
+      "sha256": "f2bdd3f43ad1fc27980795613ae73b140bf41956364ddbbedb6dbd764ae19dc3",
+      "sha1": "408b7d55d52820091ecd7bcf18162fd242e72579",
+      "size": 3533
+    },
+    {
+      "path": "hcl/vcf_hcl_bundle_latest.zip",
+      "sha256": "0d4ef4e60acb1195b6345dc4d49343688fd812ad2f228a4d04497482d0a57968",
+      "sha1": "2bdb62f9de7905ac6d8ff7b1a05df14e41bf3ba4",
+      "size": 611657
+    },
+    {
+      "path": "licenses/clarity-core-MIT.txt",
+      "sha256": "d5edbf791c1d6776322efcadfc8d771b0b66ae5067bdd75ea53ed9e56086a2ad",
+      "sha1": "5ed2a4bf5f57f57f741f56128652f91c67e5696e",
+      "size": 1095
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "a5ab5098b52a83d5c8d7192f75d1ec24dfc30187098e281a6504856511c7c77e",
+      "sha1": "69d082f5d58ed84e39ab7cee46e7282346be4d1d",
+      "size": 7878
+    },
+    {
+      "path": "redfish_collector.py",
+      "sha256": "54a205a7c73f0467b45ed8175c5839e42f19a768a7fab4fb154a375effa72595",
+      "sha1": "87a8a1019655e1068d0b36349e20c74a72608bda",
+      "size": 1055
+    },
+    {
+      "path": "redfish_web.py",
+      "sha256": "580d3b113b6507966e46a45553d7adb1e3e985ed04f9d5c9d0bc6144bc3b71bf",
+      "sha1": "f8e9b34491dc6d6446b153ac7308f4a479aa5bb9",
+      "size": 715
+    },
+    {
+      "path": "tests/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      "size": 0
+    },
+    {
+      "path": "tests/test_logging_utils.py",
+      "sha256": "dea23afc73c80ccdd57398ee02f5042da04bbb6b37682ca63ed13271c92c2800",
+      "sha1": "ed763a807befa7fd99c88a6f9f6fdb9f94c973ac",
+      "size": 23362
+    },
+    {
+      "path": "tests/test_no_forbidden_imports.py",
+      "sha256": "d9102ae4e8d6653548d7a266d0171522700acadaf70d09e403b808df58036c15",
+      "sha1": "118a6ae1faf2743aec14bc56e9c68dcee11b6ff2",
+      "size": 2163
+    },
+    {
+      "path": "tests/test_public_smoke.py",
+      "sha256": "7f3477f99aeecb2f8ea3ac9611ef2595e9007ffa1df32f3e63ff9703e119a5e9",
+      "sha1": "8abee063442c72061a9eff9189b9bc150ca3ef78",
+      "size": 5074
+    },
+    {
+      "path": "tests/test_vault_crypto.py",
+      "sha256": "95c94da82374fae4d22fd1dc2e577dc87f5f685968342a588a08a85f94c789ec",
+      "sha1": "0701767a6d20837c773dbc6f47cdb7e2af5049e2",
+      "size": 6777
+    },
+    {
+      "path": "tools/README.md",
+      "sha256": "05ae0554351908fb1234f60a5905241ed93a4d0388f8693ab9c7a4819cd2bd67",
+      "sha1": "98662ee30080a65c1194b3eb8624f5c9a3581d87",
+      "size": 564
+    },
+    {
+      "path": "tools/check_data_hygiene.py",
+      "sha256": "866da8b63fce1c92d35d75ed19f27e0c18e6ce379236d50a7bebfcf0314a81f4",
+      "sha1": "e9f05d1e47321a338be18ff239f84c040799aa94",
+      "size": 8099
+    },
+    {
+      "path": "tools/check_version_consistency.py",
+      "sha256": "14061f0aff4035c5a54569890dac5f030422fd84516b157661912858ce2be7ba",
+      "sha1": "912db8cf7637388d8f4451f42794bfd6aa492722",
+      "size": 7914
+    },
+    {
+      "path": "tools/release_dry_run.py",
+      "sha256": "6b1839da826fe8a53a237d579d281b8d853714de11324ece3c01e91f277c27ec",
+      "sha1": "ab2bccf5383d02faa9b07b58b9ed03a2b0219a9c",
+      "size": 14436
+    },
+    {
+      "path": "vcf_hci/README.md",
+      "sha256": "728341f509ade3f9352e12db82590b784df46c5b9b179d1f144532556ffe83da",
+      "sha1": "5186805052411cc04a04881f9d74d2e9b1613272",
+      "size": 5730
+    },
+    {
+      "path": "vcf_hci/__init__.py",
+      "sha256": "30697d46a20cf1ebaf0bb3a84d8423946d2d740a22ac6148b78d2403276d424a",
+      "sha1": "89171b339b6edce58fd547f5d4b43f3440f9ae4b",
+      "size": 3982
+    },
+    {
+      "path": "vcf_hci/__main__.py",
+      "sha256": "93c60a9bc36ed0d66c6718e53f5c42b8be2eef510b2b230b5eab3fe9b905e2a7",
+      "sha1": "2d61a84174ba4a4eec2db8a0df6fd3c544a2906a",
+      "size": 275
+    },
+    {
+      "path": "vcf_hci/bcg_links.py",
+      "sha256": "219f31174ed460cc421e253fa6c5e7a58ae23945cf87478afd5c56c1172cffef",
+      "sha1": "59ec95e5709aa35cde70a235921d8d2781313a20",
+      "size": 53341
+    },
+    {
+      "path": "vcf_hci/bios/__init__.py",
+      "sha256": "2f577a2c3ca5c2f7ed308f99274d33f7a116498f7a1ba3f15cc09035ef4b3235",
+      "sha1": "566bca294f394c4936e03a5f97725f6a4bf1a71e",
+      "size": 1204
+    },
+    {
+      "path": "vcf_hci/bios/cisco_baseline.py",
+      "sha256": "6bdc5dd96f2744ece4a1b7160a23f08e5db691475edec52e98ec44225e6f1117",
+      "sha1": "1d30839e16f91db29ec0f65e28b3115555eabcda",
+      "size": 53387
+    },
+    {
+      "path": "vcf_hci/bios/dell_baseline.py",
+      "sha256": "024ef6c812513a6f197ea918294123ff5b42b05ae0cf192571a1d599308035e7",
+      "sha1": "225cea189ff7f0e51a9507f1e5607f60d65e51e8",
+      "size": 70166
+    },
+    {
+      "path": "vcf_hci/bios/generic_baseline.py",
+      "sha256": "f7b5d2a1ebcb7732aac7a7acf933a5237c232087e9fb1606d9a8fd6d0b5ed721",
+      "sha1": "af8c7aec00fa519d79c752b15f42d237c47fe012",
+      "size": 32120
+    },
+    {
+      "path": "vcf_hci/bios/hpe_baseline.py",
+      "sha256": "be3ca0dca40fbd3e31cc288eaa61133b6d97a6e4dc342375713b0ec8c8167a72",
+      "sha1": "1d8722bd55f18cb2df0e11d2e70935c6e1d2f1e2",
+      "size": 48165
+    },
+    {
+      "path": "vcf_hci/bios/lenovo_baseline.py",
+      "sha256": "bb8a90280c9c9b319087e762b5d650bef6b28345b8dc6eb7e4e7d9f4b1195333",
+      "sha1": "7c5d5b00465d44bcec949dd372c3268170581fda",
+      "size": 46221
+    },
+    {
+      "path": "vcf_hci/bios/power_modes.py",
+      "sha256": "db1e7ea73e152b903d1566424ac336b771e7489631d1df78e522cf719ed2e428",
+      "sha1": "d047e4ee9b10b2704aba3ae6423ff4551963cfc8",
+      "size": 22331
+    },
+    {
+      "path": "vcf_hci/bios/ras_modes.py",
+      "sha256": "85702754f715bf4913c6ddf85028156663cda214cbe53d127529e361689d79b9",
+      "sha1": "604f880731243f43e4e71d3efb131ce831a15954",
+      "size": 33076
+    },
+    {
+      "path": "vcf_hci/bios/recommend.py",
+      "sha256": "5a76f3cf90fdcea784073e49ab3e290b591c3eff9d0c4e8fb6d125c32649d6e6",
+      "sha1": "1578bce0965140dee2067023e25f20f00a6b7379",
+      "size": 11417
+    },
+    {
+      "path": "vcf_hci/bios/security.py",
+      "sha256": "d7bc2a66c32904050e4c93817e5486fdc7807bcc49c6342118525cda74733b7b",
+      "sha1": "ed11a083b4f138a673a71b6b43ac5fe9244a5004",
+      "size": 9061
+    },
+    {
+      "path": "vcf_hci/bios/x2apic.py",
+      "sha256": "4817c60f3f8db9ca1ac0efca83ae77a964b3dc63887869b6cc38fe454d9c00c4",
+      "sha1": "6a53eb1072e20f9b3343fb275f04a3ea1755fc5f",
+      "size": 2564
+    },
+    {
+      "path": "vcf_hci/branding.py",
+      "sha256": "8b55ae8988c9866ecb0db58f2760b088c519eaef00495fab65e432b7a26b6965",
+      "sha1": "e151620c824e8aa4bfd2263e907f8c52fceffc90",
+      "size": 3487
+    },
+    {
+      "path": "vcf_hci/clarity_assets.py",
+      "sha256": "7711d8dd2267d42f6d33a5b17917144485d595ce6a65ac6dfdb62eaa107c053f",
+      "sha1": "dbbd834a1d00b3be1c2a1301e435af79265bb960",
+      "size": 32339
+    },
+    {
+      "path": "vcf_hci/cli.py",
+      "sha256": "f384ba3dd37400dd88cb2d5f566e8092100b96a6ad40a3477f89a41f7ab8ad21",
+      "sha1": "b793ce043e4b3192a0815554f1b61d39dd57aa43",
+      "size": 38237
+    },
+    {
+      "path": "vcf_hci/code_metadata.py",
+      "sha256": "be681b715641ac3fc7428a9d7b54d231906729b8e6b8eb9d67c1b9fdea13c10b",
+      "sha1": "bd902b779091c6ed29e8eade0a02c527e5025db2",
+      "size": 8189
+    },
+    {
+      "path": "vcf_hci/collector/README.md",
+      "sha256": "7f0ee5cda38c04801c214b4bf80efc3416f5972cd7dfbf3354792619aeb055c2",
+      "sha1": "5c0b5602e31c90e987dab2e7c9afa684e57544eb",
+      "size": 6965
+    },
+    {
+      "path": "vcf_hci/collector/SCANNING_OPTIMIZATIONS.md",
+      "sha256": "d7470a614a845dd6b8e27697bc3953d27963b8ce0a99db96418650b2586d2fea",
+      "sha1": "7b69c72a92b1d11d2c7f4a83c92691b4598955ca",
+      "size": 33530
+    },
+    {
+      "path": "vcf_hci/collector/__init__.py",
+      "sha256": "87b710a770dfc510b16e51cf5e0e8fff58b304361cf9c891374da0cdeb4a1081",
+      "sha1": "d6c93495541b857af0516d8b6721f7f2c131a97c",
+      "size": 1496
+    },
+    {
+      "path": "vcf_hci/collector/async_helpers.py",
+      "sha256": "5c5236403e46a68750852835b9d8954dd758a24514b89779d5f09ea3aa06572f",
+      "sha1": "cfc2fc9ab39f5ab0babb477f9810c3810f2cac41",
+      "size": 4749
+    },
+    {
+      "path": "vcf_hci/collector/base.py",
+      "sha256": "88fe4bf5a787cb58d4a26bc1c43bbf7a31783ad6672d4ec717ca320191ae0601",
+      "sha1": "6ae46b733959376ea4af9c533ef2cf570214cbd5",
+      "size": 96521
+    },
+    {
+      "path": "vcf_hci/collector/collect_bmc_security.py",
+      "sha256": "369a43860a4d0aaf3fae3f180f591351c84644278250a91733ecd24b7b27460c",
+      "sha1": "ab496eaef1a553e8c96180831ce6b8020a88b2ef",
+      "size": 42201
+    },
+    {
+      "path": "vcf_hci/collector/collect_gpu.py",
+      "sha256": "daadd47e02ef4357d2147f1bfd23d249ddeb13b9de4889e05899a628bf56e288",
+      "sha1": "dbd58e510eae1f939cab4898c62cfaabc473805b",
+      "size": 51507
+    },
+    {
+      "path": "vcf_hci/collector/collect_logs.py",
+      "sha256": "0b5579dc02521f9e243875a1723e06f4fef8b758ed39be726e8794213d44dcb5",
+      "sha1": "801ab8080777d8cfe4da6db137d3343bc51e4b67",
+      "size": 7721
+    },
+    {
+      "path": "vcf_hci/collector/collect_network.py",
+      "sha256": "e13d8c8cdff5c125bbc7fd38114c9c2f267358ee70ddaef733a5883be7206929",
+      "sha1": "369d846962a5c5ca5909126aaa66251690da93e1",
+      "size": 167912
+    },
+    {
+      "path": "vcf_hci/collector/collect_power.py",
+      "sha256": "672094758652acd6521ca6dfdc7e16ba5e3344679928bfddb4f7c294428f7b49",
+      "sha1": "fcd942cc0b4d59c935a780b3b75e677ad400d2e9",
+      "size": 35207
+    },
+    {
+      "path": "vcf_hci/collector/collect_storage.py",
+      "sha256": "faf3291ac2493fa9f468668aa17dc7259e39b21a29275ba79e9e1e5e0fe32a7b",
+      "sha1": "fbb9cb3b54e2110e03b29c4d684ea1f792d790a1",
+      "size": 89373
+    },
+    {
+      "path": "vcf_hci/collector/collect_storage_drive.py",
+      "sha256": "3811a0b43760ba92155306ba74f342aba048ffbd0b11c6115580b277ce0f42ef",
+      "sha1": "24b56c0cf814c21abb4bd3e58d6e650bb31e0b21",
+      "size": 51858
+    },
+    {
+      "path": "vcf_hci/collector/collect_system.py",
+      "sha256": "d191eddf65c0fc34c29e28a029df888a2cace977a30d54f0ca6d0eb041c88fe9",
+      "sha1": "15927143bbe0d111f50fded00085b7f9660814fd",
+      "size": 122818
+    },
+    {
+      "path": "vcf_hci/collector/collect_telemetry.py",
+      "sha256": "5671def13f19219aa4886cc38598843aed1e459376cb7f4e412c4f768afe7f1d",
+      "sha1": "ae7bb2283a3ce17671ee92ef2dc4340dad549fcb",
+      "size": 13476
+    },
+    {
+      "path": "vcf_hci/collector/contracts.py",
+      "sha256": "ab249df588814befd9beb9b47212bf0c1dba934e844f5867c47e64571e4f7e97",
+      "sha1": "eefce76ae96920ac5e65ddd99ced351bc3e4d4e1",
+      "size": 1071
+    },
+    {
+      "path": "vcf_hci/collector/crawler.py",
+      "sha256": "93c02a8a6a2aedbf26ed0d40113c7ba9c13af60bd17fd9b919cb148d947e4355",
+      "sha1": "4a867cbc0143f3a3ed634fa1810397094ecf7e60",
+      "size": 32534
+    },
+    {
+      "path": "vcf_hci/collector/discovery.py",
+      "sha256": "bdfd242c7fba229bbe281270b75f0cd01164b573938411016353a1aa959ba0b4",
+      "sha1": "03476251f296c7141b01bf4fc39477e9f2cbd6ad",
+      "size": 40514
+    },
+    {
+      "path": "vcf_hci/collector/fc_plus.py",
+      "sha256": "e52edce923d85fce6230e97308d2d3ac7ee2d464e66916316aec73699e61ac83",
+      "sha1": "5ca098b5ab9ae13bd9c53a053289703dd78788e5",
+      "size": 2509
+    },
+    {
+      "path": "vcf_hci/collector/hardware_findings.py",
+      "sha256": "cc2c3356b3acb75de6c897dced6594ad2a660d737368b350381ac4a0a941b1c7",
+      "sha1": "66ae253a720b60bb7aaf3ad1f0e4441d8a5b8d1b",
+      "size": 4450
+    },
+    {
+      "path": "vcf_hci/collector/http_session.py",
+      "sha256": "98207fbce2bdcdf32feb062f70fa5514aaabd53ab81ed3622fd92e9a527bb070",
+      "sha1": "8ca8b6250168d094e55d3532d3d59148f197497a",
+      "size": 39453
+    },
+    {
+      "path": "vcf_hci/collector/metrics_fetch.py",
+      "sha256": "6df016fd8448a1c84674fb3efb076778c746d76a4ffa31dcf254cc678a728324",
+      "sha1": "12f77e3f84fbd3fda54eae862a2e25f5fd99bb1c",
+      "size": 5375
+    },
+    {
+      "path": "vcf_hci/collector/oem/__init__.py",
+      "sha256": "71069e473268ba5555d3665960b71edfdc24af5c69e3c3b70e1e356e99199fff",
+      "sha1": "2030ae21ab3b32a6ce352c4dfffc9172ccd20b50",
+      "size": 10483
+    },
+    {
+      "path": "vcf_hci/collector/oem/asrock.py",
+      "sha256": "522c801e41209bde389ac6106875b899926c39ab265a44f5d01a1a46c813ed3b",
+      "sha1": "0774f7531b8dbdd3e2fde51a743d7a3ebf068fad",
+      "size": 4929
+    },
+    {
+      "path": "vcf_hci/collector/oem/cisco.py",
+      "sha256": "fa6c8be52b899b10e9f0687d902adaf74b5ee12e89dd99f96514f5f90d7f6076",
+      "sha1": "2f2c665eef464e7eea2b9de1a9edba3c76151ca3",
+      "size": 39628
+    },
+    {
+      "path": "vcf_hci/collector/oem/dell.py",
+      "sha256": "c98c4c595d34ba8e73721b00d9900edacce6fdf53effaef765ab6b4a3a03e4bd",
+      "sha1": "7aa529c2f11199765f9baf8f45df7e202179623c",
+      "size": 57532
+    },
+    {
+      "path": "vcf_hci/collector/oem/dell_storage.py",
+      "sha256": "c1f588ab4d3f26a5a2e928c73a447fcb15df684b678573872c73a898cb268da1",
+      "sha1": "12fec8ca930b06d15ca8e9e71da36a95bcea9128",
+      "size": 2861
+    },
+    {
+      "path": "vcf_hci/collector/oem/generic.py",
+      "sha256": "6db8a01ede4fb99941640f94c00672353160fed90801981143b1b528d45b82dd",
+      "sha1": "f869ce3c6fa0f94e52bd04322d6655e4e16a53a4",
+      "size": 660
+    },
+    {
+      "path": "vcf_hci/collector/oem/gigabyte.py",
+      "sha256": "2f52f110ad6588aab0590b4759d4ce115ceb85017978fab3d7f320f7e0b1ce3e",
+      "sha1": "23ae11f31efe047644ed57435d9e1e17e96b4c8c",
+      "size": 5359
+    },
+    {
+      "path": "vcf_hci/collector/oem/hpe.py",
+      "sha256": "58bd6e6019ba776688272156842ea6f2abd3479fb3d728a5e107ca57d018144a",
+      "sha1": "fed3a2dc3d4ec94943965ad7e7d402d6dd789286",
+      "size": 34407
+    },
+    {
+      "path": "vcf_hci/collector/oem/intel.py",
+      "sha256": "04d71e9fa4c1b0e6fae1caf71f32d084f3502d17187a43231f45cef2bff27ba9",
+      "sha1": "785685707f8ccff2696b5d40eb5f3857ba8bd960",
+      "size": 1173
+    },
+    {
+      "path": "vcf_hci/collector/oem/lenovo.py",
+      "sha256": "0b1e4bd0142b29849767fe943063aead5e3f533750c9987f670b497801e496de",
+      "sha1": "10c77efde49f9f8b3fa2b007498bf9cc1f341f6c",
+      "size": 24427
+    },
+    {
+      "path": "vcf_hci/collector/oem/quanta.py",
+      "sha256": "584be426ca7b6d4cae9c24be90072b383a8db74c3847063f8e1b5bb801869feb",
+      "sha1": "10279fcaf2b5a22d543cfbbdf63e6d53e63a60fe",
+      "size": 4180
+    },
+    {
+      "path": "vcf_hci/collector/oem/supermicro.py",
+      "sha256": "f80ce5e01cd7beb7856d3284206afa47e3364a0c4637edc8ed20642eb75cd3a4",
+      "sha1": "e03aea3413110aa8c72fbe248e344ece5128b491",
+      "size": 12393
+    },
+    {
+      "path": "vcf_hci/collector/oem/supermicro_pcie.py",
+      "sha256": "7932e05f8cfd907ae8422d80b1a79a6fe838b8b3552c2430f737c4093589e635",
+      "sha1": "77302d21923f796e0df1cbd8e9e5fcc9ea5462dd",
+      "size": 1765
+    },
+    {
+      "path": "vcf_hci/collector/ops_collect.py",
+      "sha256": "2eade094e84adb1535e2601ed08995baf38dc968b7b39714c74c1161de559931",
+      "sha1": "4d48e8635fef380f1c12ec0c18b850d62f23746d",
+      "size": 17847
+    },
+    {
+      "path": "vcf_hci/collector/os_eval.py",
+      "sha256": "952511fb42035101f7046a464ba8b1436b9b66a6c1ca71fa6f62fa5b21165320",
+      "sha1": "5b737896eaf4c966becd8ac6c8a67d397a8ae969",
+      "size": 6636
+    },
+    {
+      "path": "vcf_hci/collector/pci_utils.py",
+      "sha256": "3a4b3c6c2ca8af882be61c863606541c2249d287707a90ce498d51c8628e023f",
+      "sha1": "7ba5a779efefaf8e63f73ab1def1b61c2e321a72",
+      "size": 73799
+    },
+    {
+      "path": "vcf_hci/compat/__init__.py",
+      "sha256": "cf04e104f2b68206cbdf8c9a8fe0b027dc3072ad9ae296021f610f1365c1b295",
+      "sha1": "f929e2e4b48987463724fe3a590c203948e15b6f",
+      "size": 1764
+    },
+    {
+      "path": "vcf_hci/compat/bios_boot.py",
+      "sha256": "01e9dc084bffbde344013069961e041cd35a66d49a8df60f8d71acb6a1678244",
+      "sha1": "dd7c797b84d751dfd536010bf41204830be2aa9f",
+      "size": 6439
+    },
+    {
+      "path": "vcf_hci/compat/chassis.py",
+      "sha256": "69514b1ed1b1913664c80a86f7e0798fa6c162ac11c6ad2d48bc700d97695ed7",
+      "sha1": "ec6f08b49cf501b2ee1c4feacf661d3c668db7a7",
+      "size": 569
+    },
+    {
+      "path": "vcf_hci/compat/cpu.py",
+      "sha256": "3b59215a2f523f7f3e47e37133da4b51e3e9249e6e2644d0ff53a6390567ea32",
+      "sha1": "52c0fce67de296c5aef07bf28d842f98c4a81c5e",
+      "size": 30259
+    },
+    {
+      "path": "vcf_hci/compat/dell_eems.py",
+      "sha256": "942cf40af78536d89adc594694806e877206455ce84b4937031e6c947c1e1c31",
+      "sha1": "1a5017a6625f63fe318e819dc2b9993b250079ff",
+      "size": 35401
+    },
+    {
+      "path": "vcf_hci/compat/engine.py",
+      "sha256": "ff11f9f11a11b7c4b13b3b36d32f8a3ad0d493a44cdcbbd35c49300db52ab778",
+      "sha1": "7167ccc169fa19f0f2a3622070d0df83cb15f67a",
+      "size": 1109
+    },
+    {
+      "path": "vcf_hci/compat/firmware.py",
+      "sha256": "c8eed365eb95a0c15257198d67373eef803c2b877aa660fbb07c712fafbeab64",
+      "sha1": "2a444df3b8ad456acde7bf6aeea9cd421f8636b2",
+      "size": 19304
+    },
+    {
+      "path": "vcf_hci/compat/firmware_currency.py",
+      "sha256": "de8194cff8493cf83f6746f4dc03d5cb1216f66602b12d34f6d6cd7db251f14c",
+      "sha1": "aaed2119fec3a92ad92070d75c0305c7e5f7e402",
+      "size": 11871
+    },
+    {
+      "path": "vcf_hci/compat/memory.py",
+      "sha256": "08d8e94478cd52823a10b8ab378d058becc3c098bca23ff00a60da9284e1a7ec",
+      "sha1": "19339fa6e1ce151fe88314d2355156af2d094073",
+      "size": 21992
+    },
+    {
+      "path": "vcf_hci/compat/npar.py",
+      "sha256": "efe2d57c9be0accd184ba3a8ffe54452dd7a5f07c71704661646ff72b28152f7",
+      "sha1": "dc106554cb619a0f6dda8d960710680f7887c03d",
+      "size": 3712
+    },
+    {
+      "path": "vcf_hci/compat/pci.py",
+      "sha256": "f7f71a9675d2c0545e5d2d6c05d4145e42e3a27aa155ed27a30af2fcaf1a37f4",
+      "sha1": "0fc2e1353b686db8b0b4a4936b9aefab9e49cd96",
+      "size": 19372
+    },
+    {
+      "path": "vcf_hci/compat/vsan.py",
+      "sha256": "82263f7e67a810ca1c6f2fc5710d017d03c18995938b393a8600026a32f439de",
+      "sha1": "0bc1a9f317632e370eac89a2c444bb554a853cdf",
+      "size": 2974
+    },
+    {
+      "path": "vcf_hci/compat_engine.py",
+      "sha256": "8222454863a375066ac11e6cf23277f8a8cecc4fa03fce70ee108145a53dd40e",
+      "sha1": "577d31065357d15a8ec4f6da6cc8a3228079a90a",
+      "size": 2760
+    },
+    {
+      "path": "vcf_hci/constants.py",
+      "sha256": "2c9323a4caf9592d3016518b31f6a96eaccdf35bfccb29351ec12ec545840c27",
+      "sha1": "35e5958e9d58d518dd4333de79c852a2ad3644a1",
+      "size": 90283
+    },
+    {
+      "path": "vcf_hci/creds_stdin.py",
+      "sha256": "ccbc1a23374c98b8ac0e1f6b15035a639db89736c5a19cad11d4ffd3001519f1",
+      "sha1": "53d9b21e34f69c991c65b2368e390e52e4593995",
+      "size": 3764
+    },
+    {
+      "path": "vcf_hci/enrichment.py",
+      "sha256": "61718514f1788d9d17fd3e8b84bb61c54d3ad0be10e15457e16d0f3671d0a71f",
+      "sha1": "9ee94dd67fd318f5b75f811f497d8599de93ba8f",
+      "size": 122364
+    },
+    {
+      "path": "vcf_hci/fc_inventory.py",
+      "sha256": "1dd7ab5b16a3e823c16d33995c4a353797f7604f8b9928ac0042d34e26a6b5c4",
+      "sha1": "7d0fdf3a7b6a9dc1f68a46b92c14d1f02ad10180",
+      "size": 4240
+    },
+    {
+      "path": "vcf_hci/fleet_discovery.py",
+      "sha256": "bd16d10207d5b85a1e04855a5cc31c8f1fa89ac9ee65dbfc169437ba10ddcee8",
+      "sha1": "cfb610c3e5ce4dfd7793dec097cae8d7e9fd73e0",
+      "size": 22724
+    },
+    {
+      "path": "vcf_hci/fleet_library.py",
+      "sha256": "71b0d701fb33416909234fb931c7f5072d07e545f597b7c46eae300af1421b02",
+      "sha1": "a3854714f519f6f67e38ab83af03354a8e32dedb",
+      "size": 19877
+    },
+    {
+      "path": "vcf_hci/gpu_label.py",
+      "sha256": "ba408060b4999f03e4e163b6d53a8bbbdf1703fb727b60a9da49ea08885f10b0",
+      "sha1": "928c7fd09771ac2862e577771bf0d302ad37e7e1",
+      "size": 2143
+    },
+    {
+      "path": "vcf_hci/hcl/README.md",
+      "sha256": "95332269ce4a1cc8ca8c7c33c4205b47fdcb2826048648e97bc185d943c72013",
+      "sha1": "24df405efe79bb488e5898fe862e29d6c8b6036d",
+      "size": 2494
+    },
+    {
+      "path": "vcf_hci/hcl/__init__.py",
+      "sha256": "096857e78c59c1a81b62326788d7b9072f4f4a2acc0ca72b808b813f1b9155b2",
+      "sha1": "a4a31f9425bec4f77df74b520e9817ada001ecd2",
+      "size": 1130
+    },
+    {
+      "path": "vcf_hci/hcl/bundle_manager.py",
+      "sha256": "f9e31e1eeee11e060baf80e8a84daa5b76219c79b8ba4262e65681fd781cdb6d",
+      "sha1": "e0a82ffab9aac930daeb6aef51fdb048a9067553",
+      "size": 16705
+    },
+    {
+      "path": "vcf_hci/hcl/consumer_drives.py",
+      "sha256": "42c7060a2c4b2d3278fbf42a3c9b33f79367c3dc63b29f310de3011ad8cc877f",
+      "sha1": "a486ba7b9fb2ec795ed388c32d97a1bd4c9a2929",
+      "size": 10107
+    },
+    {
+      "path": "vcf_hci/hcl/cross_reference.py",
+      "sha256": "602b013916e6c551af1e655634676964151e569634efff1df8e25efc190d5b6a",
+      "sha1": "708c5aa4005bc4c4a2d6e0e91ddf8ce7e3298287",
+      "size": 22141
+    },
+    {
+      "path": "vcf_hci/hcl/export_bundle.py",
+      "sha256": "a19bc11a322f97d32fa727325816edee89d3dcc7b4118dff911e75f80e49bf7c",
+      "sha1": "862a4381ac3c8ecf3b83853973d4d8c2b3b62ea6",
+      "size": 11046
+    },
+    {
+      "path": "vcf_hci/hcl/io_nics.json",
+      "sha256": "b9e0f528258835c4aa40a3b259d6dc75e441391c9239a7038435a3696187d378",
+      "sha1": "2a9f7a84e38908cc461d3b98a38ac8e194d3cedc",
+      "size": 10559608
+    },
+    {
+      "path": "vcf_hci/hcl/loader.py",
+      "sha256": "16421214a9c4a5a0f0772559964dc4c16271fbd985346260a8b08c68f999051e",
+      "sha1": "623e8eb223b1f563357ef934f4c1fac30cbd116c",
+      "size": 46972
+    },
+    {
+      "path": "vcf_hci/hcl/packaged_catalog.py",
+      "sha256": "07f05a2f18fd428d2095a90f074dfcb04524fc8ba041994dd26315b3a0be7ef7",
+      "sha1": "493fca9670ae03c7e4eaab8752389e70e4a17c64",
+      "size": 655
+    },
+    {
+      "path": "vcf_hci/logging_utils.py",
+      "sha256": "2b9e3c5159e4347c053e292c2a38d5801a2d55649f773c0d8108416121b9d593",
+      "sha1": "0db19d65c205ff71d805ec147700c9d58678ac28",
+      "size": 43207
+    },
+    {
+      "path": "vcf_hci/obfuscation.py",
+      "sha256": "0d40a9c4b87e5ca215ae1d83e62517161bf0ce5653923a64199d79024b59b469",
+      "sha1": "4e29a22ab36190457f99d6696549634128c5ecb3",
+      "size": 33787
+    },
+    {
+      "path": "vcf_hci/plugins/__init__.py",
+      "sha256": "7d641331057bab4f39ae86e6341a6fa49aad5b21e3d6beefd6f5015dd1c3b560",
+      "sha1": "acaf3889d5c92736d03abb48c379e2f8c724db0f",
+      "size": 78
+    },
+    {
+      "path": "vcf_hci/plugins/appliance_runner.py",
+      "sha256": "d87b97354a4b198595319ee536b7c9d2c32d306ea7e83bbde046bf7b01286f08",
+      "sha1": "ef57631def90482003e0ad542f5cbc43bb8242d0",
+      "size": 38339
+    },
+    {
+      "path": "vcf_hci/plugins/remote_vdt.py",
+      "sha256": "e571372305fe61ea749d0255f0b7b03226c2448dddb107050f3cb762c6207bdc",
+      "sha1": "9622216ec0dd8f48c694f23d45b550cc2df4b4b0",
+      "size": 28686
+    },
+    {
+      "path": "vcf_hci/plugins/vcenter_probe.py",
+      "sha256": "19c94ec1d60d41ad548666df0900eb47cc54605801780d6762a82bebba3c8cfc",
+      "sha1": "413e7aa76c385e00faf4a6472e1b0ce24581733b",
+      "size": 10119
+    },
+    {
+      "path": "vcf_hci/plugins/vdt.py",
+      "sha256": "1cfe2fa890936d3074db256cf6dc67c49512f8d2c2bd983a0670fff243a5b249",
+      "sha1": "7d24b929d3858d84483614c72973e99e5d80c79b",
+      "size": 10026
+    },
+    {
+      "path": "vcf_hci/plugins/vdt_install.py",
+      "sha256": "569ac0938aa783f4a383bdf7ee5ab13fe18b6ac4c4938881425f93aa1c968967",
+      "sha1": "0d772af9276dc2bd5b885b339e2340e0ebe912e9",
+      "size": 10613
+    },
+    {
+      "path": "vcf_hci/protocol.py",
+      "sha256": "4b20e21870694e88e726f885b7eba0c9567c6816212d7252f74078b25a9ca246",
+      "sha1": "dd2290d64a11d3c352b1cc940bf9bb5a11738abe",
+      "size": 13081
+    },
+    {
+      "path": "vcf_hci/remote/__init__.py",
+      "sha256": "0169f935d2b2ad1c2358bbb019384e104802bdfeb06439af7f7b3cbe5ef69dcb",
+      "sha1": "98cf5fa420cebd97f754723a8fa257430b425979",
+      "size": 186
+    },
+    {
+      "path": "vcf_hci/remote/executor.py",
+      "sha256": "d37d111fcdd54f330891d4f4fcfaa4dc649e9fd92b16c8ab94a854747174db91",
+      "sha1": "93194a0cb40f31a1fd1abdeeac8924c0d31b8303",
+      "size": 58527
+    },
+    {
+      "path": "vcf_hci/remote/guardrails.py",
+      "sha256": "2173f628c3be0ebd2025f83586247468f898ffd255b99492daad3b20f7df538a",
+      "sha1": "a3d0c13a4e1b69214fdd878eef60aff607e26d15",
+      "size": 19525
+    },
+    {
+      "path": "vcf_hci/remote/orchestrator.py",
+      "sha256": "f5b3c83a2498bbbe6adca39d5b10250ef919014abc3c9979d6408b47ab81397a",
+      "sha1": "ba1a55556b54e3a3a1212749205274a475b0c38c",
+      "size": 9510
+    },
+    {
+      "path": "vcf_hci/remote/progress.py",
+      "sha256": "ab882676c57ed1c68a59aad68f34354c928d0f7dbd97c9659159018a4f74de87",
+      "sha1": "c8492962bc2850ab33a1c6a47f01529869fb78a9",
+      "size": 1618
+    },
+    {
+      "path": "vcf_hci/report/README.md",
+      "sha256": "06b408c9146ea74b3a640bfa99c12dfdddf904780eb8c81f194d8a14cf8dd662",
+      "sha1": "dba9757581150c5622aea39afbc2446795a0b3a3",
+      "size": 13642
+    },
+    {
+      "path": "vcf_hci/report/__init__.py",
+      "sha256": "5590604ffb4b6d0ca57e3524b4a36e6dde8e7c0a23ac90fa30c92e75c9d59181",
+      "sha1": "b6ff5c3406beadda5a64afcdc0775b091caf11d7",
+      "size": 1798
+    },
+    {
+      "path": "vcf_hci/report/clarity.py",
+      "sha256": "559bfe7aceb001df2b129f962a97f242daacfd5a84a3b09c807d14433b30fa91",
+      "sha1": "310533b3d27e0ecb115b937476f326eb1ecf8133",
+      "size": 16146
+    },
+    {
+      "path": "vcf_hci/report/components.py",
+      "sha256": "f32ffca9029609a9203547ccb2dcf6a0dc48ff24b19a4cbf058a6aabbfd6caf1",
+      "sha1": "ddaf959e00648c26992abe2d442fd72f26c0b099",
+      "size": 79544
+    },
+    {
+      "path": "vcf_hci/report/csv_export.py",
+      "sha256": "c515c626501c7fa2ad099be8dc4cc104a061e2e5b42288da199209909a26f51a",
+      "sha1": "5415d4ec9933f8f98a1019221acbd066bf35420f",
+      "size": 20773
+    },
+    {
+      "path": "vcf_hci/report/disclosures.py",
+      "sha256": "78615b9812d7871be8b0df149cff278eaf3a57e7d8ad9ca3682da9fe12418cb2",
+      "sha1": "6e3655c95ae7689200c67014ee1f89ec803dec3d",
+      "size": 989
+    },
+    {
+      "path": "vcf_hci/report/evidence_inventory.py",
+      "sha256": "7029056ee67a91c5e3ab4e92255f1b55e1bd549fd0abe2606900da34864fecdc",
+      "sha1": "9aa1dcad12d89ae1bd1c6ea59a138912865794b3",
+      "size": 11639
+    },
+    {
+      "path": "vcf_hci/report/excel_export.py",
+      "sha256": "d3e63a335c89b75bcd6dcb85d85b0f96a0fcffe26b53fe8a4e980d0e357e81f8",
+      "sha1": "67abf97936f49f096fbfb2cba50fd82c92721447",
+      "size": 20519
+    },
+    {
+      "path": "vcf_hci/report/executive.py",
+      "sha256": "fcb70fad4775bd0588b5e8c84af880b13662233fcd827f142018b5b1388e28af",
+      "sha1": "098ba519783e8b735547136c4622db16792eea19",
+      "size": 20562
+    },
+    {
+      "path": "vcf_hci/report/explorer_link.py",
+      "sha256": "db73f0fd4e1266998739bf0ff4d9fa8bb67f4066e996cd9a394e6b76d640ee9e",
+      "sha1": "cea64ce54f15854ca2b9e842b54d767f8c1595aa",
+      "size": 1365
+    },
+    {
+      "path": "vcf_hci/report/firmware_identity.py",
+      "sha256": "acf267abfe073a356c4bcd49a808617757e2679023d5533069af2f91dd8f2a1f",
+      "sha1": "7db13d2cbd8283c2963d8961f28bcf0e5c429449",
+      "size": 3890
+    },
+    {
+      "path": "vcf_hci/report/fleet/__init__.py",
+      "sha256": "990bc1c2cb81d334d9dbc8fa5af41ccf2229f2d47764439a65712c6e494fa6dc",
+      "sha1": "d3e26676d37220fc60b1b37f745c4304baec206d",
+      "size": 793
+    },
+    {
+      "path": "vcf_hci/report/fleet/combined.py",
+      "sha256": "99ced97230886cb13734e35eee6e550b4bbb199b36421868cde5314792357b8e",
+      "sha1": "80ffada4603ed08509fae397e80c22d4e2695ced",
+      "size": 90520
+    },
+    {
+      "path": "vcf_hci/report/fleet/escape.py",
+      "sha256": "d9279bdf690c5125be77871b51ab18363ae3b55d7277e09207c1b65b251caf16",
+      "sha1": "99dc6f1cec42176edc65bdad7101d2d413c340db",
+      "size": 199
+    },
+    {
+      "path": "vcf_hci/report/fleet/fc_matrix.py",
+      "sha256": "74297c3097a9eb42e01855142a1ce0e6234ac24365db577ed5921f0afdbade47",
+      "sha1": "1abcd9040c279ab4d6dc3e68cb8e5e161bc1b984",
+      "size": 30673
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory/__init__.py",
+      "sha256": "8b61cf9ec05808d2dbf0661c6fb5da8a1b55ea71b5852ebaeddcd55bf2ec3954",
+      "sha1": "ddabfb8ee3fc418ec6cc1324fce587fc05f54f78",
+      "size": 1391
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory/builder.py",
+      "sha256": "86b44b736636ec3a377e687af0c1b718d5b8f2238dbb4d9b6f6388f88857f9bc",
+      "sha1": "bcf038c2e961398901a83c1a919dac4fc0d4f66d",
+      "size": 46683
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory/chips.py",
+      "sha256": "e4105e4199af167d22784f8b642f50b51ee893ba4c3f1c8a3871f544877b0795",
+      "sha1": "e87372f038775ab3c99ab807f18d7ecbc840fce3",
+      "size": 17110
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory/reference_modal.py",
+      "sha256": "2e5b76a3e39b8808712ce840beb1e89a8cd57dca74cd1badbb7e301b2784bc24",
+      "sha1": "fa5819223cf004fd16038f107440785c331c2250",
+      "size": 23678
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory/subtables.py",
+      "sha256": "7f88e2de78111c4fbe79ac28c0503f8f7882faef8cc02f76b8055ab37f2fb158",
+      "sha1": "844fd0ae4924f5cb275729205105f27987bfbf3d",
+      "size": 58511
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory/view.py",
+      "sha256": "207249bd671c53973b5fe28153020e38ba33527dfe56fb8a4e28325b0dded178",
+      "sha1": "295c65c647d42ac4d5f11fe2f154138a40508fa8",
+      "size": 7871
+    },
+    {
+      "path": "vcf_hci/report/fleet/inventory_panel.py",
+      "sha256": "969eb48b7f8c8d798dfc85c51a2963016b9025e27ee4d90b99b15d6f458517a2",
+      "sha1": "84cc522ae25245aea4139dfaa48b471ed1e74fd7",
+      "size": 1346
+    },
+    {
+      "path": "vcf_hci/report/fleet/summary.py",
+      "sha256": "671aadba53d27e75da564afc07d4f9ff38368c265247125634ad23c07d72996f",
+      "sha1": "cee03bde68045dc4d646484111cca4cd0f37f079",
+      "size": 37779
+    },
+    {
+      "path": "vcf_hci/report/fleet/switch_matrix.py",
+      "sha256": "da61776e77a9daef54505e85fe496c3f0a9c738506e2c1d08fdf4e3be136ad62",
+      "sha1": "855e9d1028dc4ab8f79795370b0822762248c368",
+      "size": 19836
+    },
+    {
+      "path": "vcf_hci/report/fleet/tiles.py",
+      "sha256": "80c656e4655eb11872e926b7130ebf377b31bbf2d0124a3eae8d935ecd842704",
+      "sha1": "f2b56dca51c9b1994aefe63af08fd2a4df3907ff",
+      "size": 49888
+    },
+    {
+      "path": "vcf_hci/report/fleet/vendor.py",
+      "sha256": "82a562d77b0154e05b1cc3e1bdf3cd7e1fae3bb5ba1b3c598850342558ce6634",
+      "sha1": "1886b9059f2910dc689fe0f915641bc16fdf50a5",
+      "size": 875
+    },
+    {
+      "path": "vcf_hci/report/fleet_report.py",
+      "sha256": "04638d24948d6b6b3d4ac4a6b5c8a459d4d67c9101a55659482e5a7f37f7cbab",
+      "sha1": "769aef02a6d1a1e3cbece6ccc1551f2356813a3e",
+      "size": 759
+    },
+    {
+      "path": "vcf_hci/report/formatting.py",
+      "sha256": "fa5053b6cbdb177bedd6e66c728ec6b180a899680c42c6fddbde405c32435bca",
+      "sha1": "3ea4d0516529a6d7bb4023b8de1073495a29b9aa",
+      "size": 1071
+    },
+    {
+      "path": "vcf_hci/report/helpers.py",
+      "sha256": "c952167a0d9331ae2a330b215132eac5729ba324d0f859dda0f87a615c045a1c",
+      "sha1": "fb16386a0da0b1817fa9dd1eff43b16dbb51eaa6",
+      "size": 2214
+    },
+    {
+      "path": "vcf_hci/report/host_report.py",
+      "sha256": "83e8e28577bd452692e6d51507f82c462842aeb26ca23e728ccf5b3aa784d93e",
+      "sha1": "42c1f7d19ff773bffd84f0e5088edbd9f8a4f6b2",
+      "size": 35221
+    },
+    {
+      "path": "vcf_hci/report/hybrid.py",
+      "sha256": "cedefa184a3b406bcb40e308891439309895b2b43585b13efb200e3c070776ef",
+      "sha1": "0fd6578943ac119c3d6b0c7732df3131898934ab",
+      "size": 23219
+    },
+    {
+      "path": "vcf_hci/report/inventory_tables.py",
+      "sha256": "01f8d159d9e299d6fc95b522f0d7f30a95573adfce3d60c7ebad21e26c250f79",
+      "sha1": "9d29955d62c5f533e8621ec4a952cf09393df67b",
+      "size": 84837
+    },
+    {
+      "path": "vcf_hci/report/layout.py",
+      "sha256": "f89541046b731142148244319d5fbe0bb35118492e7654e43536ab18510cd44e",
+      "sha1": "d14267f7627c3b1163b080736c3381517c4624bf",
+      "size": 4069
+    },
+    {
+      "path": "vcf_hci/report/overview.py",
+      "sha256": "ba5fbf551f0b3f18bf4f95f5ba7741c82a0385be79d28ac7064acf11b37182ca",
+      "sha1": "9173640ac3208a864908e2d59e175874b263339f",
+      "size": 6665
+    },
+    {
+      "path": "vcf_hci/report/pcie_inventory.py",
+      "sha256": "72129725a97851875aa9056267e82d57c3f61387eaf33a27bff5296f974884d3",
+      "sha1": "e0aa152834740f6895e5e36ead43c3d8af3753b9",
+      "size": 7101
+    },
+    {
+      "path": "vcf_hci/report/presentation.py",
+      "sha256": "75ae28db577f80ff99a9e3e3a99d6ba616a47fa45290f535c355050f90d893ac",
+      "sha1": "e934e90546bf2cd84ac60d5cd51be512deed79e8",
+      "size": 40521
+    },
+    {
+      "path": "vcf_hci/report/readiness.py",
+      "sha256": "967169a5672ab5e9acd1c499ee9cc1d7d1b962b9c765c691d85cb95f33c873d3",
+      "sha1": "a957783806515f72ba660612e09a85ef9b70ab1b",
+      "size": 1521
+    },
+    {
+      "path": "vcf_hci/report/readme.py",
+      "sha256": "d83cd9e54fccf6e2751aca2e9e6e09b887fa6eb0e5ea59662e8e30859be90e05",
+      "sha1": "60075985bc11f5d19e2e4133d8c3a4190487a590",
+      "size": 20806
+    },
+    {
+      "path": "vcf_hci/report/schema_registry.py",
+      "sha256": "569233ceda33a1123dc5b8022d4f46f7ed7c8fdd418bc8c7dd0141bb29f86f47",
+      "sha1": "3f2c9157a1a290a31a8f810611d79fdcba04fc25",
+      "size": 30847
+    },
+    {
+      "path": "vcf_hci/report/sections/__init__.py",
+      "sha256": "07601874f0061247f8e139a7076e85d70d46e46c517d060d974a48dbe0de198f",
+      "sha1": "5e9d04c21003ed6d84d15616edd344a020c41d39",
+      "size": 79
+    },
+    {
+      "path": "vcf_hci/report/sections/bios_security.py",
+      "sha256": "a7e0e123632d613d5d9b5c9889a272b3b7ed9fec51ac18a3328553a09e0c9ab4",
+      "sha1": "b4986c53cb29b02872be4899b7385e849e885f4f",
+      "size": 75823
+    },
+    {
+      "path": "vcf_hci/report/sections/cpu.py",
+      "sha256": "36181fe8dbedc31e5611438f5c5d7b07fbff1e110ea58609a35afbf54fe2eb12",
+      "sha1": "35f4a0b8a0f296ef9b5e1fcde304d822c21b3ae8",
+      "size": 43727
+    },
+    {
+      "path": "vcf_hci/report/sections/firmware_os.py",
+      "sha256": "ef348b9276217c2c4394d48afeccbab3d03b0a7ff818f7b681ee4c076c91562b",
+      "sha1": "08d92df6c5486b14aef465ef8c9ee56dead13e4c",
+      "size": 23860
+    },
+    {
+      "path": "vcf_hci/report/sections/hba.py",
+      "sha256": "0d32b7c5fcb0a8650f8bbba130f63e0db5b7519a81c9b5fde2b333ce1721e457",
+      "sha1": "8321fdde406ab06986ce36f3da607a82fa2c12e5",
+      "size": 19386
+    },
+    {
+      "path": "vcf_hci/report/sections/health.py",
+      "sha256": "bbb5f57a0e325ddbe09a6deda991dc1487a8aa4e8c5e7589b3c670734b73ea09",
+      "sha1": "aa987724038afa1fc6a93f9969f68ee6f470d34a",
+      "size": 40365
+    },
+    {
+      "path": "vcf_hci/report/sections/memory.py",
+      "sha256": "6c87738d4a0d7689edf3703e773b26607c07f5d413f69dd6e37bf0bff3d34979",
+      "sha1": "6b05f2afb9c0259609d489e8fd42db492923aa34",
+      "size": 21157
+    },
+    {
+      "path": "vcf_hci/report/sections/network.py",
+      "sha256": "ae23d28b96e27e1eb74b3e7594da26a67d2c10a2d2d811db695fc69c7e3173bd",
+      "sha1": "e021cbbe1b9777d28e59a48819b03111d6d5db5b",
+      "size": 24808
+    },
+    {
+      "path": "vcf_hci/report/sections/overview.py",
+      "sha256": "f63e5ee730cb630ed490d106129d0b32fc7a97e61fc1e026a71a4ad7cae9f240",
+      "sha1": "d67316fddda3dbb75bd3fc9ab070a064fbb6f674",
+      "size": 48927
+    },
+    {
+      "path": "vcf_hci/report/sections/pcie_gpu.py",
+      "sha256": "48a366de4536fdcebe022552a24a80a874d23c6c423bfd8b3901ce3dd993424a",
+      "sha1": "33625d975fb7ad0564e2060071790c58149604cf",
+      "size": 18040
+    },
+    {
+      "path": "vcf_hci/report/sections/storage.py",
+      "sha256": "355d47e51007326abc3ad1b43a3ec63ccb9c16a2a6b53e985692df25022ae78b",
+      "sha1": "1d40168708cba427d0edf3f8994fdf585375ff90",
+      "size": 42293
+    },
+    {
+      "path": "vcf_hci/report/sel_links.py",
+      "sha256": "725ae3127057cfa8d2cf53a0db7b05040b206203867d66e1e034547f58727670",
+      "sha1": "5ef552ac0dfd67d712bba68ab3f10a48a8ba092b",
+      "size": 59487
+    },
+    {
+      "path": "vcf_hci/report/styles.py",
+      "sha256": "c12c210f27838f805f3453cda72805e40524bcf9a0c88fb76897a350434e8a97",
+      "sha1": "2dafad5779e6a9e3cadaa3d65d39ee496e8f1d7a",
+      "size": 35248
+    },
+    {
+      "path": "vcf_hci/report/switch_topology.py",
+      "sha256": "d5ef502430cac14d9b2df3d6316182b5be38ebc82b37014aa9fade7b8c1de7a4",
+      "sha1": "dfe946a3d2a01700c69458c6cc1bbf24ae30de1c",
+      "size": 31973
+    },
+    {
+      "path": "vcf_hci/scan.py",
+      "sha256": "0e878957f578da5f345ab2c08bb0983b6ed4ed669498eb690c2283b997298811",
+      "sha1": "156f4c456fe94f264cefacb8a34eb9e6f0b35a45",
+      "size": 39891
+    },
+    {
+      "path": "vcf_hci/scan_complete.py",
+      "sha256": "4a3d0a7900f68a9a3000462fc610f289876ec7a51f3badfe32f93358e1e6d9ae",
+      "sha1": "060238c9bae5c829cc510d02ca55ad03a07f5a29",
+      "size": 21889
+    },
+    {
+      "path": "vcf_hci/scan_host.py",
+      "sha256": "209ed1fe7f93cedf5c593b87e73ce2e6f3a7d2868383ae6af018f6319c3e1586",
+      "sha1": "1812269c33aa3855b2cba138dd295e17ab03b633",
+      "size": 20019
+    },
+    {
+      "path": "vcf_hci/security/__init__.py",
+      "sha256": "cac88343cad38ff774d89a3b64047beb3f0f3aafa998e2e03be13daed3592875",
+      "sha1": "caa877e5afedc5aa097ab3931b16447698e8dcac",
+      "size": 4153
+    },
+    {
+      "path": "vcf_hci/security/audit_api.py",
+      "sha256": "a378a87bb108200486432d41fec2438998013d1ac2b3538843438cee2db1b960",
+      "sha1": "4c958ec6fcac4ef7a6585140655d0bb95ad52125",
+      "size": 7271
+    },
+    {
+      "path": "vcf_hci/security/cisco.py",
+      "sha256": "fec50032cd04eb9b13feea1401eda9136243cdba56aaa301ffc05734b88d9d28",
+      "sha1": "bfcc13e9efe1340bcdc4a558532d914fe263410f",
+      "size": 4110
+    },
+    {
+      "path": "vcf_hci/security/contract.py",
+      "sha256": "4a0f767e853958ffae131a0221096844d5e5b2e6612e59a5b0e08d99f422b5df",
+      "sha1": "644138f5dc6fef5e2470f03e7a3479e301a01efb",
+      "size": 6658
+    },
+    {
+      "path": "vcf_hci/security/dell.py",
+      "sha256": "683c5b86fafb616fa1a330ea9529c498a42d8457ccf6adeaa9e67be7b5216168",
+      "sha1": "2494f43b9a23208b6b59084036a62409f1e9360c",
+      "size": 102333
+    },
+    {
+      "path": "vcf_hci/security/evaluation.py",
+      "sha256": "5418dcf300466464e3bcecbb0d72322faacfbcea1ddaf4f9a43557a5609c1220",
+      "sha1": "0146577ebdf3bf631bd885bb7235d0686f1c8622",
+      "size": 20232
+    },
+    {
+      "path": "vcf_hci/security/hpe.py",
+      "sha256": "90c1ebe4b894fe447f1dcab8a150d1d444ab83f7e71e2bfe61776f4504449722",
+      "sha1": "cffffa32aa087ac879c77526bf9edaf2cd2077ed",
+      "size": 66105
+    },
+    {
+      "path": "vcf_hci/security/ipmi_probe.py",
+      "sha256": "57583cfcc0a5911416d5518122b9a8cea45a984c35d000d0ae2cc4fce34f6bab",
+      "sha1": "57484ee28a710c063bb03e5fdb729439f8604fcb",
+      "size": 7143
+    },
+    {
+      "path": "vcf_hci/security/lenovo.py",
+      "sha256": "b4ffbf7846ab32cfee73606e6323b8c6951221f58ab51926e52bfdca591a61c7",
+      "sha1": "7b00abd82458138c7389b2dbae4a78ca68c4b8dc",
+      "size": 34451
+    },
+    {
+      "path": "vcf_hci/security/metadata.py",
+      "sha256": "78729515ec9b9c7bdeff83faa1ac0ba54ba974a1581fc7cf0931986fed086096",
+      "sha1": "4c7b18ee08fdd9aa33e98fd1a01d219d24b0b66c",
+      "size": 19318
+    },
+    {
+      "path": "vcf_hci/security/redaction.py",
+      "sha256": "6b38930e2af64f2873c911f03e1ddf0ace67f1533b7517f8ef500f6814ce3158",
+      "sha1": "b3959251c61cb7530f755691efbedc27bbdb762b",
+      "size": 15270
+    },
+    {
+      "path": "vcf_hci/security/scg_map.py",
+      "sha256": "4a22352e6db6920ee2eee0b6f019a58bf0430cab6702355e970677210e0fdd59",
+      "sha1": "5c2863fcb9ba183bd6d4b804dae5ab265719cd24",
+      "size": 6642
+    },
+    {
+      "path": "vcf_hci/security/scoring.py",
+      "sha256": "8155a13e663fb3a4038fd41d08ae01936530e2449991e0f2a1af3960bfff2d5a",
+      "sha1": "b5e895c614626597e7a9da65f507dae3bfa60464",
+      "size": 9398
+    },
+    {
+      "path": "vcf_hci/server_groups.py",
+      "sha256": "0602442580715683083a804539b8a81bb5fcf5c3c030efcdd6d443cc4fe38941",
+      "sha1": "7ddf3a3f98065d119693fa0c1dc69886c7d70665",
+      "size": 10716
+    },
+    {
+      "path": "vcf_hci/servicetag/__init__.py",
+      "sha256": "7814979041476271b1fe25ee156f2bc4a88045430b427ee8ecdd9e39fcfd5d67",
+      "sha1": "78f89e8233a533aefbb090da8bb9fbeb3c0090de",
+      "size": 1124
+    },
+    {
+      "path": "vcf_hci/servicetag/dell_api.py",
+      "sha256": "968595d6f0ef713e191abc451958bc60450e46c66bd815d12b3587f1faa8f6b9",
+      "sha1": "3bc588607fbefc65838851906fa5b225d81f4735",
+      "size": 11098
+    },
+    {
+      "path": "vcf_hci/servicetag/esa_evaluator.py",
+      "sha256": "1005491c5a94a74ab23bc2e17a8f3667bf93e2bc1893b8bfe4e7f00869924fca",
+      "sha1": "739e7737334ab160740c9f99e08e901e136f7a65",
+      "size": 13234
+    },
+    {
+      "path": "vcf_hci/storage_capacity.py",
+      "sha256": "85c5e515735b93295fa1db5d7c8307eed014361ea779fa543e2dc1c583bb7ed4",
+      "sha1": "a0df7d0a40d57e17772db351f6e547bfd4a9f158",
+      "size": 2433
+    },
+    {
+      "path": "vcf_hci/storage_media.py",
+      "sha256": "302a69908d2d8058bb826d049fcba040761ade4b90f7eb8f945dbab3754e4714",
+      "sha1": "5b0f84915c48cf24da4049f326b52fb7f74c7198",
+      "size": 1364
+    },
+    {
+      "path": "vcf_hci/storage_pcie.py",
+      "sha256": "d7b4a63827cace42a7979532343b726cc26641d7f4063868b37cd9233c1ea4cb",
+      "sha1": "d8d103a506d19b0935ceeb9a878eeec2ce8c82af",
+      "size": 4348
+    },
+    {
+      "path": "vcf_hci/summary_io.py",
+      "sha256": "e814316839d33b0189028b77516ba3653a2f211ed2ba7f655517c83c7e90d140",
+      "sha1": "06b0143384ec2cef70531d55a3d9162d7829134a",
+      "size": 15249
+    },
+    {
+      "path": "vcf_hci/system_throttle.py",
+      "sha256": "04d2059a89fbfd37688599af4f41fdbb5146e5da200c09f5fcd424b431c6fdb1",
+      "sha1": "f1b492e904bbcec552b13e32805f0fc1ae26eb9d",
+      "size": 8848
+    },
+    {
+      "path": "vcf_hci/telemetry_exporter.py",
+      "sha256": "b65e15a4bb56d16c786eded75dae2febaaca9137e143791b3fa79a329afead0f",
+      "sha1": "5a32fd266ab7600421c538e6c22f0e1791f8c9f8",
+      "size": 7562
+    },
+    {
+      "path": "vcf_hci/tls_utils.py",
+      "sha256": "de91284a612a174903e5a9bca8c29ee28d55f8e48cb90f7a708f3e4238d3f387",
+      "sha1": "aa538dc414097b9037fd5a9daa9b3793e5400fd7",
+      "size": 42280
+    },
+    {
+      "path": "vcf_hci/ui_clarity.py",
+      "sha256": "4c1ee88c322cf28aaeac21430570f1ef6ec6ecb154223c4aef9c5d6367087094",
+      "sha1": "6e208d09d94c831c187f99fe9a9cea659d5d8a11",
+      "size": 20804
+    },
+    {
+      "path": "vcf_hci/vault/__init__.py",
+      "sha256": "210521db1aaf887e6e804f6fef1aacd6f33dd1aa8bf2b7c86f56b88a1913fd27",
+      "sha1": "edbb1a43f6fedc967d07160d687d7cc6eda600db",
+      "size": 1651
+    },
+    {
+      "path": "vcf_hci/vault/__main__.py",
+      "sha256": "88aff291246e429a785e117a9c220773134eb5bd79bf5a4101b2d148bb461860",
+      "sha1": "0cfc96b6bb4e20d35f304cc506e2a5534eabe7c9",
+      "size": 11422
+    },
+    {
+      "path": "vcf_hci/vault/crypto.py",
+      "sha256": "7ab568ba7d86acb16912bb6311edbead53c69dec7c2b4f5d08ef5e985c16e509",
+      "sha1": "7bfb9eedc392001a9a3d87262769ac721b6fbdfd",
+      "size": 7744
+    },
+    {
+      "path": "vcf_hci/vault/csv_import.py",
+      "sha256": "17cdad026a73c7b2c6b418172764fc4d51fb89abcec42aab227ac1d26de6854f",
+      "sha1": "3d25455aac15dc51aef6fec3152a5e50687c4e7a",
+      "size": 4841
+    },
+    {
+      "path": "vcf_hci/vault/jump_cli.py",
+      "sha256": "fabb014e48129d91f881556a09ab40e5d79decb45dbae0ca5e2de0f08af7b346",
+      "sha1": "58b820a2be44bb6910d388dc96f6fb8357c1fe75",
+      "size": 17519
+    },
+    {
+      "path": "vcf_hci/vault/jump_hosts.py",
+      "sha256": "365729b06cef6e14b970a88802a6b8936e74ac515dea8110202338e56bcb10f7",
+      "sha1": "593aa526e257f909624175114f656d57b834f219",
+      "size": 14900
+    },
+    {
+      "path": "vcf_hci/vault/providers.py",
+      "sha256": "b4da4773198db7d5bd4a40bffeef8ce82ef5be72ec74fceb8e8c1e6f848b1b81",
+      "sha1": "59fb36d8eecd37632142f6c85cd985a866cc7aa4",
+      "size": 17721
+    },
+    {
+      "path": "vcf_hci/vault/store.py",
+      "sha256": "5cc0024b00c7a990623279cbea09fcd980eb173c0a2111eebe87547675bb9790",
+      "sha1": "31eca2357e094768854a86e3421c899c2c6bddbd",
+      "size": 23862
+    },
+    {
+      "path": "vcf_hci/web/__init__.py",
+      "sha256": "1ab00386d9a010f9cf6d5ad3a83a3b79bdee1a57e89f7a3fa4269bf293966922",
+      "sha1": "1e31d9d382998213e879b937d3a57dece4da919c",
+      "size": 385
+    },
+    {
+      "path": "vcf_hci/web/__main__.py",
+      "sha256": "a5ee79b0b03e5b5cb541d9ca648003aae6f2f3c26fa6c8b5d0a9e6e5943b69b1",
+      "sha1": "ffc408b4ed8a46bfbe57bad1f992e1d638d5efce",
+      "size": 192
+    },
+    {
+      "path": "vcf_hci/web/api_mixin.py",
+      "sha256": "84c9d3cceae80b4efe36bb8dae254403e6d0ff5ef50b59f91c90e62fecb01d85",
+      "sha1": "4ca8b0903c185e1a21ad57dbfc9c6433e7156a96",
+      "size": 1723
+    },
+    {
+      "path": "vcf_hci/web/app_css.py",
+      "sha256": "db6af0412717a8b56503d1b84e2eafae78115f407cc6faf1d5ab4ec1973a742e",
+      "sha1": "4e58d75ddbcf8a7e319a3df1613deb46f744648f",
+      "size": 32110
+    },
+    {
+      "path": "vcf_hci/web/app_html.py",
+      "sha256": "69ae0f0326cf5e0c7f55e41117e959e687db8038a3209bef38ab430b7c435bb9",
+      "sha1": "a39aca516fd90c5b8c4944e23747013ecf94bd5b",
+      "size": 75056
+    },
+    {
+      "path": "vcf_hci/web/app_js.py",
+      "sha256": "4a1d8e8e2f2ac23165be41df8f1c952c6b9ea52fc77d9a126e04aa743c6bc4d0",
+      "sha1": "bb704dd8899e507b8007b3cc81c76e879d9ece3a",
+      "size": 1518
+    },
+    {
+      "path": "vcf_hci/web/assets.py",
+      "sha256": "6ffedc1ffc94bd4f2ac0ecbcc267be9f621b729eb3cddf73eaf077555cdce83a",
+      "sha1": "3dd3351b8af11b1eee4842ae944f01f38f81d6e1",
+      "size": 20788
+    },
+    {
+      "path": "vcf_hci/web/desktop.py",
+      "sha256": "d2bbbddcf0ff5db899baed018c6804820869c75ce4cd242f32b7460c10b6c014",
+      "sha1": "6f702d202dc5dbb05cb971bb3ac5659467f9b436",
+      "size": 10224
+    },
+    {
+      "path": "vcf_hci/web/docs_css.py",
+      "sha256": "5c7eda6bb96a41fa4e0a380944cf9f91c896ff561406224e85685e7b292322f6",
+      "sha1": "6a2314792a4d9b95912614735b5cb6dfd5d27504",
+      "size": 13916
+    },
+    {
+      "path": "vcf_hci/web/docs_data.py",
+      "sha256": "afb9071f63c90128afc5295b0b81028f901e4f500639d4e79c85fc3f82547694",
+      "sha1": "e26665762c55dcc96bac13561e4d04359d3b4455",
+      "size": 231484
+    },
+    {
+      "path": "vcf_hci/web/docs_html.py",
+      "sha256": "a3ba4ccaacf49a73d9cbac3770c658b6b0a18df19bee4e47835afd9d9e3810d2",
+      "sha1": "ec9a3149fc811f6422f4f06dbf9775208356f1ff",
+      "size": 3144
+    },
+    {
+      "path": "vcf_hci/web/docs_js.py",
+      "sha256": "1c11ca3ee06e63318fa531fed18381da9b5e8cfeaeaa0b4113350838353cc802",
+      "sha1": "3ebead2b34b89daa2b2f91e0d16dddb3f1f8af94",
+      "size": 13298
+    },
+    {
+      "path": "vcf_hci/web/export_api.py",
+      "sha256": "b43f5d894b063ecea9203d370567e73a5c4f8fff5bf384b29db64833ab2930f0",
+      "sha1": "9297ac9cc170b975d52e623402542c7fb1122fbc",
+      "size": 14050
+    },
+    {
+      "path": "vcf_hci/web/fleet_api.py",
+      "sha256": "2bd76b12d6dbadd67f1a8c25b4bfe267bc070e3c692107e9bea648e37d01edcf",
+      "sha1": "83e373d463a8a58a726c1ba9e3ab24782794191b",
+      "size": 36330
+    },
+    {
+      "path": "vcf_hci/web/group_api.py",
+      "sha256": "f92b072358766f8ab148e6a0f2f3c4860ae789c86da3d8ff32b94ac0d580d372",
+      "sha1": "78f0069b761a4ba078b722a1cabaa989897ba8c2",
+      "size": 5386
+    },
+    {
+      "path": "vcf_hci/web/group_html.py",
+      "sha256": "4d2ff189a1b1839b0c629e88b80aa0c36ad89f2a2cf4eb8fa8eaa6db25ec169d",
+      "sha1": "5f6c17c312fe9e3e32ac909479dfb3044e31d40c",
+      "size": 6720
+    },
+    {
+      "path": "vcf_hci/web/hcl_export_api.py",
+      "sha256": "9663bdde002565f357ead06691fbc85b04f74c18e64c3665e502f986f85ae2ac",
+      "sha1": "193b4b44a141105f03cbfc3b624f0b9d1caff610",
+      "size": 1619
+    },
+    {
+      "path": "vcf_hci/web/import_api.py",
+      "sha256": "1d96981f0068b458045bad854fbb2e6fdabb7c6343ec28464d655d0247e8e693",
+      "sha1": "e288694f31bd4d3e48252af610407ebdb6d3657f",
+      "size": 26357
+    },
+    {
+      "path": "vcf_hci/web/job_guard.py",
+      "sha256": "793e9428a93e233a7c12936a97d044975010485897ae4c9a129b10ac992423ca",
+      "sha1": "c624b32e552cbd77622c82a219c83af2a63490d5",
+      "size": 1732
+    },
+    {
+      "path": "vcf_hci/web/js/__init__.py",
+      "sha256": "c10c55582dad82d12e05e1215b032fde88874e336b11a6dcdcfa201025852aeb",
+      "sha1": "eda14601fdbf748204fb09a38af68f91c26bcbed",
+      "size": 403
+    },
+    {
+      "path": "vcf_hci/web/js/actions.py",
+      "sha256": "8fe033077cc07e10d2318ed971dab2422423ae0fcc7afa295a04f6303c601376",
+      "sha1": "b9e6609a02023926a7d199f90476816783426322",
+      "size": 20732
+    },
+    {
+      "path": "vcf_hci/web/js/clarity.py",
+      "sha256": "06dfb61839e3258172f44fbb4d006449d6d36bb8a4e72e2e6061028a7e66dc7d",
+      "sha1": "abd0d720868a748dd4b8b74ed43f3cfe9da94ee5",
+      "size": 1080
+    },
+    {
+      "path": "vcf_hci/web/js/core.py",
+      "sha256": "20a701917145471435409a78508351fcec87fd17e08bb70e90b5fbfe72e362a9",
+      "sha1": "a915e0bfac63968d6b7b51b785e371157424f830",
+      "size": 22993
+    },
+    {
+      "path": "vcf_hci/web/js/groups.py",
+      "sha256": "257a6f55efc47e8c3d35efc915df47431ac6e5c72d16f539fb846be5004c3cc4",
+      "sha1": "66bb07b31f277aa82af17d46ef91a5dda56214a9",
+      "size": 13957
+    },
+    {
+      "path": "vcf_hci/web/js/hcl.py",
+      "sha256": "9a2f7ae68eafd85dcf70fca689453fb0a7bf60a8b51ac33049af6d861ab27e9f",
+      "sha1": "34f528d3d6aaf3e3eb18680b46aff0498a3acd72",
+      "size": 27473
+    },
+    {
+      "path": "vcf_hci/web/js/jump_ui.py",
+      "sha256": "23df5a6264b8838ac1b11a1877fdf8ae327881580127a9a1cec0da71f6e464ee",
+      "sha1": "708fc03bc3be6ea9346e9bf07f09ba26583094be",
+      "size": 41363
+    },
+    {
+      "path": "vcf_hci/web/js/plugins.py",
+      "sha256": "af070f9289661ef0e505aac3bbb4145df67a4802751b22507f62e8f5fa6f74f7",
+      "sha1": "00694ecca3308db41a4b56796f02bbbcc06b71fe",
+      "size": 9983
+    },
+    {
+      "path": "vcf_hci/web/js/scan.py",
+      "sha256": "23bcf27b5b36343d9a1e873cf63cce7c039d49f492ac6f87c2c1ff32a214babc",
+      "sha1": "be3b63571d0ff4079e376de2ddd53a7532dfcbb6",
+      "size": 80841
+    },
+    {
+      "path": "vcf_hci/web/js/vault.py",
+      "sha256": "4700b32d5e55f4edbe2968e2cac23f839ca8f34cdf90003f3142d43db339859c",
+      "sha1": "46a2fc7b6053b9f5089d380209156b051a964815",
+      "size": 43067
+    },
+    {
+      "path": "vcf_hci/web/js/vdt_remote.py",
+      "sha256": "98ab8ce7a7588f2e5d32ad7c79664f83ff92545e55a0785d82d8eaf678af221f",
+      "sha1": "011d456ddb05124bed41ae59e1f74c25e4fba26b",
+      "size": 24070
+    },
+    {
+      "path": "vcf_hci/web/js/wizard.py",
+      "sha256": "f950c454a13bd36da771bd8b30699e41f196dc7c41fe64b745023a80dc7bfcaa",
+      "sha1": "bcf6f1332424808ca552ae01568232ea90f5d4bd",
+      "size": 11733
+    },
+    {
+      "path": "vcf_hci/web/jump_api.py",
+      "sha256": "515f37912a1975300cdf7751dd293f54c08917378612b6f0f49b4c815161b1db",
+      "sha1": "25978bdd958c6b58fb145d44d69befb2c21dbb64",
+      "size": 16327
+    },
+    {
+      "path": "vcf_hci/web/plugin_api.py",
+      "sha256": "0464bee22f8626c282cbf4570dd87ee453a5c7eb002090721469a35c444fad79",
+      "sha1": "c9b1e3b979263ecba3dd11f236ef3241ff775584",
+      "size": 4735
+    },
+    {
+      "path": "vcf_hci/web/plugin_html.py",
+      "sha256": "3273e81473fb07fa8fa688bb5ed01f96c37cd74f7cd3e2280eae61c4c703af92",
+      "sha1": "77ddedd58d3b932eaccfb012b0abee849b9e0992",
+      "size": 14921
+    },
+    {
+      "path": "vcf_hci/web/remote_scan.py",
+      "sha256": "b6aab5fa2db2e32c9c9851fc94c91171dc750fba097875af17dbb65b72d2a960",
+      "sha1": "f51ef77b95cc2619a148ac566004d7a799ab8ed9",
+      "size": 24199
+    },
+    {
+      "path": "vcf_hci/web/remote_vdt_api.py",
+      "sha256": "067815a3b0eb653f22cb83214177f38d872faed0025ac3dc22f00b791d387af3",
+      "sha1": "6e53aef312624abade30ac2026430dc7dcd8200b",
+      "size": 16779
+    },
+    {
+      "path": "vcf_hci/web/scan_api.py",
+      "sha256": "958d47bde03a75d13c6ecc66cbef5fedd44b2c131093bdd9bb57a5949d2a778a",
+      "sha1": "f09354f867b30c50543150e1f22dbcaa9bb62e38",
+      "size": 27482
+    },
+    {
+      "path": "vcf_hci/web/scan_worker.py",
+      "sha256": "b29479e1fa9070f9283ed4a90d77ec77038971e267493b60abc2ddf285ce152f",
+      "sha1": "298432329fa7408aac59f83ae4676e40ca07e311",
+      "size": 39317
+    },
+    {
+      "path": "vcf_hci/web/security_api.py",
+      "sha256": "5155fc484723c2434d9cae2fc1f424a296ba1aa3087a30a74a611a43443d8d29",
+      "sha1": "3ce8692464586023a3421f910b47ee8ed7d62a67",
+      "size": 4696
+    },
+    {
+      "path": "vcf_hci/web/server.py",
+      "sha256": "83f2473a10d105eda30578cd974c6686b1b7d3d3b71739b6eb012c7310502906",
+      "sha1": "2c01b56d6421bdce053d45523ba0ebe108998b52",
+      "size": 51500
+    },
+    {
+      "path": "vcf_hci/web/session_api.py",
+      "sha256": "5602b6fb6de9a41196d373516cae726a235d77d7d1a4676884d2b9449f25ec31",
+      "sha1": "91e17389c1da5d05f88d7b12decdae35474db8ca",
+      "size": 59062
+    },
+    {
+      "path": "vcf_hci/web/session_store.py",
+      "sha256": "ac29cc84884dc798cc7c04b28fd08a6e8d1edf27607f09351ef682289f4450bf",
+      "sha1": "0351d627bf22078da92832b8a889df6549558e2f",
+      "size": 11561
+    },
+    {
+      "path": "vcf_hci/web/summary_css.py",
+      "sha256": "50ddf24b33f6ca81c1eac850fcc6dae044ba55fb07d96655ce8e9fa5661d9af8",
+      "sha1": "ffc4b9bab61a2a5e6488add6ff07a18317f8712b",
+      "size": 3976
+    },
+    {
+      "path": "vcf_hci/web/summary_html.py",
+      "sha256": "43f1b6c970db0c2fc970cb2e39d03b85855e0f968c7dc0efc34d1ab767f103aa",
+      "sha1": "8fa441f6268cf39f8c0d80d1aac020d0ef364398",
+      "size": 4580
+    },
+    {
+      "path": "vcf_hci/web/update_check.py",
+      "sha256": "5f5dc15541ab3ae3f946a94bde0017d071cd05a7c227bbab3a46ed32d18dd481",
+      "sha1": "ebefce386aa7d095e38fc012f18739bbbcb45ab8",
+      "size": 3753
+    },
+    {
+      "path": "vcf_hci/web/vault_session.py",
+      "sha256": "e5a52cc363f6040b11f48548d7c8096286db93edff621a22f79c0fbb08313319",
+      "sha1": "ece9c5ea6be28856d563a2ecbef1b68820f5f26f",
+      "size": 3434
+    },
+    {
+      "path": "vcf_hci/web/vdt_setup_api.py",
+      "sha256": "f03143fe9c39b32ecff62b9fef0bc78a44bc602142597d81d2ed15d7f0eaa639",
+      "sha1": "7f6e52a47cfa71ded142d52df0556838f4f5c624",
+      "size": 3679
+    },
+    {
+      "path": "vcf_hci/web/workflow_ui.py",
+      "sha256": "8d1f4d30a92baeedb7427a0c0e0225bf9041539bd41d23d1180f5101a2e49642",
+      "sha1": "5546c20712e18a4406075c949adfc57a7fd0212f",
+      "size": 6316
+    },
+    {
+      "path": "vcf_hci/wsman.py",
+      "sha256": "8d748cc67211082292f7ef65045fd0c86ba3fa7567b6d64f7be9b46f3805b2e3",
+      "sha1": "52ac585a7189ac7d73caf8d4a6e3faaaa77e3b65",
+      "size": 36546
+    },
+    {
+      "path": "vcf_hci/zipapp_builder.py",
+      "sha256": "bc1b4bb8ee6ed4d8afe1a1ced9b25ef3964a2e5476c39bbd2eaf869ccd3fedd4",
+      "sha1": "24f7ace9f084077912b0123660cdf19a7853f951",
+      "size": 1908
+    },
+    {
+      "path": "vcfr_collector.py",
+      "sha256": "b0658c95e87d878f2a8088ad9d47a11e2a7a7a0b065bccf45932769da187e9c0",
+      "sha1": "e18503d3d7a86fb3fef38f58907cd716bd47f8c2",
+      "size": 1235
+    },
+    {
+      "path": "vcfr_web.py",
+      "sha256": "11add189e09e03901d5537687931f35659b62c2692257bd62026d9e58d0897a9",
+      "sha1": "1e37b19d1c46a65061528b5739c5a314092865e2",
+      "size": 858
+    }
+  ]
+}

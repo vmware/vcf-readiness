@@ -125,6 +125,7 @@ def create_hcl_bundle(output_zip_path: Optional[str] = None) -> str:
 
     logger.info(f"Generating dark-site HCL bundle: {output_zip_path}")
     raw_json = None
+    dataset_timestamp = None
     urls_to_try = [LIVE_VSAN_HCL_JSON_URL]
     if LIVE_VSAN_HCL_JSON_URL.endswith(".gz"):
         urls_to_try.append(LIVE_VSAN_HCL_JSON_URL[:-3])
@@ -141,6 +142,7 @@ def create_hcl_bundle(output_zip_path: Optional[str] = None) -> str:
                     except Exception as ge:
                         logger.debug(f"gzip decompress error on {url}: {ge}")
                 raw_json = raw_bytes
+                dataset_timestamp = time.time()
                 break
         except Exception as e:
             logger.warning(f"Could not download live vSAN HCL JSON for bundle from {url}: {e}")
@@ -150,6 +152,7 @@ def create_hcl_bundle(output_zip_path: Optional[str] = None) -> str:
             if os.path.exists(json_path):
                 with open(json_path, "rb") as f:
                     raw_json = f.read()
+                dataset_timestamp = os.path.getmtime(json_path)
                 break
 
     if not raw_json:
@@ -190,6 +193,7 @@ def create_hcl_bundle(output_zip_path: Optional[str] = None) -> str:
     metadata = {
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "created_timestamp": time.time(),
+        "dataset_timestamp": dataset_timestamp,
         "tool_version": TOOL_VERSION,
         "schema_version": "1.0",
         "source": "Broadcom VCF / vSAN Dark-Site HCL Bundle Manager",
@@ -252,9 +256,11 @@ def import_hcl_bundle(bundle_zip_path: str) -> tuple:
                     "source": os.path.basename(bundle_zip_path),
                 }
 
-            created_ts = metadata.get("created_timestamp")
+            created_ts = metadata.get("dataset_timestamp", metadata.get("created_timestamp"))
             ts_val = float(created_ts) if isinstance(created_ts, (int, float)) else os.path.getmtime(bundle_zip_path)
             dataset_age_days = round((time.time() - ts_val) / 86400.0, 1)
+            if "dataset_timestamp" in metadata and metadata["dataset_timestamp"] is None:
+                dataset_age_days = None
             metadata["dataset_age_days"] = dataset_age_days
             metadata["bundle_filename"] = os.path.basename(bundle_zip_path)
 
@@ -267,6 +273,7 @@ def import_hcl_bundle(bundle_zip_path: str) -> tuple:
                         except Exception:
                             pass
                     raw_data = json.loads(raw_bytes.decode("utf-8"))
+                    metadata["dataset_is_baseline"] = isinstance(raw_data, dict) and raw_data.get("status") == "baseline_offline"
                     dev_list = []
                     sub_data = raw_data.get("data", {})
                     if isinstance(sub_data, dict):

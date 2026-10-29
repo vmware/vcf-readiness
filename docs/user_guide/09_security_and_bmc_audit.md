@@ -14,10 +14,26 @@ Platform security combines hardware-rooted cryptographic identity with firmware 
 |---|---|---|---|
 | **TPM 2.0 Cryptoprocessor** | Validates presence of physical Trusted Platform Module (TPM) 2.0 chip enabled in UEFI mode. | **Mandatory Requirement:** Required for ESXi 9.1 Secure Boot attestation, cryptographic core isolation, and vSphere Native Key Provider. | [vSphere Security Guide — TPM 2.0](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-security/GUID-10F7022C-DBE0-4E80-9285-EB02CEF513A1.html) |
 | **UEFI Secure Boot** | Audits UEFI signature verification for bootloaders, hypervisor kernel, and VIB kernel modules. | Ensures only cryptographically signed VMware binaries execute during POST; blocks bootkits and unauthorized rootkits. | [Broadcom KB 2147606](https://kb.vmware.com/s/article/2147606) |
-| **Side-Channel Mitigations**| Evaluates processor microcode against Broadcom security baselines (Tier 1–Tier 4). | **Tier 4 Required:** Protects hypervisor and guest VM boundaries against Spectre, Meltdown, L1TF, MDS, and SRBDS. | [Broadcom KB 330041](https://kb.vmware.com/s/article/330041) |
-| **BMC Firmware Baseline** | Compares BMC firmware build against certified OEM security maintenance baselines. | Mitigates published remote code execution (RCE) and memory corruption vulnerabilities in BMC daemons. | [OEM Reference Guide](docs/OEM_REFERENCE.md) |
+| **Side-Channel Mitigations** | BIOS release-date heuristic (tiers 0–5); unavailable or unrecognized dates are N/A. It does not read installed microcode or ESXi mitigation state. | Confirm CPU-specific OEM advisories, BIOS/microcode release notes and ESXi mitigation configuration; a green tier is not current vulnerability attestation. | [Broadcom KB 330041](https://kb.vmware.com/s/article/330041) |
+| **BMC Firmware Baseline** | Compares BMC firmware build against certified OEM security maintenance baselines. | Mitigates published remote code execution (RCE) and memory corruption vulnerabilities in BMC daemons. | [OEM Reference Guide](../OEM_REFERENCE.md) |
 
 ---
+
+#### PXE firmware advisory — CVE-2026-97631
+
+The Security card and details warn of **potential PXE firmware exposure** when an
+enabled PXE boot option or active PXE override is reported. Fallback entries count
+even when local disk is first. A BIOS release before the 15 October 2026 upstream
+source fix increases review priority; a later or missing date does not establish
+patch coverage. Missing boot-option enablement remains unknown. Explicitly
+disabled entries are recorded without an enabled-PXE warning, and reported legacy
+PXE does not establish execution of the affected UEFI driver.
+
+An iPXE label or binary name produces **iPXE boot path unverified**: iPXE can be
+chainloaded through firmware PXE. Confirm the actual path and exact OEM fixed BIOS
+before treating the platform as patched. Firmware advisory review is separate from
+BMC hardening control counts. See the [upstream advisory](https://github.com/tianocore/edk2/security/advisories/GHSA-99cj-7hg9-mp4m)
+and [iPXE chainloading guidance](https://ipxe.org/howto/chainloading).
 
 ### 9.2 BMC Security Posture Rollup & Risk Ratings {#bmc-security-posture-rollup}
 

@@ -26,11 +26,11 @@ THEME_TOGGLE_JS = """\
       parentTheme = window.parent.document.documentElement.getAttribute('data-theme');
     }
   } catch(e) {}
-  var stored;try{stored=localStorage.getItem('vcf-report-theme');}catch(e){}
+  var stored;try{stored=localStorage.getItem('vcf-theme')||localStorage.getItem('vcf-report-theme');}catch(e){}
   var cur=parentTheme || stored || root.getAttribute('data-theme') || 'dark';
   function apply(t, notifyParent){
-    root.setAttribute('data-theme',t);
-    if(btn)btn.textContent=t==='dark'?'🌙 Dark':'☀️ Light';
+    if(root.getAttribute('data-theme')!==t)root.setAttribute('data-theme',t);
+    if(btn&&btn.getAttribute('role')!=='switch')btn.textContent=t==='dark'?'🌙 Dark':'☀️ Light';
     try{localStorage.setItem('vcf-report-theme',t);}catch(e){}
     cur=t;
     if (notifyParent !== false) {
@@ -41,7 +41,7 @@ THEME_TOGGLE_JS = """\
           if (pRoot && pRoot.getAttribute('data-theme') !== t) {
             pRoot.setAttribute('data-theme', t);
             var pBtn = window.parent.document.getElementById('themeToggle');
-            if (pBtn) pBtn.textContent = t === 'dark' ? '🌙 Dark' : '☀️ Light';
+            if (pBtn && pBtn.getAttribute('role')!=='switch') pBtn.textContent = t === 'dark' ? '🌙 Dark' : '☀️ Light';
           }
         }
       } catch(ex) {}

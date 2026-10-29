@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from vcf_hci.constants import TOOL_VERSION
 from vcf_hci.logging_utils import scan_contains_original_artifacts
+from vcf_hci.server_groups import hydrate_groups, identity_value, merge_groups
 from vcf_hci.summary_io import load_summary
 
 logger = logging.getLogger(__name__)
@@ -182,7 +183,7 @@ def get_scan_identity(host_data: Dict[str, Any]) -> str:
         or host_data.get("uuid")
         or ""
     ).strip()
-    if uuid and uuid.lower() not in _INVALID_ID_VALUES:
+    if identity_value(uuid):
         return f"uuid:{uuid.lower()}"
 
     # 2. Serial + Model
@@ -199,10 +200,8 @@ def get_scan_identity(host_data: Dict[str, Any]) -> str:
         or ""
     ).strip()
     if (
-        serial
-        and serial.lower() not in _INVALID_ID_VALUES
-        and model
-        and model.lower() not in _INVALID_ID_VALUES
+        identity_value(serial)
+        and identity_value(model)
         and model.lower() != "unknown server"
     ):
         return f"serial_model:{serial.upper()}_{model.upper()}"
@@ -507,6 +506,13 @@ def assemble_fleet(
                 cand_time = parse_timestamp(host_copy.get("scanned_at"))
                 exist_time = parse_timestamp(existing.get("scanned_at"))
 
+                memberships = merge_groups(existing.get("server_groups"), host_copy.get("server_groups"))
+                if memberships:
+                    existing["server_groups"] = memberships
+                    host_copy["server_groups"] = memberships
+                if existing.get("server_group_host_id"):
+                    host_copy.setdefault("server_group_host_id", existing["server_group_host_id"])
+
                 if cand_time > exist_time:
                     # Candidate is newer -> candidate wins!
                     prev = list(existing.get("previous_scan_ids") or [])
@@ -535,6 +541,7 @@ def assemble_fleet(
         return f"{ip}_{hostname}_{get_scan_identity(h)}"
 
     sorted_results = sorted(dedup_map.values(), key=_sort_key)
+    hydrate_groups(sorted_results)
 
     return {
         "results": sorted_results,

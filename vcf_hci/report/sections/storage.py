@@ -27,6 +27,7 @@ from vcf_hci.report.components import (
 )
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.inventory_tables import _is_boot_ctrl
+from vcf_hci.ui_clarity import icon_html
 
 _RN_HCI_PROFILES = [
     {"name": "vSAN-HCI-LRG", "short": "LRG", "cpu_cores": 48, "memory_gb": 512, "nic_gbps": 25, "nvme_count": 6},
@@ -119,10 +120,10 @@ def render_vsan_esa_ready_node_cards(
         _nvme_ok = _rn_nvme >= _eval_p["nvme_count"]
         _nvme_label = f"{_rn_nvme} (found {osa_nvme_count} OSA-only NVMe)" if (_rn_nvme == 0 and osa_nvme_count > 0) else f"{_rn_nvme}"
         _checklist = (
-            _rn_dim_row("🖥️", "CPU cores",    f"{_rn_cores or '?'} total",  f"≥{_eval_p['cpu_cores']}",   _cpu_ok)
-            + _rn_dim_row("💾", "Memory",      f"{_rn_mem} GB",              f"≥{_eval_p['memory_gb']} GB", _mem_ok)
-            + _rn_dim_row("🌐", "NIC speed",   f"{_rn_nic or '?'} GbE",     f"≥{_eval_p['nic_gbps']} GbE", _nic_ok)
-            + _rn_dim_row("💿", "NVMe drives", _nvme_label + (f" ({_rn_nvme_tb} TB)" if _rn_nvme_tb else ""), f"≥{_eval_p['nvme_count']}", _nvme_ok)
+            _rn_dim_row(icon_html("cpu"), "CPU cores",    f"{_rn_cores or '?'} total",  f"≥{_eval_p['cpu_cores']}",   _cpu_ok)
+            + _rn_dim_row(icon_html("memory"), "Memory",      f"{_rn_mem} GB",              f"≥{_eval_p['memory_gb']} GB", _mem_ok)
+            + _rn_dim_row(icon_html("connect"), "NIC speed",   f"{_rn_nic or '?'} GbE",     f"≥{_eval_p['nic_gbps']} GbE", _nic_ok)
+            + _rn_dim_row(icon_html("nvme"), "NVMe drives", _nvme_label + (f" ({_rn_nvme_tb} TB)" if _rn_nvme_tb else ""), f"≥{_eval_p['nvme_count']}", _nvme_ok)
         )
         if _matched:
             _idx = next(i for i, p in enumerate(profiles) if p["name"] == _matched["name"])
@@ -158,7 +159,7 @@ def render_vsan_esa_ready_node_cards(
     )
     rn_card_html = (
         "<div class='card' data-rn-card='1'>"
-        "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem'>"
+        "<div class='report-card-header'>"
         "<h3 style='margin:0'>Est. ReadyNode Profile</h3>"
         "<select onchange='switchRNProfile(this)'"
         " style='font-size:.75rem;padding:.15rem .45rem;border:1px solid var(--border);"
@@ -168,13 +169,13 @@ def render_vsan_esa_ready_node_cards(
         "<option value='cr'>Cyber Recovery</option>"
         "</select></div>"
         f"<div data-rn-panel='hci'><div>{_rn_badge_hci}</div>"
-        f"<div style='margin-top:.5rem'>{_rn_checklist_hci}</div>"
+        f"<div class='rn-checklist'>{_rn_checklist_hci}</div>"
         f"<p style='font-size:.78rem;color:var(--text-muted);margin-top:.4rem'>{_rn_note_hci}</p></div>"
         f"<div data-rn-panel='sc' style='display:none'><div>{_rn_badge_sc}</div>"
-        f"<div style='margin-top:.5rem'>{_rn_checklist_sc}</div>"
+        f"<div class='rn-checklist'>{_rn_checklist_sc}</div>"
         f"<p style='font-size:.78rem;color:var(--text-muted);margin-top:.4rem'>{_rn_note_sc}</p></div>"
         f"<div data-rn-panel='cr' style='display:none'><div>{_rn_badge_cr}</div>"
-        f"<div style='margin-top:.5rem'>{_rn_checklist_cr}</div>"
+        f"<div class='rn-checklist'>{_rn_checklist_cr}</div>"
         f"<p style='font-size:.78rem;color:var(--text-muted);margin-top:.4rem'>{_rn_note_cr}</p></div>"
         "</div>"
         "<script>function switchRNProfile(sel){"
@@ -224,6 +225,11 @@ def render_vsan_esa_ready_node_cards(
     elif "vSAN OSA Eligible" in vsan_verdict:
         esa_badge = '<span class="badge warning">🟡 vSAN OSA Eligible (Not ESA Certified)</span>'
         esa_subtext = vsan_detail
+        if osa_nvme_count and not esa_nvme_count:
+            _osa_parts = [f"{osa_nvme_count} OSA certified NVMe " + ("drive" if osa_nvme_count == 1 else "drives")]
+            if sas_sata_count:
+                _osa_parts.append(f"{sas_sata_count} SAS/SATA " + ("drive" if sas_sata_count == 1 else "drives"))
+            esa_subtext = " · ".join(_osa_parts) + "."
     else:
         esa_badge = '<span class="badge danger">🔴 NOT Supported</span>'
         esa_subtext = f"Requires ≥2 direct-attached NVMe SSDs (found {esa_nvme_count}) + ≥25 GbE NIC (found {max_nic_gbps} Gbps)."
@@ -247,7 +253,7 @@ def render_vsan_esa_ready_node_cards(
 
     vsan_esa_card_html = (
         f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+        f"<div class='report-card-header'>"
         f"<h3 style='margin:0'>vSAN ESA (Express Storage Architecture)</h3>"
         f"<a href='#tab-storage' data-jump-tab='tab-storage' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Storage section'>Details &rarr;</a>"
         f"</div>"
@@ -355,6 +361,7 @@ def render_storage_subsystem_section(
             _name_cell = (
                 f"<strong>{_h(_e['name'])}</strong>"
                 + (f"<br><small style='color:var(--text-muted)'>{_model_str}</small>" if _model_str else "")
+                + (f"<br><small>{_h(str(_e['inventory_note']))}</small>" if _e.get('inventory_note') else "")
             )
             _ctrl_link = _h(_e.get("linked_ctrl_name") or _e.get("linked_ctrl_id") or "—")
             _enc_rows += (
@@ -451,11 +458,11 @@ def render_storage_subsystem_section(
             "<div style='font-size:.82rem;color:var(--text-muted);margin-bottom:.75rem;"
             "display:flex;flex-wrap:wrap;gap:1.25rem;align-items:center;"
             "background:var(--sec-muted-bg,#1e293b);padding:.5rem .85rem;border-radius:6px;border:1px solid var(--border)'>"
-            "<span><span style='color:#16a34a;font-size:1.1rem;vertical-align:-1px'>■</span> <b>NVMe SSD</b></span>"
-            "<span><span style='color:#f97316;font-size:1.1rem;vertical-align:-1px'>■</span> <b>EDSFF NVMe</b></span>"
-            "<span><span style='color:#6366f1;font-size:1.1rem;vertical-align:-1px'>■</span> <b>SATA / SAS SSD</b></span>"
+            "<span><span style='color:var(--success);font-size:1.1rem;vertical-align:-1px'>■</span> <b>NVMe SSD</b></span>"
+            "<span><span style='color:var(--warning);font-size:1.1rem;vertical-align:-1px'>■</span> <b>EDSFF NVMe</b></span>"
+            "<span><span style='color:var(--primary);font-size:1.1rem;vertical-align:-1px'>■</span> <b>SATA / SAS SSD</b></span>"
             "<span><span style='color:#0ea5e9;font-size:1.1rem;vertical-align:-1px'>■</span> <b>HDD</b></span>"
-            "<span><span style='color:#64748b;font-size:1.1rem;vertical-align:-1px'>■</span> <b>Empty Slot / Blank</b></span>"
+            "<span><span style='color:var(--text-muted);font-size:1.1rem;vertical-align:-1px'>■</span> <b>Empty Slot / Blank</b></span>"
             "</div>"
         )
 
@@ -546,8 +553,8 @@ def render_storage_subsystem_section(
             f"<div class='accordion-body'>"
             f"<div style='font-size:.82rem;color:var(--text-muted);margin-bottom:1rem'>"
             f"<span style='color:var(--success)'>&#9608;</span> NVMe &ensp;"
-            f"<span style='color:#f97316'>&#9632;</span> EDSFF NVMe (E1.S / E3.S) &ensp;"
-            f"<span style='color:#6366f1'>&#9646;</span> SAS / SATA &ensp;"
+            f"<span style='color:var(--warning)'>&#9632;</span> EDSFF NVMe (E1.S / E3.S) &ensp;"
+            f"<span style='color:var(--primary)'>&#9646;</span> SAS / SATA &ensp;"
             f"<span style='color:#cbd5e1'>&#9617;</span> Empty</div>"
             f"{_ctrl_blocks}"
             f"</div></details>"
@@ -641,7 +648,7 @@ def render_storage_subsystem_section(
     for ctrl in populated_ctrls:
         storage_cards += (
             f"<div class='card card-nested' style='margin-bottom:2rem;'>"
-            f"<h3>Storage Controller: {_h(ctrl.get('name', 'Storage Controller'))} (ID: {_h(str(ctrl.get('id', 'N/A')))})</h3>"
+            f"<h3>{icon_html('storage-adapter')} Storage Controller: {_h(ctrl.get('name', 'Storage Controller'))} (ID: {_h(str(ctrl.get('id', 'N/A')))})</h3>"
             f"{_ctrl_meta_html(ctrl, hcl_data=json_hcl)}"
             f"{_trimode_banner_html(ctrl)}"
             f"{_vmd_banner_html(ctrl, bios_checks=bios_checks)}"
@@ -651,7 +658,7 @@ def render_storage_subsystem_section(
     if empty_ctrls:
         inner = "".join(
             f"<details class='accordion' style='margin-bottom:.5rem'>"
-            f"<summary style='font-size:.9rem'>Storage Controller: {c['name']} (ID: {c['id']})"
+            f"<summary style='font-size:.9rem'>{icon_html('storage-adapter')} Storage Controller: {_h(c['name'])} (ID: {_h(c['id'])})"
             f" — <em style='font-weight:400;color:var(--text-muted)'>No drives</em></summary>"
             f"<div class='accordion-body'>{_ctrl_meta_html(c, hcl_data=json_hcl)}{_vmd_banner_html(c, bios_checks=bios_checks)}{_drive_table_header}"
             f"{_render_ctrl_drives(c, json_hcl=json_hcl)}</tbody></table></div></details>"
@@ -659,7 +666,7 @@ def render_storage_subsystem_section(
         )
         storage_cards += (
             f"<details class='accordion' style='margin-bottom:2rem'>"
-            f"<summary>🗄️ {len(empty_ctrls)} Empty Storage Controller(s) — expand to view</summary>"
+            f"<summary>{icon_html('storage-adapter')} {len(empty_ctrls)} Empty Storage Controller(s) — expand to view</summary>"
             f"<div class='accordion-body' style='padding:.5rem'>{inner}</div></details>"
         )
 

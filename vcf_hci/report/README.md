@@ -8,11 +8,23 @@
 
 Report generation is modular. `host_report.py` orchestrates evaluation results from `compat_engine.py` and section builders from `vcf_hci/report/sections/` to produce a standalone HTML report with **zero external CSS/JS dependencies**.
 
+`fleet/combined.py` preserves the combined renderer and its public aliases. Its
+helpers have explicit ownership:
+
+- `combined_assets.py` contains static shell CSS, navigation/privacy scripts and document composition. CSS cascade, script order, IDs and frame messages remain explicit; assets ship as Python constants.
+- `combined_data.py` prepares copied storage evidence, report-scoped obfuscation, summary rows, tiles/matrices and host navigation. It reads no report files.
+- `combined_hosts.py` owns report-path indexing, inline reads, temporary public-host rendering/cleanup, local Help fallback and lazy panels. Inline content and sidecar links use the same identity resolver before positional fallback.
+
+The shared `readiness.cpu_verdict_unassessed()` predicate keeps absent or
+unverified CPU evidence distinct from support in the overview and both fleet
+tables. New extraction boundaries are covered by
+[public report contract tests](../../tests/test_combined_report_contract.py).
+
 ```
 Host Summary JSON / Collector Payload
                   │
                   ▼
-      VCF9CompatibilityEngine (compat_engine.py)
+      enrich_host_result() (enrichment.py)
                   │
                   ▼
          host_report.py (Renderer Orchestrator)
@@ -31,6 +43,8 @@ overview.py    cpu.py      storage.py   health.py ... (Sections)
 ## Files & Modules Index
 
 - **`host_report.py`**: `generate_host_html_report()` creating standalone HTML reports per server.
+- **`firmware_identity.py`**: Conservative NIC firmware association from exact network resources or meaningful component identity; retain original firmware component names and leave ambiguous hardware matches unassigned.
+- **`pcie_inventory.py`**: Collected PCIe device records independently of physical slots. Preserve repeated adapters by resource identity, label simulated/partial BMC evidence, and separate negotiated links from reported maximum capabilities.
 - **`fleet_report.py`**: Backward-compatibility re-export facade for `generate_summary_html()`, `build_fleet_tiles_html()`, etc.
 - **`inventory_tables.py`**: `build_host_decision_rows()`, `summarize_esa_disks()`, `summarize_nics()`, and `build_inventory_sheets()` producing dense SE decision records and granular component rows (`Decision`, `vCPU`, `vMemory`, `vStorage`, `vNetwork`, `vGPU`, `vFirmware`, `vHBA`).
 - **`fleet/`**: Subpackage containing modular domain generators for multi-host fleet reporting:
@@ -41,7 +55,7 @@ overview.py    cpu.py      storage.py   health.py ... (Sections)
   - **`combined.py`**: `_generate_combined_html()` rendering multi-host tabbed fleet reports (`fleet_combined.html`) with Detailed Inventory at Tab 1.
   - **`vendor.py`**: `normalize_oem_vendor()` OEM vendor string normalization helper.
   - **`escape.py`**: `_xe()` XML/HTML-escape helper.
-- **`excel_export.py`**: `export_to_excel()`, `build_inventory_xlsx_bytes()`, and `build_obfuscated_inventory_zip()` exporting host inventory and compatibility assessments into comprehensive 10-tab Excel workbooks (`Summary`, `Decision`, `vCPU`, `vMemory`, `vStorage`, `vNetwork`, `vGPU`, `vFirmware`, `vHBA`, `Security`, and optional `Failed_Hosts`) and private obfuscation key ZIP bundles.
+- **`excel_export.py`**: `export_to_excel()`, `build_inventory_xlsx_bytes()`, and `build_obfuscated_inventory_zip()` exporting host inventory and compatibility assessments into multi-sheet Excel workbooks (summary, decision, component inventory, security posture, audit findings, and optional failed hosts) and private obfuscation key ZIP bundles.
 - **`csv_export.py`**: `export_all_csvs()`, `generate_fleet_summary_csv()`, `generate_drives_csv()`, `generate_nics_csv()`, `generate_gpus_csv()`, and `generate_failed_hosts_csv()` producing standardized tabular CSV exports.
 - **`schema_registry.py`**: Extensible Schema Registry (Schema v2.0) defining 40+ typed hardware fields across 11 architectural domains (`ExportField`, `FLEET_SUMMARY_FIELDS`). Provides stable column definitions, text sanitization (`strip_html`), and deterministic verdict color mapping (`color_for_verdict`) used by both Excel and CSV export engines.
 - **`sel_links.py`**: Multi-Vendor SEL / IML Guide Links & Event Resolvers (`VENDOR_SEL_GUIDES`, `get_sel_link`, `format_sel_badge`). Maps raw hardware alarms, event IDs, and hex codes directly to official vendor error documentation across Dell PowerEdge (EEMS 12G–17G), HPE ProLiant (IML Gen10–12), Cisco UCS (IMC Faults Guide), Lenovo ThinkSystem (XCC Events Guide), and Supermicro BMC (IPMI Spec).
@@ -122,3 +136,16 @@ time. An unknown capture date remains unknown. Mixed directories contain origina
 identities even when obfuscated copies are also present; use the separately
 filtered obfuscated ZIP for external sharing after reviewing its contents.
 FC inventory uses the shared `vcf_hci/fc_inventory.py` reconciliation helpers before reporting. Node-WWN aliases are merged only with matching adapter/port evidence; card counts use physical identity rather than model names. Unknown card counts remain explicit. Inventory rollups preserve the legacy `count` field as a port count and also expose `port_count` and `adapter_count`.
+
+## Executive reporting and presentation preferences
+
+`executive.py` builds an evidence-based brief, printable HTML, and a stdlib-only PDF with pagination. Fleet summary generation writes both executive artifacts; `/api/export-executive` produces current or obfuscated downloads. Priority groups use existing decision rows and canonical BMC control titles. Unknowns and failed targets stay separate from successful readiness counts.
+
+`formatting.py` applies the shared, always-on Clarity SVG renderer to HTML. Historical presentation flags are ignored. `ui_clarity.py` preserves inputs, code, paths, PII spans and evidence cells, and adds selected icons to interface labels; observed drive protocol/media determine the one icon beside each media label. CSV/Excel values remain plain data. Text-only executive output uses a separate sanitizer. Shared presentation tokens use neutral labels with narrow semantic color accents.
+
+See [the executive report guide](../../docs/EXECUTIVE_REPORT.md) for scope, priority rules, and PDF font behavior.
+
+
+Shared layout primitives belong in `presentation.py`/`clarity.py`. Use `report-card-header` for heading/actions, responsive `minmax(min(100%, ...), 1fr)` grids, and `report-table-region` for horizontal table scrolling. `layout.py` applies outer-table containment and legacy text-color adaptation idempotently during formatting, preserving existing scroll containers, nested diagram geometry, fixed color pairs and raw script/code text. Shared aliases resolve legacy background/border/text token names. Keep inline styles for evidence-driven measurements/geometry; use named classes for repeated typography, spacing, colors and layout. Do not fix overflow by clipping the page or hiding identifiers.
+
+`tools/audit_report_css.py` measures generated curated reports across host tabs, themes and viewport widths. Its contrast results are samples requiring review, not an accessibility certification. Output belongs in a private evidence directory, not the public report distribution.

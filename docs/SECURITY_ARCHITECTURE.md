@@ -5,21 +5,23 @@
 
 ---
 
-## 1. Executive Summary: Why Security Teams Approve This Tool
+## 1. Executive Summary and Scope
 
 The **VCF / vSphere 9.1 HCI Readiness Assessment Tool** is a non-intrusive, read-only hardware auditor designed to evaluate enterprise server compatibility against VMware Cloud Foundation (VCF) 9.1 and vSAN Express Storage Architecture (ESA) standards.
 
-From an Information Security and Cyber Risk perspective, the tool is engineered with a strict minimal-attack-surface philosophy:
+This document describes native BMC collection. Optional VDT appliance diagnostics are a separate, operator-triggered workflow: they require appliance SSH/root and separate SSO access, deploy reviewed operator-supplied code, and write owned temporary files and local artifacts. See [VDT workflow and limitations](../Plugins/README.md). Statements about no host credentials or deployment below apply to native BMC collection.
+
+The native scanner uses these boundaries:
 
 1. **Zero Hypervisor / OS Footprint:** Requires **no** host agents, kernel modules, OS daemons, or in-band credentials. It operates entirely out-of-band (OOB).
 2. **Principle of Least Privilege:** Connects via **read-only** Baseboard Management Controller (BMC) accounts. The usual path is HTTPS on port 443. HTTP on port 80 is accepted only with a warning because credentials are unencrypted. Zero write, reboot, firmware flashing, or configuration mutation actions are performed.
-3. **100% Python Standard Library (Zero Third-Party Dependencies):** Package code uses **only** built-in Python 3.9+ modules (`urllib.request`, `ssl`, `json`, `hashlib`). No unvetted third-party `pip` packages (e.g., `requests`, `aiohttp`, `jinja2`) are bundled or imported, eliminating supply-chain attack vectors.
+3. **No Required Third-Party Runtime Packages:** Native scanning runs on Python 3.9+ standard-library modules. The optional vault uses installed `pycryptodomex` or `pycryptodome` for AES when available, with a stdlib fallback. Python, OpenSSL, bundled assets, optional packages and build tools still require normal vulnerability and provenance review.
 4. **Complete Source Auditability (No Opaque Binaries Required):** The tracked and supported launch path is plain-text Python source (`python3 vcfr_web.py` or `python3 -m vcf_hci`). This repository does not require or promise a prebuilt executable.
-5. **Default-Offline / No "Phone-Home":** The tool contains **no** analytics beacons, crash telemetry, license validation check-ins, or background egress channels. Public-network egress is off by default; Broadcom HCL refresh/bundle creation, Dell warranty enrichment, and external credential providers require explicit operator opt-in.
+5. **Local Assessment and Disclosed Egress:** There are no analytics, crash telemetry, or license check-ins. The browser server checks public GitHub release metadata once per launch by default; set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable that request. Broadcom HCL refresh/bundle creation, Dell warranty enrichment, and external credential providers require explicit operator action.
 6. **Air-Gap / Dark-Site Support:** Operates seamlessly in isolated air-gapped networks. Public Broadcom Hardware Compatibility List (HCL) datasets can be packaged offline (`--bundle-hcl`) and imported (`--import-hcl`), eliminating any need for dual-homed management workstations.
 7. **Deterministic Data Obfuscation:** Built-in cryptographic PII sanitization hashes IPs, MACs, serial numbers, hostnames, and WWNs with a random salt while preserving essential hardware and topology relationships for external review.
 8. **Hardened Local Web UI:** The Web UI binds to `127.0.0.1` by default, validates a one-time launch token and then a session cookie, enforces Host/Origin checks to prevent DNS rebinding, and blocks SSRF access to cloud metadata endpoints. A non-loopback listener requires an explicit allow flag and TLS material, and it disables the vault and jump-host features.
-9. **Permissive Code & LLM Audit Rights:** The software license explicitly grants organizations full rights to inspect, audit, SAST-scan, or feed the source code into AI/LLM security analysis platforms (e.g., Mythos, Fable, CodeQL, SonarQube).
+9. **Source and License Visibility:** Source is available for inspection. `LICENSE.md` contains the governing CA, Inc. terms; it does not explicitly address uploading code to an external AI or audit service. See section 9.
 
 ---
 
@@ -31,7 +33,7 @@ From an Information Security and Cyber Risk perspective, the tool is engineered 
 │                                                                          │
 │   ┌──────────────────────────────────────────────────────────────────┐   │
 │   │  Local Web UI (127.0.0.1:7182) or CLI (vcfr_collector.py)        │   │
-│   │  • Bound to localhost loopback only                              │   │
+│   │  • Bound to localhost loopback by default                              │   │
 │   │  • Protected by CSRF & high-entropy launch token                 │   │
 │   │  • SSRF filtering blocks cloud metadata endpoints                │   │
 │   └────────────────────────────────┬─────────────────────────────────┘   │
@@ -39,14 +41,14 @@ From an Information Security and Cyber Risk perspective, the tool is engineered 
 │   ┌────────────────────────────────▼─────────────────────────────────┐   │
 │   │  Python 3.9+ Standard Library Runtime Engine                     │   │
 │   │  • urllib.request / ssl / json / hashlib / concurrent.futures    │   │
-│   │  • ZERO external pip dependencies / zero native shared libs      │   │
+│   │  • No required pip packages; optional vault AES support      │   │
 │   └─────────────────┬───────────────────────────────▲────────────────┘   │
 │                     │                               │                    │
 │                     │ (Read-Only JSON Scans)        │ (Offline Import)   │
 │                     ▼                               │                    │
 │   ┌──────────────────────────────────┐  ┌───────────┴────────────────┐   │
 │   │ Standalone HTML Reports          │  │ Offline HCL Zip Bundle     │   │
-│   │ (Standard & Obfuscated PII-Free) │  │ (vcf_hcl_bundle_*.zip)     │   │
+│   │ (Standard & Obfuscated Copies) │  │ (vcf_hcl_bundle_*.zip)     │   │
 │   └──────────────────────────────────┘  └────────────────────────────┘   │
 └───────────────────────┬──────────────────────────────────────────────────┘
                         │
@@ -73,7 +75,7 @@ From an Information Security and Cyber Risk perspective, the tool is engineered 
 
 ## 3. Principle of Least Privilege: Credentials & Access
 
-The assessment tool requires access only to the Out-of-Band management plane and functions completely with unprivileged, read-only credentials.
+Native assessment requires access to the Out-of-Band management plane with read-only credentials. Inventory coverage depends on each OEM’s privilege and license model; denied or unavailable evidence remains unknown.
 
 ### Access Boundaries & Privilege Matrix
 
@@ -81,7 +83,7 @@ The assessment tool requires access only to the Out-of-Band management plane and
 |---|---|---|
 | **Network Path** | Out-of-Band (OOB) BMC IP network over HTTPS (TCP 443) | No route to production VM traffic or internal application networks is required. |
 | **In-Band / Host Access** | **None** | No ESXi, Windows, or Linux OS credentials; no SSH access to hypervisors; no host-level agents or daemons. |
-| **BMC Account Role** | **Read-Only / Operator** | Zero administrative privileges required (no "Administrator" or "Configure" rights needed). |
+| **BMC Account Role** | **Read-Only / Operator** | Use the least-privileged account that exposes the needed inventory. Some security evidence may be unavailable without additional rights. |
 | **Allowed HTTP Verbs** | `GET`, `OPTIONS`, `HEAD`; narrowly scoped `POST` / `DELETE` | Redfish session authentication uses `POST` only to create an ephemeral session and `DELETE` only to close that session. WS-Man and Cisco XML inventory use read-semantic `POST` requests because those protocols tunnel reads through POST. |
 | **Prohibited Actions** | Configuration `PATCH` / `PUT` and action `POST` | **Zero** power state changes, **zero** reboot commands, **zero** firmware updates, **zero** BIOS configuration modifications. |
 
@@ -168,7 +170,7 @@ python3 vcfr_collector.py --targets 192.0.2.10-20 --username readonly_audit --ou
 ```
 
 ### Zero External Package Dependencies
-Unlike typical Python utilities, `vcf_hci` imports **zero external pip packages**. Runtime package code uses exclusively Python standard library modules:
+The core scanner has no required third-party runtime packages. Its normal runtime uses Python standard-library modules; the opt-in vault can dynamically load installed AES support:
 
 ```python
 # Permitted Runtime Imports (Enforced via static analysis & CI lint gates)
@@ -179,19 +181,23 @@ import sys, threading, time, urllib.parse, urllib.request, zipfile
 
 **Banned Packages:** `requests`, `urllib3`, `aiohttp`, `pandas`, `jinja2`, `beautifulsoup4`, `lxml`, `cryptography`, `paramiko`.
 
-*Security Benefit:* Eliminates vulnerabilities stemming from dependency tree bloat, malicious upstream package takeovers, dependency confusion attacks, and opaque native C-extension libraries.
+*Security scope:* A small required dependency set reduces supply-chain exposure. It does not eliminate vulnerabilities in Python, native runtime libraries, bundled assets, optional crypto packages, or build tooling.
 
 ---
 
 ## 5. Network Egress, Telemetry & Air-Gapped Operation
 
-### Zero "Phone-Home" Guarantee
-- **No Automatic Public Egress:** The tool does not transmit telemetry, analytics, health pings, usage metrics, or license status. Ordinary scans and HCL loads do not contact public services.
+### Public-network behavior
+
+- **No Scan Telemetry:** The scanner does not transmit scan results, analytics, usage metrics, or license status to the project. Ordinary HCL loads use local data.
+- **Default-On UI Release Notice:** At browser-server launch, `vcf_hci/web/update_check.py` sends one bounded HTTPS request to GitHub’s public releases API, including the tool version in its User-Agent. It checks release metadata without downloading or installing software. Set `VCF_READINESS_CHECK_UPDATES=0` before launch for no public startup request. CLI collection does not start this checker.
 - **Explicit Opt-In Egress Only:** `--refresh-hcl`, `--bundle-hcl`, and the Web UI HCL refresh action may download the public Broadcom HCL. Dell TechDirect warranty enrichment and HashiCorp Vault / SDDC Manager credential providers make outbound requests only after the operator supplies credentials and explicitly enables or constructs those features.
 - **Self-Contained Evaluation:** All compatibility rules (CPU generation matrices, vSAN ESA certification logic, BIOS security benchmarks) are embedded directly in the local source code (`vcf_hci/compat/` and `vcf_hci/constants.py`).
 - **No Unsolicited Remote Execution:** Reports are generated as self-contained static HTML files with inline CSS and client-side JavaScript. No external CDNs, fonts, or tracking pixels are referenced. Experimental jump-host execution is a separate, explicit Web UI action that deploys an ephemeral stdlib zipapp over pinned-host-key SSH.
 
 ### Air-Gapped / Dark-Site Operation (Isolated OOB Networks)
+
+Disable the UI release notice before launch with `VCF_READINESS_CHECK_UPDATES=0`; see [platform-specific commands](INSTALL.md#offline-and-air-gapped-operation). No internet connection is required for local scanning or report generation. Imported HCL data is a dated snapshot, and a match does not alone certify an entire configuration.
 To prevent security concerns where an operator device would require simultaneous access to the public internet and an isolated OOB BMC network (dual-homing), the tool provides an offline database bundling workflow:
 
 ```
@@ -204,7 +210,7 @@ $ python3 -m vcf_hci --bundle-hcl
 
 [ Step 3: Air-Gapped Bastion Workstation on OOB Network ]
 $ python3 -m vcf_hci --targets 192.0.2.10-20 --import-hcl vcf_hcl_bundle_YYYYMMDD.zip
-  └─► 100% offline evaluation against certified hardware database
+  └─► Offline correlation against the imported dataset and its recorded scope
   └─► Zero internet connectivity required
 ```
 
@@ -232,7 +238,7 @@ When assessment reports must be shared with external Solution Architects or Broa
 ### Cryptographic Salt & Topology Integrity
 - **Per-Execution Random Salt:** A high-entropy 128-bit salt (`os.urandom(16)`) is generated for each obfuscated run.
 - **Relational Consistency:** The same real identifier within a scan batch produces the identical token across all host reports (e.g., two servers connected to the same switch port receive identical masked switch IDs `SW-A3F9B2`), preserving cluster and network switch matrix topology analysis without revealing physical infrastructure details.
-- **Interactive DOM Masking:** HTML reports feature a client-side PII mask toggle allowing live presentations where real hostnames and IPs can be masked or unmasked dynamically in the browser without re-rendering.
+- **Interactive DOM Masking:** The display toggle can mask and unmask values without re-rendering; the original identifiers remain in that document. Use the separate obfuscated export for sharing, and review its contents. Raw captures, free-form evidence, private key bundles and hybrid VDT reports are not made safe by toggling a native report.
 - **Local Review:** Security auditors can inspect the report generators and create approved synthetic or obfuscated output locally before assessing production targets.
 
 ---
@@ -303,21 +309,11 @@ Because enterprise BMCs frequently utilize self-signed certificates or private e
 
 ---
 
-## 9. License Permissions & AI / LLM Security Auditing Rights
+## 9. Source Review and License Scope
 
-Security organizations require clear legal authorization to audit third-party scripts and ingest them into automated scanning engines.
+The governing [license](../LICENSE.md) grants use, copying, modification and distribution for use in connection with CA, Inc. products, subject to its terms. This architecture document does not expand that grant. Third-party components retain their own notices; see [third-party notices](../THIRD_PARTY_LICENSES.md).
 
-### Software License Terms (`LICENSE.md`)
-The tool is licensed under a permissive, royalty-free software license agreement granting worldwide rights to use, copy, inspect, modify, and distribute the software:
-
-> *"You are hereby granted a non-exclusive, worldwide, royalty-free license under CA, Inc.'s copyrights to use, copy, modify, and distribute this software in source code or binary form..."*
-
-### Explicit Audit & LLM Ingestion Rights
-Under this license, your security, risk, and engineering teams have full legal authorization to:
-
-1. **Static Analysis & SAST Scanning:** Ingest all repository source files into commercial SAST tools (e.g., Veracode, Checkmarx, SonarQube, Snyk, CodeQL, Semgrep).
-2. **AI / LLM Code Audit Platforms:** Upload and process the scripts through internal or cloud-based Large Language Models and AI code reviewers (e.g., Mythos, Fable, internal GitHub Copilot, Anthropic Claude, OpenAI ChatGPT) for line-by-line vulnerability assessment, logic validation, and security compliance verification.
-3. **Dynamic Protocol Auditing:** Capture and inspect all outbound HTTP traffic via local web proxies (e.g., OWASP ZAP, Burp Suite, Wireshark) during execution.
+The license does not explicitly name SAST tools, cloud audit services or AI/LLM ingestion. Apply your organization’s code-handling and service policies when selecting an audit environment. Private assessment documents, captures, operator-supplied VDT and credentials are outside the scanner’s shipment source.
 
 ---
 
@@ -330,15 +326,15 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 | **Does the tool install agents on OS/hypervisors?** | **No.** Operates purely via Out-of-Band BMC network. | `vcf_hci/collector/` |
 | **Are administrator write privileges required?** | **No.** Standard read-only BMC accounts are used. | [Section 3](#3-principle-of-least-privilege-credentials--access) |
 | **Does the software execute binary code that cannot be inspected?** | **No.** Plain Python 3.9+ source is fully auditable. | `vcfr_web.py`, `vcf_hci/` |
-| **Does the tool introduce external supply-chain dependencies?** | **No.** Zero third-party `pip` dependencies (stdlib only). | `pyproject.toml`, `vcf_hci/` |
-| **Does the tool transmit customer data outside the company?** | **Not by default.** Zero telemetry or analytics; optional HCL refresh/bundling, Dell warranty, and external credential-provider egress are explicit opt-ins. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
+| **Does the tool introduce external supply-chain dependencies?** | **No required pip packages.** Optional AES, bundled assets and the selected Python/build runtime have their own dependencies and notices. | `pyproject.toml`, `vcf_hci/` |
+| **Does the tool transmit customer data outside the company?** | **No scan telemetry.** A default-on UI GitHub release check sends version metadata; disable it before launch. HCL, warranty and credential-provider requests are explicit. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
 | **Can the tool function in an air-gapped network?** | **Yes.** Supports offline dark-site HCL zip bundles. | `vcf_hci/hcl/bundle_manager.py` |
 | **Can sensitive identifiers be redacted before sharing reports?** | **Yes.** SHA-256 deterministic salted PII hashing engine. | `vcf_hci/obfuscation.py` |
 | **Is the local web UI protected against CSRF and DNS rebinding?** | **Yes.** Loopback by default, one-time launch token exchanged for an `HttpOnly` / `SameSite=Strict` session cookie (`Secure` on HTTPS), strict host headers. Exposed listeners require TLS. | `vcf_hci/web/server.py` |
 | **Can enterprise CA certificates and TLS pinning be enforced?** | **Yes.** `--verify-ssl`, `--ca-bundle`, and TOFU thumbprint pinning. | `vcf_hci/tls_utils.py` |
 | **How are per-host BMC passwords stored if the operator opts in?** | **Encrypted, off by default.** PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM (with optional pycryptodomex) or stdlib HMAC-SHA256-EtM, `0600` file, no plaintext export, disabled under `--allow-remote`. | [Section 3.3](#33-optional-encrypted-local-credential-vault-opt-in-off-by-default), `vcf_hci/vault/` |
-| **Does the audit align with federal CISA/NSA BMC hardening guidance?** | **Yes.** Directly evaluates controls aligned with CISA/NSA *Harden Baseboard Management Controllers* (CSI). | [Section 12](#12-regulatory--hardening-compliance-baselines-cisa-nsa-nist-vcf-scg) |
-| **Is the organization permitted to run SAST and LLM code audits?** | **Yes.** Permissive worldwide royalty-free license grant. | `LICENSE.md` |
+| **Does the audit align with federal CISA/NSA BMC hardening guidance?** | **Partial evidence alignment.** Controls map to the guidance; unavailable and procedural evidence cannot establish compliance. | [Section 12](#12-regulatory--hardening-compliance-baselines-cisa-nsa-nist-vcf-scg) |
+| **Where are code-use terms defined?** | `LICENSE.md` governs use; it does not explicitly authorize external AI/audit-service uploads. Apply organizational policies. | `LICENSE.md`, section 9 |
 
 ---
 
@@ -368,12 +364,12 @@ The out-of-band management controller audit engine evaluates server hardware aga
 
 1. **CISA & NSA Joint Guidance (Federal Baseline):**
    - **Guidance:** [CISA/NSA Cybersecurity Information Sheet: Harden Baseboard Management Controllers (PDF)](https://media.defense.gov/2023/Jun/14/2003241405/-1/-1/0/CSI_HARDEN_BMCS.PDF)
-   - **Alignment:** Directly assesses all 8 recommendations including credential protection (default passwords, account lockout), network segmentation (management VLAN, dedicated NIC), configuration lockdown (TLS 1.2+, IPMI/Telnet disablement, boundary escape mitigations), routine firmware updates, hardware silicon root of trust verification, and fleet discovery.
+   - **Alignment:** Maps collected evidence and operational recommendations to the guidance, including credential protection (default passwords, account lockout), network segmentation (management VLAN, dedicated NIC), configuration lockdown (TLS 1.2+, IPMI/Telnet disablement, boundary escape mitigations), routine firmware updates, hardware silicon root of trust verification, and fleet discovery.
 2. **VMware Cloud Foundation Security Configuration Guide (SCG 9.1):**
    - **Guidance:** [VCF Security and Compliance Guidelines](https://github.com/vmware/vcf-security-and-compliance-guidelines)
    - **Alignment:** Evaluates 84 canonical controls establishing compliance baselines across cryptographic protocol requirements, service minimization, and credential management. Mapped against upstream ESXi hardware management controls (`esx-9.hardware-management-security`, `esx-9.hardware-ports`, `esx-9.hardware-virtual-nic`, `esx-9.hardware-management-log-forwarding`).
 3. **NIST SP 800-193 (Platform Firmware Resiliency):**
-   - **Alignment:** Validates hardware silicon root of trust (RoT) anchoring immutable boot integrity (Dell RoT, HPE Silicon Root of Trust) and cryptographically signed firmware components.
+   - **Alignment:** Reports available vendor evidence for root-of-trust and firmware-resiliency capabilities. This is not independent attestation or certification of NIST compliance; missing or procedural evidence remains unknown or requires manual review.
 4. **DMTF Redfish Standard (DSP0266 & DSP2059):**
    - **Alignment:** Uses open standard schema models (`/redfish/v1/Managers/.../NetworkProtocol`, `AccountService`, `CertificateService`) for vendor-neutral querying and verification.
 

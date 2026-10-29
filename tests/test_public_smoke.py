@@ -90,6 +90,7 @@ class TestPublicSmoke(unittest.TestCase):
                 "docs/INSTALL.md", "docs/OEM_REFERENCE.md", "docs/REDFISH_MONITORING_GUIDE.md", "docs/adding-oem-support.md",
                 "docs/SECURITY_ARCHITECTURE.md", "docs/CREDENTIAL_VAULT.md",
                 "docs/INVENTORY_REFERENCE.md", "docs/USER_GUIDE_REFERENCE.md",
+                "docs/EXECUTIVE_REPORT.md", "docs/SCANNER_GROUPS_AND_DISPLAY.md",
                 "docs/REMOTE_JUMP_HOST_GUIDE.md", "docs/CUSTOMER_DELIVERABLE_SBOM.md",
             }
             compiled_blacklists = [
@@ -100,6 +101,9 @@ class TestPublicSmoke(unittest.TestCase):
                 re.compile(r"docs/decisions", re.I),
             ]
 
+        # This scanner-authored guide is bundled as text; its source provenance
+        # does not authorize exporting Plugins/ or operator-supplied payloads.
+        allowed_rel_paths.add("Plugins/README.md")
         for doc_id, doc in DOCS_DATA.items():
             rel = doc.get("rel_path", "")
             self.assertIn(

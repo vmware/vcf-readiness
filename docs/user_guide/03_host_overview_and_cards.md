@@ -21,7 +21,7 @@ The top section of the single-host report establishes the physical identity of t
 | **Scan Mode Badge** | Collection profile executed: `Quick Scan` (~5s), `Lean Scan` (~15–30s), or `Full Scan` (~60–90s). | Clarifies why certain sections (e.g. SMART drive wear or thermal telemetry) may be omitted in fast scans. | [User Guide Reference](#web-ui-and-cli-operations) |
 | **Host OS Detection** | In-band operating system telemetry queried from BMC agentless interfaces: hypervisor build (e.g. `VMware ESXi 8.0.3 build-24022510`), Linux kernel, or Windows Server. | Identifies current operating environment prior to VCF 9.1 hypervisor reimaging. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
 | **BCG Deep Links** | Single-click links dynamically generated for the Server Platform and CPU Processor family. | Direct access to official Broadcom certified compatibility listings. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
-| **PII Obfuscation Badge** | Indicator displayed when data obfuscation is active (`🔒 Obfuscated Report`). Real hostnames, IPs, MACs, and serials are replaced with deterministic SHA-256 tokens. | Guarantees compliance when sharing readiness reports with external partners or Broadcom support. | [Security Architecture](docs/SECURITY_ARCHITECTURE.md) |
+| **PII Obfuscation Badge** | Indicator displayed when data obfuscation is active (`🔒 Obfuscated Report`). Real hostnames, IPs, MACs, and serials are replaced with deterministic SHA-256 tokens. | Guarantees compliance when sharing readiness reports with external partners or Broadcom support. | [Security Architecture](../SECURITY_ARCHITECTURE.md) |
 
 ---
 
@@ -40,7 +40,7 @@ Eight high-contrast visual cards immediately communicate qualification status ac
 #### 2. BIOS & Microcode Card
 - **Evaluation Logic:** Compares installed BIOS firmware against OEM minimum release matrices and evaluates processor microcode side-channel security tiers.
 - **Statuses:**
-  - `🟢 Baseline Met`: Installed BIOS meets or exceeds recommended OEM firmware release with Tier 4 microcode.
+  - `🟢 Baseline Met`: Installed BIOS meets the tool’s recorded model/version baseline. The separate date-based CVE tier does not prove current microcode coverage.
   - `🟡 Update Recommended`: BIOS is below recommended baseline or aging release date detected.
   - `🔴 Action Required`: Vulnerable microcode level (Tier <4) requiring mandatory BIOS flashing.
 - **External Reference:** [Broadcom KB 330041](https://kb.vmware.com/s/article/330041).
@@ -64,8 +64,8 @@ Eight high-contrast visual cards immediately communicate qualification status ac
 #### 5. vSAN ESA/OSA Readiness Card
 - **Evaluation Logic:** Evaluates direct-attached NVMe flash count, total usable capacity, and uplink network speed.
 - **Statuses:**
-  - `🟢 vSAN ESA Ready`: &ge;2 direct NVMe SSDs, no RAID/VMD blockers, and &ge;25 GbE network interfaces.
-  - `🟡 vSAN ESA Storage Met`: Storage requirements satisfied, but network NIC is <25 GbE (requires 25G NIC upgrade).
+  - `🟢 vSAN ESA Ready`: &ge;2 direct NVMe SSDs, no RAID/VMD blockers, and &ge;10 GbE networking for the tool’s Small/Edge baseline; Medium/Large sizing requires &ge;25 GbE.
+  - `🟡 vSAN ESA Storage Met`: Storage requirements satisfied, but maximum NIC speed is <10 GbE; upgrade to at least 10 GbE for Small/Edge or 25 GbE for Medium/Large sizing.
   - `🟡 vSAN OSA Compatible`: SAS/SATA SSDs attached via certified pass-through HBA controller.
   - `🔴 vSAN Ineligible`: NVMe behind HW RAID, Intel VMD enabled, or insufficient drive count.
 - **External Reference:** [vSAN ESA ReadyNode Hardware Guidance](https://core.vmware.com/resource/vmware-vsan-esa-readynode-hardware-guidance).

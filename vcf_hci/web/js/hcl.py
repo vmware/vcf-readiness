@@ -36,8 +36,30 @@ JS_HCL = """
     return s;
   }
 
+  var hclStatusMeta = null;
+  var hclStatusPending = true;
+  var hclStatusError = '';
+  var hclExportPending = false;
+  function notifyHclWorkflow() {
+    ['hclRefreshBtn', 'hclUploadBtn', 'hclExportBtn', 'hclResetBtn'].forEach(function(id) { document.getElementById(id).disabled = hclStatusPending || hclExportPending; });
+    var hclMessage = document.getElementById('hclActionStatus');
+    if (hclMessage) setOperationProgress('hclActionStatus',{busy:hclStatusPending || hclExportPending,label:hclMessage.textContent || 'Checking local HCL status'});
+    if (typeof updateWizardHcl === 'function' && document.getElementById('wizardHclStatus')) updateWizardHcl();
+  }
+  function hclActionMessage(message, failed) {
+    document.getElementById('hclActionStatus').textContent = message;
+    document.getElementById('hclActionStatus').classList.toggle('alert-danger',!!failed);
+    setOperationProgress('hclActionStatus',{busy:!failed && (hclStatusPending || hclExportPending),label:message});
+    if (failed) document.getElementById('hclOfflineHelp').open = true;
+  }
   function refreshHclStatus() {
-    get('/api/hcl').then(function(meta) {
+    hclStatusPending = true;
+    notifyHclWorkflow();
+    return get('/api/hcl').then(function(meta) {
+      hclStatusMeta = meta;
+      hclStatusError = '';
+      hclStatusPending = false;
+      notifyHclWorkflow();
       var badge = document.getElementById('hclBadge');
       var freshnessBadge = document.getElementById('hclFreshnessBadge');
       var countsEl = document.getElementById('hclCounts');
@@ -102,7 +124,11 @@ JS_HCL = """
       }
     }).catch(function() {
       var badge = document.getElementById('hclBadge');
-      if (badge) badge.innerHTML = '<span class="text-muted">Default Broadcom HCL</span>';
+      hclStatusPending = false;
+      hclStatusMeta = null;
+      hclStatusError = 'Unable to check local HCL status.';
+      notifyHclWorkflow();
+      if (badge) badge.textContent = hclStatusError;
     });
   }
   refreshHclStatus();
@@ -112,19 +138,25 @@ JS_HCL = """
   if (hclRefreshBtn) {
     hclRefreshBtn.addEventListener('click', function() {
       hclRefreshBtn.disabled = true;
-      if (hclSpinner) hclSpinner.style.display = 'inline-flex';
+      hclStatusPending = true;
+      notifyHclWorkflow();
+      hclActionMessage('Downloading HCL…', false);
+      if (hclSpinner) { show(hclSpinner); hclSpinner.style.display = 'inline-flex'; }
       post('/api/hcl/refresh', {}).then(function(r) {
         hclRefreshBtn.disabled = false;
-        if (hclSpinner) hclSpinner.style.display = 'none';
+        if (hclSpinner) { hide(hclSpinner); hclSpinner.style.display = 'none'; }
         if (r && r.error) {
-          alert('HCL Refresh failed: ' + r.error);
+          hclActionMessage('HCL download failed: ' + r.error, true);
+          refreshHclStatus();
         } else {
+          hclActionMessage('HCL downloaded. Checking local data…', false);
           refreshHclStatus();
         }
       }).catch(function(err) {
         hclRefreshBtn.disabled = false;
-        if (hclSpinner) hclSpinner.style.display = 'none';
-        alert('HCL Refresh error: ' + err);
+        if (hclSpinner) { hide(hclSpinner); hclSpinner.style.display = 'none'; }
+        hclActionMessage('HCL download failed: ' + err, true);
+        refreshHclStatus();
       });
     });
   }
@@ -136,26 +168,57 @@ JS_HCL = """
   document.getElementById('hclFileInput').addEventListener('change', function(e) {
     var file = e.target.files[0];
     if (!file) return;
+    hclStatusPending = true;
+    notifyHclWorkflow();
+    hclActionMessage('Importing HCL bundle…', false);
     var reader = new FileReader();
     reader.onload = function(evt) {
       var b64 = evt.target.result.split(',')[1] || '';
       post('/api/import-hcl', {filename: file.name, content_b64: b64}).then(function(r) {
         if (r.error) {
-          alert('Failed to import HCL bundle: ' + r.error);
+          hclActionMessage('Failed to import HCL bundle: ' + r.error, true);
+          refreshHclStatus();
         } else {
+          hclActionMessage('HCL bundle imported.', false);
           refreshHclStatus();
         }
       }).catch(function(err) {
-        alert('HCL upload error: ' + err);
+        hclActionMessage('HCL upload error: ' + err, true);
+        refreshHclStatus();
       });
     };
+    reader.onerror = function() { hclActionMessage('Could not read the HCL ZIP. Choose the file again.', true); refreshHclStatus(); };
     reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+
+  document.getElementById('hclExportBtn').addEventListener('click', async function() {
+    hclExportPending = true; notifyHclWorkflow();
+    hclActionMessage('Preparing the active offline HCL datasets…', false);
+    try {
+      var response = await fetch('/api/hcl/export', {credentials:'same-origin'});
+      if (!response.ok) {
+        var message = 'Could not export the offline HCL bundle.';
+        try { var error = await response.json(); if (error.error) message = error.error; } catch(ignore) {}
+        throw new Error(message);
+      }
+      var blob = await response.blob();
+      var disposition = response.headers.get('Content-Disposition') || '';
+      var match = disposition.match(/filename="([A-Za-z0-9_.-]+[.]zip)"/);
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a'); link.href = url; link.download = match ? match[1] : 'offline-hcl.zip';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+      hclActionMessage('HCL bundle exported. Transfer the ZIP and use Import Dark-Site HCL ZIP on the destination scanner.', false);
+    } catch(error) { hclActionMessage(error.message || 'Could not export the offline HCL bundle.', true); }
+    finally { hclExportPending = false; notifyHclWorkflow(); }
   });
 
   document.getElementById('hclResetBtn').addEventListener('click', function() {
-    del('/api/hcl').then(function() {
+    del('/api/hcl').then(function(r) {
+      if (r && r.error) hclActionMessage('Could not reset HCL: ' + r.error, true);
       refreshHclStatus();
-    });
+    }).catch(function(err) { hclActionMessage('Could not reset HCL: ' + err, true); });
   });
 
   // Clamp threads input blur/change
@@ -382,7 +445,7 @@ JS_HCL = """
       _scanRunning = true;
       post('/api/scan', body).then(function(r) {
         if (r.error) {
-          alert('Retry error: ' + r.error);
+          showContextMessage('Retry error: ' + r.error);
           document.getElementById('runBtn').disabled = false;
           document.getElementById('runBtn').textContent = '▶  Run Assessment';
           hide(document.getElementById('scanSpinner'));
@@ -393,7 +456,7 @@ JS_HCL = """
         updateProgress(0, r.total);
         startSSE(r.scan_id);
       }).catch(function(e) {
-        alert('Retry scan request failed: ' + e);
+        showContextMessage('Retry scan request failed: ' + e);
         document.getElementById('runBtn').disabled = false;
         hide(document.getElementById('cancelBtn'));
         _scanRunning = false;
@@ -442,7 +505,8 @@ JS_HCL = """
       input.addEventListener('change', function(e) {
         var files = e.target.files;
         if (!files || files.length === 0) return;
-        var outdirVal = document.getElementById('outdirInput') ? document.getElementById('outdirInput').value.trim() : '';
+        if (_scanRunning) { showContextMessage('Wait for the current assessment or import to finish.'); input.value = ''; return; }
+        var outdirVal = document.getElementById('libraryOutdirInput').value.trim();
 
         _scanRunning = true;
         _isImportScan = true;
@@ -477,9 +541,9 @@ JS_HCL = """
           hide(document.getElementById('scanSpinner'));
           document.getElementById('runBtn').disabled = false;
           document.getElementById('runBtn').textContent = '▶  Run Assessment';
-          if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '📁 Import prior scan'; }
+          if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = 'Import prior scan'; }
           if (sumBtn) { sumBtn.disabled = false; sumBtn.textContent = '📁 Import Summary'; }
-          alert(msg);
+          showContextMessage(msg);
           appendLog('[✗] ' + msg);
         }
 

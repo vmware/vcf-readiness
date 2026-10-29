@@ -8,7 +8,7 @@ The core application (`vcf_hci`) is licensed under the **CA, Inc. Software Licen
 
 ## Table of Contents
 
-1. [VMware Clarity Design System (@cds/core)](#1-vmware-clarity-design-system-cdscore) — Apache-2.0
+1. [VMware Clarity Design System (@cds/core)](#1-vmware-clarity-design-system-cdscore) — MIT
 2. [PyInstaller Bootloader](#2-pyinstaller-bootloader) — GPL-2.0 with Bootloader Exception
 3. [OpenSSL Library](#3-openssl-library) — Apache-2.0
 4. [CPython Runtime](#4-cpython-runtime) — PSF-2.0
@@ -21,28 +21,44 @@ The core application (`vcf_hci`) is licensed under the **CA, Inc. Software Licen
 
 ## 1. VMware Clarity Design System (@cds/core)
 
-- **Component:** `@cds/core` (v5.7.0)
-- **License:** Apache License, Version 2.0
-- **Copyright:** Copyright (c) 2016-2024 VMware, Inc. All Rights Reserved.
-- **Usage:** Pre-compiled and embedded as a compressed CSS data asset in `vcf_hci/web/assets.py` for offline styling of the local Web UI (127.0.0.1:7182) and standalone HTML reports.
+- **Component:** `@cds/core` (v5.7.0), pinned for reproducible offline assets.
+- **License:** MIT, verified against the package metadata and release license.
+- **Copyright:** Copyright (c) 2016-2021 VMware, Inc. All rights reserved.
+- **Usage:** Embedded global CSS, dark-theme CSS and a selected subset of original SVG icon outlines. Semantic HTML and application JavaScript implement the interactions; Angular and Core custom-element runtimes are not bundled.
+- **Source:** https://github.com/vmware-clarity/core/tree/v5.7.0
+- **Full notice:** [licenses/clarity-core-MIT.txt](licenses/clarity-core-MIT.txt), included with distributions. Generated offline reports also include the notice in their source.
 
-### Apache License, Version 2.0 Notice:
+```text
+MIT License
 
+Copyright (c) 2016-2021 VMware, Inc.  All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+The previous Apache-2.0 label for this component was incorrect. This corrects the attribution; it does not relicense the project.
 
 ---
+
+## Standalone runtime inventory scope
+
+The Python, OpenSSL, PyInstaller, libffi, zlib and SQLite versions below are historical reference versions, not a verified inventory of every current executable. Source execution uses the operator’s installed runtime; standalone releases require an artifact-specific inventory and retained notices. See [SBOM scope](docs/CUSTOMER_DELIVERABLE_SBOM.md). Optional vault AES support also requires the installed package’s own notices. Upstream VDT is operator-supplied and is not bundled by the scanner.
 
 ## 2. PyInstaller Bootloader
 
@@ -151,7 +167,7 @@ the following restrictions:
 
 - **Component:** SQLite (v3.45.1)
 - **License:** Public Domain / SQLite Blessing
-- **Usage:** Embedded SQLite engine used for local credential vault and scan state cache.
+- **Usage:** SQLite is available through Python’s `sqlite3` module for catalog/tooling use and may be included with standalone Python runtimes. The credential vault is an encrypted JSON envelope, not a SQLite database.
 
 ```
 The author disclaims copyright to this source code. In place of a legal notice,

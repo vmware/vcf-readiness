@@ -232,6 +232,8 @@ def _regenerate_fleet_artifacts(
         else:
             logger.info(msg)
 
+    from vcf_hci.server_groups import hydrate_groups
+    hydrate_groups(results)
     n = len(results)
     reports_dir = os.path.join(outdir, "reports")
     data_dir = os.path.join(outdir, "data")
@@ -251,6 +253,8 @@ def _regenerate_fleet_artifacts(
         if ip:
             rp = os.path.join(reports_dir, f"vsphere_vsan_report_{sanitize_filename(ip)}.html")
             if os.path.isfile(rp):
+                if r.get("server_groups") is not None:
+                    generate_host_html_report(r, rp)
                 report_paths.append(rp)
 
     if n >= 1 or len(failed_hosts) >= 1:
@@ -874,6 +878,7 @@ def _run_scan_worker(scan_id: str, ips: list, creds: dict, outdir: str,
             _state["fleet_path"]   = fleet_path
             _state["summary_path"] = summary_path
             _state["results"]      = final_results
+            _state["fleet_index"]  = None
             _state["report_paths"] = report_paths
             _state["outdir"]       = effective_outdir
             _state["zip_path"]     = zip_path

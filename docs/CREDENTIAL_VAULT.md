@@ -31,6 +31,17 @@ Precedence: **exact → longest CIDR → default**. IPv4 ranges such as `198.51.
 - The Web UI vault features are **disabled when the server runs with `--allow-remote`**.
 - Auto-locks after 60 minutes of inactivity in the Web UI and whenever the tool exits.
 
+### Forgotten passphrase: reset the local vault
+
+There is no passphrase recovery or password reset that preserves access to the encrypted contents. To start over, remove the vault file from its configured location and create a new vault. Resetting removes access to the stored credential entries and jump-host profiles, including saved jump-host credentials and SSH host-key pins.
+
+1. In **Credential Vault → Forgot the vault passphrase?**, note the displayed vault-file location. The default is `~/.vcf-readiness/credentials.vault` on macOS/Linux, or `%USERPROFILE%\.vcf-readiness\credentials.vault` on Windows. The `~` refers to the home directory of the account running the tool. For a CLI vault opened with `--vault PATH`, use that custom file instead.
+2. Stop any active scan and **quit the application/web server completely**. Closing the browser tab is not enough. An unlocked vault remains in server memory and a later save could recreate the old file.
+3. Rename **only that file** to an unused backup name, such as `credentials.vault.backup`, if you want to retain the encrypted contents. Alternatively, delete only that vault file. An encrypted backup still requires the old passphrase; renaming it does not recover its contents.
+4. Restart the application and open **Credential Vault → Create Vault**. Choose a new passphrase, then reenter credentials or import a fresh credential CSV. Re-add jump-host profiles and verify their SSH fingerprints against trusted records.
+
+Do not delete the whole `.vcf-readiness` directory, scanner settings, reports, external SSH keys or operating-system keychain entries. They are not needed for this reset. This procedure creates an empty replacement vault; it does not change credentials on any BMC or jump host.
+
 ## 3. CSV format
 
 ```csv
@@ -109,14 +120,14 @@ Without `--vault` the CLI behaves exactly as before.
 
 ## 5. Web UI
 
-1. Open **🔐 Encrypted Credential Vault** (collapsed under the Credentials card).
+1. Select **Credential Vault** in the navigation beneath the application header.
 2. **Create Vault** the first time (passphrase twice), or **Unlock** later. The status badge shows `no vault` / `locked` / `unlocked`.
 3. An encryption mode badge beside the status badge displays the operating mode:
    - `AES-256-GCM` (blue badge) when encrypted with hardware-accelerated AES-GCM via `pycryptodomex`.
    - `HMAC-SHA256 (Stdlib)` (grey badge) when encrypted with pure standard-library primitives.
    - When no vault exists, the badge indicates creation readiness (`AES-256-GCM Ready` or `Stdlib Mode`).
 4. Add entries one at a time, or **Import CSV**: paste text into the box or *Choose CSV file…*, tick *Skip invalid rows* / *Replace all existing entries* as needed, and click **Import into Vault**. Per-line errors and warnings are listed under the button.
-5. In the Credentials card, tick **Use encrypted credential vault for this scan**. The checkbox is disabled until a vault is unlocked and is **never pre-selected**. A coverage line appears under it after you enter targets or probe hosts, e.g. `Vault coverage: 12 of 14 target(s) (exact 4 · CIDR 8 · default 0) — 2 unmatched: …`.
+5. Return to **Scanner** and, in the Credentials card, tick **Use encrypted credential vault for this scan**. The checkbox is disabled until a vault is unlocked and is **never pre-selected**. A coverage line appears under it after you enter targets or probe hosts, e.g. `Vault coverage: 12 of 14 target(s) (exact 4 · CIDR 8 · default 0) — 2 unmatched: …`.
 6. Optionally type a username/password in the normal fields: with the vault enabled they act only as a **fallback for unmatched hosts**. Leave the password empty to skip unmatched hosts instead.
 7. Click **Run Assessment**. Credentials are resolved on the local server process; the browser never receives them. Auto-retry passes reuse the same resolved credentials.
 8. Click **Lock** when you are done, or just quit — the vault locks on shutdown and after 60 minutes idle.
@@ -125,7 +136,7 @@ Without `--vault` the CLI behaves exactly as before.
 
 | Symptom | Cause / fix |
 |---|---|
-| `Vault passphrase incorrect (or vault file tampered with)` | Wrong passphrase, or the file was modified/corrupted. Both look identical by design. |
+| `Vault passphrase incorrect (or vault file tampered with)` | Wrong passphrase, or the file was modified/corrupted. Both look identical by design. If the passphrase is lost, follow [Forgotten passphrase: reset the local vault](#forgotten-passphrase-reset-the-local-vault). |
 | `Vault is encrypted with AES-256-GCM. Install 'pycryptodomex' to unlock: pip install pycryptodomex` | The vault was created on an environment with `pycryptodomex`. Install the optional package on the current system (`pip install "vcf-readiness[crypto]"` or `pip install pycryptodomex`). |
 | `No credential vault at …` | Run `python -m vcf_hci.vault init` or pass the right `--vault PATH`. |
 | `--vault requires --vault-passphrase-env <VAR> in non-interactive mode` | There is no TTY (cron, CI, `--no-input`). Put the passphrase in an environment variable and name it. |

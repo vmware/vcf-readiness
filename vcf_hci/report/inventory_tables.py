@@ -6,11 +6,13 @@ Zero third-party dependencies (Python 3.9+ standard library only).
 """
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
 from vcf_hci.collector.pci_utils import clean_oem_adapter_title
+from vcf_hci.compat.bios_boot import bios_date_estimate_fields
 from vcf_hci.compat_engine import (
     VCF9CompatibilityEngine,
     evaluate_driver_firmware_recommendation,
@@ -29,6 +31,8 @@ from vcf_hci.report.sel_links import (
     resolve_dell_event_info,
     resolve_hpe_event_info,
 )
+from vcf_hci.storage_capacity import drive_capacity_display, normalize_storage_capacities
+from vcf_hci.storage_media import media_type_display, storage_protocol_display
 
 ESA_CATEGORY = "vSAN ESA/OSA NVMe"
 _PERC_7XX_PATTERN = re.compile(r"\bPERC\s*H?7\d\d\w*\b", re.IGNORECASE)
@@ -57,7 +61,7 @@ def _safe_int(val: Any, default: int = 0) -> int:
         if not val_str or val_str.upper() in ("N/A", "NONE", "UNKNOWN", "—", "-"):
             return default
         return int(float(val_str))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 
@@ -71,11 +75,12 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
         if not val_str or val_str.upper() in ("N/A", "NONE", "UNKNOWN", "—", "-"):
             return default
         return float(val_str)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 
 def _all_drives(data: dict):
+    normalize_storage_capacities(data.get("storage_subsystem"))
     for ctrl in data.get("storage_subsystem") or []:
         for d in ctrl.get("drives") or []:
             yield ctrl, d
@@ -431,7 +436,9 @@ def evaluate_vsan_esa_profile(
             cpu_cores = _safe_int(ci.get("core_count") or si.get("cpu_cores"), 0)
             if not cpu_cores:
                 procs = ci.get("processors") or []
-                cpu_cores = sum(_safe_int(p.get("cores"), 0) for p in procs if isinstance(p, dict))
+                counts = [_safe_int(p.get("cores"), 0) for p in procs if isinstance(p, dict)]
+                sockets = _safe_int(ci.get("count") or ci.get("sockets"), len(procs))
+                cpu_cores = sum(counts) if counts and len(counts) == len(procs) and sockets <= len(procs) and all(n > 0 for n in counts) else 0
         if max_gbps is None:
             nic_res = summarize_nics(data)
             max_gbps = _safe_float(nic_res.get("max_gbps"), 0.0)
@@ -520,10 +527,31 @@ def evaluate_vsan_esa_profile(
             "meets_network": c_nic >= 25,
         }
 
-    # 2. Storage Meets Baseline (>=2 Direct NVMe). Determine Profile Fit.
-    is_large = (c_esa >= 4 and (c_ram >= 512 or c_ram == 0) and (c_cores >= 48 or c_cores == 0))
-    is_medium = (c_esa >= 2 and (c_ram >= 256 or c_ram == 0) and (c_cores >= 32 or c_cores == 0))
-    is_small = (c_esa >= 2 and (c_ram >= 128 or c_ram == 0) and (c_cores >= 16 or c_cores == 0))
+    # Storage evidence alone cannot qualify a complete sizing profile.
+    missing = [name for name, value in (
+        ("RAM capacity", c_ram), ("CPU core count", c_cores), ("NIC speed", c_nic)
+    ) if not math.isfinite(value) or value <= 0]
+    if missing:
+        return {
+            "tier_code": "Unknown", "tier_label": "Sizing Not Assessed",
+            "profile": "Unknown", "status": "warn",
+            "tooltip": f"{c_esa} qualifying direct NVMe drives; missing or invalid {', '.join(missing)}. "
+                       "Complete sizing evidence is required before assigning an ESA profile.",
+            "meets_storage": True, "meets_network": None if "NIC speed" in missing else c_nic >= 10,
+            "missing_evidence": missing,
+        }
+
+    is_large = c_esa >= 4 and c_ram >= 512 and c_cores >= 48
+    is_medium = c_ram >= 256 and c_cores >= 32
+    is_small = c_ram >= 128 and c_cores >= 16
+    if c_ram < 64 or c_cores < 16:
+        return {
+            "tier_code": "Ineligible", "tier_label": "Below Edge Sizing Minimum",
+            "profile": "Ineligible", "status": "bad",
+            "tooltip": f"{c_ram:g} GB RAM and {c_cores} cores do not meet the tool's minimum "
+                       "Edge sizing baseline of 64 GB RAM and 16 cores. Verify the exact ReadyNode requirements.",
+            "meets_storage": True, "meets_network": c_nic >= 10,
+        }
 
     if c_nic < 10:
         target_name = "ESA-L (Large)" if is_large else ("ESA-M (Medium)" if is_medium else "ESA-S (Small)")
@@ -1093,6 +1121,9 @@ def build_compact_fleet_inventory(
             "ctrl_unsup": int(bool(r.get("ctrl_unsup"))),
         })
 
+    for data in all_results:
+        normalize_storage_capacities(data.get("storage_subsystem"))
+
     drives: List[dict] = []
     nics: List[dict] = []
     health_list: List[dict] = []
@@ -1158,8 +1189,12 @@ def build_compact_fleet_inventory(
                     ),
                     "model": str(d.get("model") or ""),
                     "media_type": str(d.get("media_type") or ""),
+                    "media_type_display": media_type_display(d.get("media_type")),
+                    "protocol_display": storage_protocol_display(proto),
                     "protocol": proto,
-                    "capacity_gb": d.get("capacity_gb", 0),
+                    "capacity_gb": drive_capacity_display(d),
+                    "source_reported_capacity_gb": d.get("source_reported_capacity_gb"),
+                    "capacity_data_quality_note": d.get("capacity_data_quality_note", ""),
                     "firmware": str(d.get("firmware") or ""),
                     "drive_health": str(d.get("drive_health") or d.get("status") or "OK"),
                     "endurance_pct": ep if ep not in ("", "N/A", None) else None,
@@ -1388,6 +1423,7 @@ def build_inventory_sheets(
         "Certified FW", "FW Status", "Health", "Category", "HCL Tier", "Life %",
         "TBW (TB)", "TBR (TB)", "Power-On Hours", "Power Cycles", "Temp (°C)", "Unsafe Shutdowns", "Critical Warnings", "Duty Cycle %",
         "vSAN Eligible", "Behind Tri-Mode", "Boot",
+        "Source Reported Capacity GB", "Capacity Data Quality",
     )]
     mac_hdr = "MAC (obfuscated)" if obfuscated else "MAC"
     pmac_hdr = "Permanent MAC (obfuscated)" if obfuscated else "Permanent MAC"
@@ -1412,7 +1448,7 @@ def build_inventory_sheets(
     )]
     bios_rows: List[list] = [_hdr(
         "Host IP", "Hostname", "Model", "BIOS Version", "Release Date",
-        "CPU Power Profile", "Memory RAS", "Intel VMD", "Boot Mode", "Spectre / CVE Tier",
+        "CPU Power Profile", "Memory RAS", "Intel VMD", "Boot Mode", "BIOS Date Estimate",
         "AMD Performance / NUMA",
     )]
     health_rows: List[list] = [_hdr(
@@ -1533,7 +1569,7 @@ def build_inventory_sheets(
                 d.get("form_factor_label") or "",
                 d.get("media_type", ""),
                 d.get("protocol", ""),
-                d.get("capacity_gb", ""),
+                drive_capacity_display(d),
                 d.get("serial_number") or d.get("serial") or "",
                 d_fw,
                 cert_fw,
@@ -1553,6 +1589,8 @@ def build_inventory_sheets(
                 "Yes" if d.get("vsan_eligible") else "No",
                 "Yes" if d.get("behind_trimode") else "No",
                 "Yes" if d.get("is_boot") else "No",
+                d.get("source_reported_capacity_gb", ""),
+                d.get("capacity_data_quality_note", ""),
             ])
 
         lldp_lookup: Dict[str, Dict[str, Any]] = {}
@@ -1654,7 +1692,7 @@ def build_inventory_sheets(
 
         # ── vBIOS row ─────────────────────────────────────────────────────────
         bios_checks = data.get("bios_checks") or {}
-        bios_eval = si.get("bios_eval") or {}
+        bios_eval = {**(si.get("bios_eval") or {}), **bios_date_estimate_fields(si.get("bios_release_date"))}
         bios_ver = str(si.get("bios_version") or "—")
         bios_date = str(si.get("bios_release_date") or "—")
 
@@ -1694,12 +1732,12 @@ def build_inventory_sheets(
         else:
             boot_cell = boot_mode
 
-        # Spectre / CVE Tier
+        # BIOS Date Estimate
         cve_tier_int = bios_eval.get("cve_tier")
         cve_label = bios_eval.get("cve_tier_label")
         if cve_tier_int is not None and cve_tier_int >= 0:
             cve_str = f"Tier {cve_tier_int}: {cve_label or ''}".strip()
-            cve_cell = (cve_str, "green" if cve_tier_int >= 4 else "red")
+            cve_cell = (cve_str + " (mitigations not verified)", "gray")
         else:
             cve_cell = "—"
 

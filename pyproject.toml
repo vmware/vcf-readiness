@@ -107,7 +107,7 @@ ignore = [
 
 # THE KEY SECTION: mechanical enforcement of the zero-runtime-dependency rule.
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"requests".msg       = "vcf_hci is stdlib-only (see .cursorrules) — use urllib.request"
+"requests".msg       = "vcf_hci uses stdlib by default (see AGENTS.md) — use urllib.request"
 "urllib3".msg        = "vcf_hci is stdlib-only — use urllib.request"
 "aiohttp".msg        = "vcf_hci is stdlib-only — use urllib.request + concurrent.futures"
 "pandas".msg         = "vcf_hci is stdlib-only — use csv/json"

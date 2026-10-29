@@ -1,7 +1,6 @@
 """
 VCF Readiness Tool — OS information, firmware inventory, alignment & warranty report section builders (Layer D).
 """
-import re
 from typing import Any, Dict, List, Optional
 
 from vcf_hci.bcg_links import BCGLinkGenerator
@@ -11,6 +10,7 @@ from vcf_hci.compat_engine import (
     evaluate_pci_compatibility,
 )
 from vcf_hci.hcl import lookup_unique_hcl_device
+from vcf_hci.report.firmware_identity import match_firmware_nics
 from vcf_hci.report.helpers import _h, badge
 
 
@@ -49,7 +49,7 @@ def render_warranty_card(warranty_info: Dict[str, Any]) -> str:
         f'Expiry: <b>{_w_expiry}</b><br>'
         f'Level: <b>{_w_level}</b></p>'
         f'{_ent_table}'
-        f'<p style="font-size:.72rem;color:#94a3b8;margin-top:.5rem">'
+        f'<p style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem">'
         f'Source: Dell TechDirect asset-entitlements API</p>'
         f'</div>'
     )
@@ -60,8 +60,9 @@ def render_bundle_card(hcl_bundle_metadata: Optional[Dict[str, Any]]) -> str:
     if not hcl_bundle_metadata:
         return ""
     _b_age = hcl_bundle_metadata.get("dataset_age_days", 0)
-    _b_badge_cls = "success" if _b_age <= 30 else "warning"
-    _b_fresh_str = f"Fresh ({_b_age} days old)" if _b_age <= 30 else f"Stale ({_b_age} days old)"
+    _b_fresh = isinstance(_b_age, (int, float)) and _b_age <= 30 and not hcl_bundle_metadata.get("dataset_is_baseline")
+    _b_badge_cls = "success" if _b_fresh else "warning"
+    _b_fresh_str = f"Fresh ({_b_age} days old)" if _b_fresh else f"Stale ({_b_age} days old)" if isinstance(_b_age, (int, float)) else "Dataset age unknown"
     _b_badge = badge(f"🔒 Dark-Site HCL ({_b_fresh_str})", _b_badge_cls)
     return (
         f'<div class="card"><h3>🔒 Dark-Site HCL Bundle</h3>'
@@ -228,7 +229,7 @@ def render_driver_fw_alignment_card(real_nics: List[Dict[str, Any]], storage_con
 
     return (
         f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+        f"<div class='report-card-header'>"
         f"<h3 style='margin:0'>vSAN 9.1 Driver &amp; FW Alignment</h3>"
         f"<a href='#tab-firmware' data-jump-tab='tab-firmware' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Firmware Inventory'>Details &rarr;</a>"
         f"</div>"
@@ -336,66 +337,7 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
             ssid = str(matched_drv.get("subsystem_id", "")).strip()
             drv_model = str(matched_drv.get("model", "")).strip()
         elif not is_drive:
-            # 1. Match NICs via related_items (or raw_redfish_capture)
-            rel_uris = list(f.get("related_items") or [])
-            if not rel_uris and raw_rf:
-                rf_fw = raw_rf.get(f"/redfish/v1/UpdateService/FirmwareInventory/{f_id}")
-                if isinstance(rf_fw, dict):
-                    for r in rf_fw.get("RelatedItem", []):
-                        if isinstance(r, dict) and r.get("@odata.id"):
-                            rel_uris.append(str(r["@odata.id"]).strip())
-                        elif isinstance(r, str) and r.strip():
-                            rel_uris.append(r.strip())
-            if rel_uris:
-                for r_uri in rel_uris:
-                    for nic in _collected_nics:
-                        nid = str(nic.get("id") or "").strip()
-                        if nid and (nid in r_uri or r_uri.endswith("/" + nid)):
-                            if nic not in matched_nics:
-                                matched_nics.append(nic)
-            # 2. Match by Dell component ID for Broadcom adapters
-            # 115076 -> BCM57414 (subsystem 4422, Slot 9)
-            # 114493 -> BCM57414 OCP (subsystem 4432, Slots 4 & 10)
-            if not matched_nics and f_comp_id in ("115076", "114493"):
-                target_ssid = "4422" if f_comp_id == "115076" else "4432"
-                for nic in _collected_nics:
-                    if str(nic.get("subsystem_id") or "").lower() == target_ssid.lower():
-                        matched_nics.append(nic)
-
-            # 3. Match by slot number extracted from f_id / f_name
-            if not matched_nics:
-                m_slot = re.search(r"\b(?:NIC\.Slot\.|Slot[._\s]*)(\d+)\b", f"{f_id} {f_name}", re.I)
-                if m_slot:
-                    s_num = m_slot.group(1)
-                    for nic in _collected_nics:
-                        n_slot = str(nic.get("slot") or "")
-                        n_id = str(nic.get("id") or "")
-                        if f"Slot.{s_num}" in n_id or f"Slot {s_num}" in n_slot:
-                            matched_nics.append(nic)
-
-            # 4. Match by NIC name, model, id, or slot
-            if not matched_nics:
-                for nic in _collected_nics:
-                    n_name = str(nic.get("name", "")).strip().upper()
-                    n_model = str(nic.get("model", "")).strip().upper()
-                    n_id = str(nic.get("id", "")).strip().upper()
-                    n_slot = str(nic.get("slot", "")).strip().upper()
-                    if (
-                        (n_name and (n_name in comb_text or f_name.upper() in n_name))
-                        or (n_model and n_model in comb_text)
-                        or (n_id and n_id in comb_text)
-                        or (n_slot and n_slot in comb_text)
-                    ):
-                        matched_nics.append(nic)
-                        break
-
-            # 5. Match by NIC.Slot / NIC.Embedded and firmware version
-            if not matched_nics and any(k in comb_text for k in ("NIC.SLOT", "NIC.EMBEDDED", "NETWORK", "ETHERNET")):
-                if f_ver and f_ver.upper() != "N/A":
-                    for nic in _collected_nics:
-                        nic_fw = str(nic.get("firmware_version") or "").strip()
-                        if nic_fw and nic_fw.upper() == f_ver.upper():
-                            matched_nics.append(nic)
+            matched_nics = match_firmware_nics(f, _collected_nics, raw_rf)
 
             if matched_nics:
                 first_nic = matched_nics[0]
@@ -434,41 +376,15 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
                         ssid = str(fc.get("subsystem_id", "")).strip()
                         break
 
+        # Preserve the collected component name, including BIOS/BMC image roles
+        # and NIC slot identity. Correlation may add context, never rename it.
         display_comp_name = f_name
         if matched_nics:
-            first_nic = matched_nics[0]
-            mfr = first_nic.get("manufacturer") or ""
-            model = first_nic.get("model") or ""
-            slot_labels = []
-            for n in matched_nics:
-                s_lbl = n.get("slot") or ""
-                if not s_lbl:
-                    m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", str(n.get("name") or ""), re.I)
-                    if m_s:
-                        s_lbl = m_s.group(1).title()
-                    else:
-                        m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(n.get("id") or ""), re.I)
-                        if m_ids:
-                            s_lbl = f"Slot {m_ids.group(1)}"
-                if s_lbl and s_lbl not in slot_labels:
-                    slot_labels.append(s_lbl)
-
-            if mfr and model:
-                base_title = f"{mfr} {model}" if mfr.lower() not in model.lower() else model
-            elif model:
-                base_title = model
-            elif mfr:
-                base_title = f"{mfr} Network Adapter"
-            else:
-                base_title = f_name
-
-            if slot_labels:
-                display_comp_name = f"{base_title} ({', '.join(slot_labels)})"
-            else:
-                display_comp_name = base_title
-
-            if f_name and f_name != display_comp_name and f_name not in desc_parts:
-                desc_parts.insert(0, f_name)
+            nic = matched_nics[0]
+            maker, model = str(nic.get("manufacturer") or ""), str(nic.get("model") or "")
+            context = f"{maker} {model}".strip() if maker.lower() not in model.lower() else model
+            if context and context not in desc_parts and context.casefold() != f_name.casefold():
+                desc_parts.append(context)
             sub_desc = " • ".join(desc_parts)
 
         if (is_drive or (vid and did)) and f_ver and f_ver.upper() != "N/A":
@@ -552,7 +468,7 @@ def render_firmware_inventory_section(data: Dict[str, Any], sys_info: Dict[str, 
 
         sub_desc_html = f'<br><small style="color:var(--text-muted)">{_h(sub_desc)}</small>' if sub_desc else ''
         _fw_inv_rows += (
-            f"<tr>"
+            f"<tr data-firmware-id='{_h(f_id)}'>"
             f"<td><strong>{_h(display_comp_name)}</strong>"
             f"{sub_desc_html}</td>"
             f"<td>{_fw_cell}</td>"

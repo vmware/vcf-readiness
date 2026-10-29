@@ -3,6 +3,7 @@ VCF Readiness Tool — BIOS performance settings & security posture report secti
 """
 from typing import Any, Dict, List, Optional, Tuple
 
+from vcf_hci.compat.bios_boot import bios_date_estimate_fields, evaluate_bios_version
 from vcf_hci.compat_engine import evaluate_boot_mode
 from vcf_hci.constants import (
     _CVE_TIERS,
@@ -19,6 +20,7 @@ from vcf_hci.security.metadata import (
     get_control_title,
     get_control_transport,
 )
+from vcf_hci.ui_clarity import icon_html
 
 
 def _format_observed(observed: Any) -> str:
@@ -350,7 +352,7 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
     )
     if oem_guide_title and oem_guide_url and oem_guide_title != vmware_guide_title:
         perf_guide_hdr += (
-            f"<span style='color:var(--border-color, #cbd5e1)'>|</span>"
+            f"<span aria-hidden='true' style='color:var(--border-color, #cbd5e1)'>|</span>"
             f"<span>OEM Reference:</span>"
             f"<a href='{_h(oem_guide_url)}' target='_blank' rel='noopener noreferrer' "
             f"style='color:var(--primary);text-decoration:underline;font-weight:600'>📑 {_h(oem_guide_title)}</a>"
@@ -544,8 +546,13 @@ def render_bios_perf_card_and_accordion(
 ) -> Tuple[str, str]:
     """Render BIOS & Performance summary card and combined BIOS Performance Settings accordion."""
     bios_info = bios_info or {}
-    bios_eval = bios_eval or {}
     sys_info = sys_info or {}
+    current_evidence = evaluate_bios_version(
+        str(sys_info.get("model") or ""), str(sys_info.get("bios_version") or ""), sys_info.get("bios_release_date"),
+        system_info=sys_info,
+    )
+    bios_eval = {**(bios_eval or {}), **bios_date_estimate_fields(sys_info.get("bios_release_date")),
+                 **{key: current_evidence.get(key) for key in ("spectre_badge", "spectre_status", "security_floor_version")}}
 
     mem_ras_modes = bios_info.get("memory_ras", [])
     cpu_power_modes = bios_info.get("cpu_power", [])
@@ -559,6 +566,8 @@ def render_bios_perf_card_and_accordion(
             _cpu_pwr_badge = "<span class=\"badge warning\">🟡 Review Required</span>"
             _cpu_worst = next(r for r in cpu_power_modes if r["badge"] in ("danger", "warning"))
             _cpu_pwr_note = f"{_cpu_worst['label']} — {_cpu_worst['note']}"
+            if _cpu_worst.get("feature") == "Processor x2APIC Mode":
+                _cpu_pwr_note = "x2APIC disabled — review the platform’s recommended interrupt mode. See BIOS details."
         else:
             _cpu_pwr_badge = "<span class=\"badge success\">🟢 Performance Mode</span>"
             _first = cpu_power_modes[0] if cpu_power_modes else {}
@@ -584,16 +593,36 @@ def render_bios_perf_card_and_accordion(
             f"</div>"
         )
 
+    _currency = bios_eval.get("currency")
+    _currency_status = {
+        "current": ("success", "Up-to-Date", "success-standard"),
+        "ahead": ("success", "Ahead of catalog", "success-standard"),
+        "behind": ("warning", "Update Available", "warning-standard"),
+        "below_minimum": ("danger", "Outdated BIOS", "error-standard"),
+        "unverified": ("info", "Not verified", "info-standard"),
+    }
+    _bios_card_badge = bios_eval.get("badge", _default_bios_badge)
+    if _currency in _currency_status:
+        _tone, _label, _shape = _currency_status[_currency]
+        _bios_card_badge = f"<span class='badge {_tone}'>{icon_html(_shape)} {_label}</span>"
+    _installed_version = str(sys_info.get("bios_version") or "Not reported")
+    _currency_note = str(bios_eval.get("age_note") or "").strip()
+    if not _currency_note and _currency in ("behind", "below_minimum"):
+        _latest = bios_eval.get("latest_version")
+        if _latest and _latest != "N/A":
+            _currency_note = f"Catalog latest: {_latest}"
+    _currency_note_html = f"<p class='bios-currency-note'>{_h(_currency_note)}</p>" if _currency_note else ""
+
     _bios_perf_card_html = (
-        f"<div class='card'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+        f"<div class='card bios-performance-card'>"
+        f"<div class='report-card-header bios-card-header'>"
         f"<h3 style='margin:0'>BIOS &amp; Performance</h3>"
         f"<a href='#tab-bios' data-jump-tab='tab-bios' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to BIOS section'>Details &rarr;</a>"
         f"</div>"
-        f"<div style='margin-bottom:.35rem'>{bios_eval.get('badge', _default_bios_badge)}</div>"
-        f"<p style='font-size:.85rem;color:var(--text-muted);margin:0 0 .5rem'>"
-        f"v{_h(str(sys_info.get('bios_version', '?')))} "
-        f"({_h(str(sys_info.get('bios_release_date', 'N/A')))})</p>"
+        f"<div style='margin-bottom:.35rem'>{_bios_card_badge}</div>"
+        f"<p class='bios-installed-version'><span class='bios-version-label'>Installed</span>"
+        f"<span class='bios-version-value'>{_h(_installed_version)}</span></p>"
+        f"{_currency_note_html}"
         f"<div style='border-top:1px solid var(--border);padding-top:.4rem'>"
         f"<span style='font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;"
         f"color:var(--text-muted);font-weight:600'>CPU Performance Profile</span><br>"
@@ -656,7 +685,7 @@ def render_bios_perf_card_and_accordion(
         reboot_banner = ""
         if bios_info.get("bios_pending_reboot"):
             reboot_banner = (
-                "<tr><td colspan='4' style='background:rgba(202,138,4,0.12);color:#ca8a04;font-weight:600;"
+                "<tr><td colspan='4' style='background:rgba(202,138,4,0.12);color:var(--warning);font-weight:600;"
                 "padding:.4rem .75rem;border-left:3px solid #ca8a04'>"
                 "⚠️ BIOS settings staged — reboot required to take effect</td></tr>"
             )
@@ -690,117 +719,90 @@ def render_bios_perf_card_and_accordion(
 
 
 def render_boot_order_card(sys_info: Dict[str, Any]) -> str:
-    """Render UEFI / BIOS boot device order table and one-time boot override status card."""
+    """Show one boot option, retaining the full ordered evidence in a disclosure."""
     sys_info = sys_info or {}
     boot_mode = str(sys_info.get("boot_mode") or "Unknown")
-    boot_target = str(sys_info.get("boot_target") or "None")
-    boot_override = sys_info.get("boot_override") or {}
-    is_override_active = bool(boot_override.get("is_active"))
-    override_target = str(boot_override.get("target") or "None")
-    override_enabled = str(boot_override.get("enabled") or "Disabled")
-    override_mode = str(boot_override.get("mode") or "")
-
-    # Boot mode badge
+    boot_target = str(sys_info.get("persistent_boot_target") or sys_info.get("boot_target") or "").strip()
+    known_target = boot_target.lower() not in ("", "none", "n/a", "unknown", "not reported")
+    override = sys_info.get("boot_override") or {}
+    override_active = bool(override.get("is_active"))
+    override_target = str(override.get("target") or "None")
+    override_enabled = str(override.get("enabled") or "Disabled")
+    override_mode = str(override.get("mode") or "")
     if "uefi" in boot_mode.lower():
-        mode_badge = "<span class='badge success'>🟢 UEFI Boot</span>"
+        mode_badge = "<span class='badge success'>UEFI Boot</span>"
     elif "legacy" in boot_mode.lower() or "bios" in boot_mode.lower():
-        mode_badge = "<span class='badge danger'>🔴 Legacy BIOS Boot (Unsupported)</span>"
+        mode_badge = "<span class='badge danger'>Legacy BIOS Boot (Unsupported)</span>"
     else:
-        mode_badge = f"<span class='badge info'>ℹ️ {_h(boot_mode)}</span>"
-
-    # Override status badge
-    if is_override_active:
+        mode_badge = f"<span class='badge info'>{_h(boot_mode)}</span>"
+    if override_active:
         override_text = f"Active: {override_target}"
-        if override_enabled and override_enabled.lower() not in ("disabled", "enabled", "none"):
+        if override_enabled.lower() not in ("disabled", "enabled", "none"):
             override_text += f" ({override_enabled})"
         if override_mode:
             override_text += f" [{override_mode}]"
-        override_badge = f"<span class='badge warning'>⚠️ One-Time Override {_h(override_text)}</span>"
+        override_badge = f"<span class='badge warning'>One-Time Override {_h(override_text)}</span>"
     else:
-        override_badge = "<span class='badge success'>🟢 Standard Boot Order (No Override)</span>"
+        override_badge = "<span class='badge info'>No boot override</span>"
 
-    boot_order_details = sys_info.get("boot_order_details") or []
-    boot_order = sys_info.get("boot_order") or []
+    options = [opt for opt in (sys_info.get("boot_order_details") or []) if isinstance(opt, dict)]
+    if not options:
+        options = [{"id": str(value), "name": str(value), "enabled": None}
+                   for value in (sys_info.get("boot_order") or [])]
+    if not options:
+        options = [{"id": "Default", "name": boot_target if known_target else "Boot target not reported", "enabled": None}]
 
+    # Priority does not establish which option is current. Prefer explicit evidence,
+    # then a unique exact target/name/ID match; never mark #1 current by position.
+    reported = [i for i, opt in enumerate(options) if opt.get("is_current") is True]
+    current = reported[0] if len(reported) == 1 else None
+    if current is None and known_target:
+        matches = [i for i, opt in enumerate(options) if boot_target.casefold() in {
+            str(opt.get(key) or "").strip().casefold() for key in ("id", "name", "raw_name")
+        }]
+        current = matches[0] if len(matches) == 1 else None
+
+    current_badge = f"<span class='badge success'>{icon_html('check')} Current Target</span>"
     rows = []
-    if boot_order_details:
-        for idx, opt in enumerate(boot_order_details, start=1):
-            opt_id = opt.get("id") or f"Boot{idx:04d}"
-            opt_name = opt.get("name") or opt.get("raw_name") or opt_id
-            is_enabled = opt.get("enabled", True)
-            is_current = opt.get("is_current", False) or (idx == 1 and not is_override_active)
-            status_badge = "<span class='badge success' style='font-size:.72rem'>Enabled</span>" if is_enabled else "<span class='badge muted' style='font-size:.72rem'>Disabled</span>"
-
-            active_tag = ""
-            if is_override_active and override_target.lower() in opt_name.lower():
-                active_tag = " &nbsp;<span class='badge warning' style='font-size:.7rem'>⚡ Active Override</span>"
-            elif is_current and not is_override_active:
-                active_tag = " &nbsp;<span class='badge success' style='font-size:.7rem'>✓ Current Target</span>"
-
-            uefi_path = opt.get("uefi_path") or ""
-            uefi_path_cell = f"<code style='font-size:.75rem;word-break:break-all'>{_h(uefi_path)}</code>" if uefi_path else "<span style='color:var(--text-muted);font-size:.75rem'>—</span>"
-
-            rows.append(
-                f"<tr>"
-                f"<td style='text-align:center;font-weight:700'>{idx}</td>"
-                f"<td><code style='font-size:.8rem'>{_h(opt_id)}</code></td>"
-                f"<td><strong>{_h(opt_name)}</strong>{active_tag}</td>"
-                f"<td>{status_badge}</td>"
-                f"<td>{uefi_path_cell}</td>"
-                f"</tr>"
-            )
-    elif boot_order:
-        for idx, b_id in enumerate(boot_order, start=1):
-            is_active = (idx == 1 and not is_override_active)
-            active_tag = " &nbsp;<span class='badge success' style='font-size:.7rem'>✓ Primary Target</span>" if is_active else ""
-            rows.append(
-                f"<tr>"
-                f"<td style='text-align:center;font-weight:700'>{idx}</td>"
-                f"<td><code style='font-size:.8rem'>{_h(str(b_id))}</code></td>"
-                f"<td><strong>{_h(str(b_id))}</strong>{active_tag}</td>"
-                f"<td><span class='badge info' style='font-size:.72rem'>Configured</span></td>"
-                f"<td><span style='color:var(--text-muted);font-size:.75rem'>—</span></td>"
-                f"</tr>"
-            )
-    else:
-        # Fallback if no boot order list is present
-        target_disp = boot_target if boot_target and boot_target.lower() not in ("none", "n/a") else "Default UEFI Device Path"
+    preview = ""
+    for index, opt in enumerate(options):
+        opt_id = str(opt.get("id") or f"Boot{index + 1:04d}")
+        opt_name = str(opt.get("name") or opt.get("raw_name") or opt_id)
+        enabled = opt.get("enabled")
+        state = ("<span class='badge success'>Enabled</span>" if enabled is True else
+                 "<span class='badge muted'>Disabled</span>" if enabled is False else
+                 "<span class='badge info'>Configured</span>")
+        active_tag = current_badge if index == current else ""
+        if override_active and override_target.casefold() in (opt_id.casefold(), opt_name.casefold()):
+            active_tag += " <span class='badge warning'>Active Override</span>"
+        if index == 0:
+            preview = f"<strong>1. {_h(opt_name)}</strong>{active_tag}"
+        uefi_path = str(opt.get("uefi_path") or "")
+        path_cell = f"<code>{_h(uefi_path)}</code>" if uefi_path else "—"
         rows.append(
-            f"<tr>"
-            f"<td style='text-align:center;font-weight:700'>1</td>"
-            f"<td><code style='font-size:.8rem'>Default</code></td>"
-            f"<td><strong>{_h(target_disp)}</strong> &nbsp;<span class='badge success' style='font-size:.7rem'>✓ Detected Boot Target</span></td>"
-            f"<td><span class='badge success' style='font-size:.72rem'>Active</span></td>"
-            f"<td><span style='color:var(--text-muted);font-size:.75rem'>—</span></td>"
-            f"</tr>"
+            f"<tr><td>{index + 1}</td><td><code>{_h(opt_id)}</code></td>"
+            f"<td><strong>{_h(opt_name)}</strong> {active_tag}</td><td>{state}</td><td>{path_cell}</td></tr>"
         )
 
-    rows_html = "".join(rows)
-
+    current_note = ""
+    if current is not None and current != 0:
+        current_name = str(options[current].get("name") or options[current].get("raw_name") or options[current].get("id") or boot_target)
+        current_note = f"<div class='report-boot-preview'><strong>{_h(current_name)}</strong>{current_badge}</div>"
+    elif current is None and known_target:
+        current_note = f"<div class='report-boot-preview'>Reported boot target: <strong>{_h(boot_target)}</strong></div>"
+    override_preview = f"<div class='report-boot-preview'>{override_badge}</div>" if override_active else ""
+    more = len(options) - 1
+    hint = f"{more} more boot " + ("device" if more == 1 else "devices") if more else "Device details"
     return (
-        f"<details class=\"accordion\" open style=\"margin-bottom:1.5rem\">"
-        f"<summary>"
-        f"<div>🥾 Boot Configuration &amp; Device Order &nbsp;{mode_badge} &nbsp;{override_badge}</div>"
-        f"<span style=\"font-size:.85rem;color:var(--primary)\">Collapse Boot Details &#9652;</span>"
-        f"</summary>"
-        f"<div class=\"accordion-body\">"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:.75rem;padding:.5rem .75rem;background:var(--bg-card);border-radius:6px;border:1px solid var(--border)'>"
-        f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Primary Boot Target:</span> <strong style='font-size:.9rem'>{_h(boot_target)}</strong></div>"
-        f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Boot Mode:</span> {mode_badge}</div>"
-        f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>One-Time Override:</span> {override_badge}</div>"
-        f"</div>"
-        f"<table style='width:100%;font-size:.85rem'>"
-        f"<thead><tr>"
-        f"<th style='width:45px;text-align:center'>#</th>"
-        f"<th style='width:120px'>Boot Option ID</th>"
-        f"<th>Device / Boot Target</th>"
-        f"<th style='width:100px'>State</th>"
-        f"<th>UEFI Device Path</th>"
-        f"</tr></thead>"
-        f"<tbody>{rows_html}</tbody>"
-        f"</table>"
-        f"</div>"
-        f"</details>"
+        '<details class="accordion report-boot-order">'
+        '<summary><div class="report-boot-summary">'
+        f'<div>{icon_html("hard-disk")} Boot Configuration &amp; Device Order</div>'
+        f'<div class="report-boot-preview">{preview}</div>{current_note}{override_preview}'
+        f'</div><span class="report-boot-more">{hint}</span></summary>'
+        f'<div class="accordion-body"><div class="report-boot-status">{mode_badge} {override_badge}</div>'
+        '<table><thead><tr><th>#</th><th>Boot Option ID</th><th>Device / Boot Target</th>'
+        '<th>State</th><th>UEFI Device Path</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div></details>'
     )
 
 
@@ -817,8 +819,13 @@ def render_security_card_and_accordion(
 ) -> Tuple[str, str, str, str, str]:
     """Render security card and security posture accordion, return (security_card_html, security_accordion, tpm_badge_raw, sb_badge, spectre_badge_html)."""
     bios_info = bios_info or {}
-    bios_eval = bios_eval or {}
     sys_info = sys_info or {}
+    current_evidence = evaluate_bios_version(
+        str(sys_info.get("model") or ""), str(sys_info.get("bios_version") or ""), sys_info.get("bios_release_date"),
+        system_info=sys_info,
+    )
+    bios_eval = {**(bios_eval or {}), **bios_date_estimate_fields(sys_info.get("bios_release_date")),
+                 **{key: current_evidence.get(key) for key in ("spectre_badge", "spectre_status", "security_floor_version")}}
     cpu_info = cpu_info or {}
     secure_boot = secure_boot or {}
     bmc_firmware = bmc_firmware or {}
@@ -852,8 +859,8 @@ def render_security_card_and_accordion(
     if _bios_rel_date not in ("N/A", "Unknown", "") and _cve_tier_int >= 0:
         _tier_rows = ""
         for _tc, _ti, _tl, _tcls, _tdesc in _CVE_TIERS:
-            _met = "✓" if _ti <= _cve_tier_int else "✗"
-            _met_color = "var(--success)" if _ti <= _cve_tier_int else "var(--danger)"
+            _met = "●" if _ti == _cve_tier_int else "—"
+            _met_color = "var(--text-muted)"
             _tier_rows += (
                 f"<tr><td style='color:{_met_color};font-weight:700'>{_met}</td>"
                 f"<td>Tier {_ti}</td><td>{_h(_tl)}</td>"
@@ -861,9 +868,9 @@ def render_security_card_and_accordion(
             )
         _cve_table_html = (
             f"<details style='margin:.4rem 0 0'><summary style='font-size:.82rem;cursor:pointer;"
-            f"color:var(--primary)'>CVE Coverage Detail ▾</summary>"
+            f"color:var(--primary)'>Historical BIOS Date Windows ▾</summary>"
             f"<table style='width:100%;font-size:.8rem;margin-top:.4rem'>"
-            f"<thead><tr><th></th><th>Tier</th><th>Coverage</th><th>Description</th></tr></thead>"
+            f"<thead><tr><th></th><th>Tier</th><th>Date estimate</th><th>Description</th></tr></thead>"
             f"<tbody>{_tier_rows}</tbody></table></details>"
         )
     else:
@@ -889,13 +896,39 @@ def render_security_card_and_accordion(
         f"<td style='font-size:.85rem;color:var(--text-muted)'>Required for vSphere 9.1 &amp; VCF security baselines</td></tr>"
         f"<tr><td><b>Secure Boot</b></td><td>{_sb_badge}</td>"
         f"<td style='font-size:.85rem;color:var(--text-muted)'>Recommended for VCF 9.1 hardening baseline</td></tr>"
-        f"<tr><td><b>BIOS Spectre Microcode</b></td><td>{_spectre_badge_html if _spectre_badge_html else _spectre_no_baseline}</td>"
+        f"<tr><td><b>Recorded BIOS Security Floor</b></td><td>{_spectre_badge_html if _spectre_badge_html else _spectre_no_baseline}</td>"
         f"<td style='font-size:.85rem;color:var(--text-muted)'>"
-        f"Min required: v{_h(str(bios_eval.get('latest_version', 'N/A')))} &nbsp;|&nbsp; Installed: v{_h(str(sys_info.get('bios_version', '?')))} ({_h(_bios_rel_date)})"
+        f"Min required: v{_h(str(bios_eval.get('security_floor_version') or 'Not recorded'))} &nbsp;|&nbsp; Installed: v{_h(str(sys_info.get('bios_version', '?')))} ({_h(_bios_rel_date)})"
         f"{_cve_table_html}</td></tr>"
         f"<tr><td><b>BMC Firmware</b></td><td>{_bmc_fw_badge}</td>"
         f"<td style='font-size:.85rem;color:var(--text-muted)'><b>{_bmc_model_lbl}</b> v{_bmc_fw_ver}{_bmc_latency_note}</td></tr>"
     )
+
+    # Refresh from maintained evidence when rendering old/offline captures too.
+    # Cached green currency or date estimates cannot establish a CVE fix.
+    _firmware_warning_badges = []
+    for advisory in current_evidence["firmware_advisories"]:
+        if advisory["badge"] == "warning":
+            _firmware_warning_badges.append(
+                f"<span class='badge warning'>{_h(advisory['cve'])}: {_h(advisory['exposure_label'])}</span>"
+            )
+        boot_evidence = "; ".join(
+            f"{item['source']}: {item['name']} "
+            f"({'enabled' if item['enabled'] is True else 'disabled' if item['enabled'] is False else 'enablement unknown'})"
+            for item in advisory["boot_evidence"]
+        )
+        _sec_rows += (
+            f"<tr><td><b>{_h(advisory['cve'])}</b><br>{_h(advisory['title'])}</td>"
+            f"<td><span class='badge {_h(advisory['badge'])}'>{_h(advisory['exposure_label'])}</span>"
+            f"<br>{_h(advisory['label'])}</td>"
+            f"<td style='font-size:.85rem;color:var(--text-muted)'>{_h(advisory['exposure_note'])} "
+            f"{_h(advisory['date_note'])} {_h(boot_evidence)}<br>{_h(advisory['note'])} "
+            f"Evidence checked: {_h(advisory['checked_on'])}. "
+            f"<a href='{_h(advisory['source_url'])}' target='_blank' rel='noopener noreferrer'>"
+            f"Upstream advisory</a> · "
+            f"<a href='{_h(advisory['patch_url'])}' target='_blank' rel='noopener noreferrer'>"
+            f"Source fix</a></td></tr>"
+        )
 
     baseline_drift = (
         bios_info.get("bios_baseline_drift")
@@ -920,7 +953,7 @@ def render_security_card_and_accordion(
 
     if _cve_tier_int >= 0 and _bios_rel_date not in ("N/A", "Unknown", ""):
         _sec_rows += (
-            f"<tr><td><b>CVE Coverage Tier</b></td>"
+            f"<tr><td><b>BIOS Date Estimate</b></td>"
             f"<td><span class='badge {_cve_tier_badge_cls}'>Tier {_cve_tier_int}: {_h(_cve_tier_label)}</span></td>"
             f"<td style='font-size:.85rem;color:var(--text-muted)'>{_h(_cve_tier_desc[:120])}{'…' if len(_cve_tier_desc)>120 else ''}</td></tr>"
         )
@@ -1138,6 +1171,7 @@ def render_security_card_and_accordion(
     _audit_fails = sum(1 for f in _findings if f.get("status") == "fail")
     _audit_unknowns = sum(1 for f in _findings if str(f.get("status", "")).startswith("unknown"))
     _audit_passes = sum(1 for f in _findings if f.get("status") == "pass")
+    _all_sec_badges.extend(_firmware_warning_badges)
 
     if _audit_fails > 0 or any("danger" in b for b in _all_sec_badges):
         _sec_summary_badge = "<span class='badge danger'>🔴 Security: Action Required</span>"
@@ -1176,6 +1210,7 @@ def render_security_card_and_accordion(
 
     _spectre_display = _spectre_badge_html or "<span class='badge info'>ℹ️ No Baseline</span>"
     _sec_card_items  = [_tpm_badge_raw, _sb_badge, (_spectre_badge_html or "")]
+    _sec_card_items.extend(_firmware_warning_badges)
     if _audit_fails > 0 or any("danger" in b for b in _sec_card_items):
         _sec_card_worst = "danger"
     elif any("warning" in b for b in _sec_card_items):
@@ -1207,9 +1242,10 @@ def render_security_card_and_accordion(
             f"</div>"
         )
 
+    _firmware_warning_rows = "".join(f"<div>{badge}</div>" for badge in _firmware_warning_badges)
     _security_card_html = (
         f"<div class='card' style='{_sec_card_border}'>"
-        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem'>"
+        f"<div class='report-card-header'>"
         f"<h3 style='margin:0'>Security</h3>"
         f"<a href='#tab-security' data-jump-tab='tab-security' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Security section'>Details &rarr;</a>"
         f"</div>"
@@ -1231,10 +1267,11 @@ def render_security_card_and_accordion(
         f"</div>"
         f"<div>"
         f"<span style='font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;"
-        f"color:var(--text-muted);font-weight:600'>Spectre / Meltdown Baseline</span><br>"
+        f"color:var(--text-muted);font-weight:600'>Recorded BIOS Security Floor</span><br>"
         f"<div style='margin-top:.15rem'>{_spectre_display}</div>"
         f"</div>"
         f"{_bmc_audit_row}"
+        f"{_firmware_warning_rows}"
         f"</div>"
         f"<div style='margin-top:.35rem;padding-top:.45rem;border-top:1px solid var(--border,#334155)'>"
         f"<a href='#tab-security' data-jump-tab='tab-security' class='btn-link tab-jump-link' "

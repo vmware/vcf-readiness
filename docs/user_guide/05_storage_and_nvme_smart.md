@@ -6,19 +6,21 @@ The storage evaluation analyzes physical storage controllers, bus attachments, d
 
 ### 5.1 vSAN ESA ReadyNode Profile Baselines {#vsan-esa-readynode-profiles}
 
-VMware vSAN Express Storage Architecture (ESA) is optimized for high-performance direct-attached NVMe flash devices without traditional disk groups (no dedicated cache drives). The assessment engine qualifies servers against official VMware ReadyNode profiles:
+VMware vSAN Express Storage Architecture (ESA) is optimized for high-performance direct-attached NVMe flash devices without traditional disk groups (no dedicated cache drives). The tool estimates profile fit using local inventory heuristics. The table describes its sizing labels, not an independent ReadyNode certification. Verify the exact server, components and target release in the current BCG:
 
 | Profile Level | Storage Drives | Memory (RAM) | Compute Cores | Network Uplink | Target Workload Profile |
 |---|---|---|---|---|---|
-| **ESA-L (Large)** | &ge;4 Direct NVMe SSDs (&ge;1.6 TB each) | &ge;512 GB | &ge;48 Cores | &ge;25 GbE | High-density databases, mission-critical applications, large enterprise clusters. |
-| **ESA-M (Medium)**| &ge;2 Direct NVMe SSDs (&ge;1.6 TB each) | &ge;256 GB | &ge;32 Cores | &ge;25 GbE | Standard enterprise compute clusters, moderate I/O workloads, virtual desktops. |
-| **ESA-S (Small)** | &ge;2 Direct NVMe SSDs (&ge;1.6 TB each) | &ge;128 GB | &ge;16 Cores | &ge;25 GbE | Entry enterprise datacenter clusters, test/development environments. |
-| **ESA-XS (Edge)** | &ge;2 Direct NVMe SSDs (&ge;1.6 TB each) | &ge;64 GB | &ge;16 Cores | &ge;10/25 GbE | Remote Office / Branch Office (ROBO), edge appliances, distributed retail sites. |
+| **ESA-L (Large)** | &ge;4 Direct NVMe SSDs (capacity reported separately) | &ge;512 GB | &ge;48 Cores | &ge;25 GbE | High-density databases, mission-critical applications, large enterprise clusters. |
+| **ESA-M (Medium)**| &ge;2 Direct NVMe SSDs (capacity reported separately) | &ge;256 GB | &ge;32 Cores | &ge;25 GbE | Standard enterprise compute clusters, moderate I/O workloads, virtual desktops. |
+| **ESA-S (Small)** | &ge;2 Direct NVMe SSDs (capacity reported separately) | &ge;128 GB | &ge;16 Cores | &ge;10 GbE (25 GbE recommended for larger capacity/workloads) | Entry enterprise datacenter clusters, test/development environments. |
+| **ESA-XS (Edge)** | &ge;2 Direct NVMe SSDs (capacity reported separately) | &ge;64 GB | &ge;16 Cores | &ge;10/25 GbE | Remote Office / Branch Office (ROBO), edge appliances, distributed retail sites. |
+
+The implementation does not enforce a 1.6 TB per-drive capacity minimum. Green profile sizing requires positive finite RAM, core-count and network-speed evidence; missing/invalid values produce **Sizing Not Assessed** while retaining known storage eligibility. Edge sizing requires at least 64 GB RAM and 16 cores. A profile label remains a local sizing estimate, not full configuration certification. The storage/network verdict and inventory profile estimate are separate calculations.
 
 #### Storage Qualification Verdicts
-- **✓ vSAN ESA Ready (`🟢 Ready`):** Server meets all hardware requirements: &ge;2 direct NVMe SSDs, direct PCIe pass-through (no HW RAID or VMD blockers), and &ge;25 GbE networking.
-- **▲ vSAN ESA Storage Met (`🟡 Storage Met (Needs 25G NIC)`):** Storage and compute qualify for ESA, but network adapter is <25 GbE. Requires NIC upgrade to 25 GbE before commissioning.
-- **▲ vSAN OSA Compatible (`🟡 OSA Compatible`):** Server contains SAS/SATA SSDs attached to a certified HBA controller; qualified for traditional vSAN OSA (1 cache drive + capacity drives).
+- **✓ vSAN ESA Ready (`🟢 Ready`):** The storage/network heuristic finds &ge;2 qualifying direct NVMe drives, no applicable RAID/VMD blocker, and &ge;10 GbE. Medium/Large profile sizing requires &ge;25 GbE. This label is not full configuration certification.
+- **▲ vSAN ESA Storage Met (`🟡 ESA Storage Met (Needs ≥10GbE NIC)`):** The storage count meets the heuristic baseline but maximum NIC speed is <10 GbE. Profile-specific sizing and certification still require review.
+- **▲ vSAN OSA Eligible:** The heuristic finds enough OSA-capable drives. This does not establish certified controller/driver/firmware combinations or a complete disk-group design.
 - **✗ Blocked / Ineligible (`🔴 Blocked`):** Disqualified due to hardware RAID controllers, Tri-Mode controllers, Intel VMD enabled in BIOS, or insufficient qualifying drives (<2 NVMe).
 
 > 📖 **VMware Reference:** See [VMware vSAN ESA ReadyNode Hardware Guidance](https://core.vmware.com/resource/vmware-vsan-esa-readynode-hardware-guidance) for complete profile sizing tables.
@@ -51,6 +53,8 @@ vSAN ESA introduces a specialized high-performance log-structured filesystem tha
 ### 5.3 Physical Drive Inventory & Flash Wear Life {#physical-drives-table}
 
 The physical drives table inventories every drive attached to storage backplanes and PCIe slots across the server:
+
+**PCIe link evidence:** Drive rows show the reported drive connection separately from maximum lane capability. Missing lane information is **Not reported**; controller uplink widths and drive speed numbers do not establish a drive lane count. Shared controller uplinks appear in the controller metadata. Older controller-sourced drive widths are suppressed when rendering saved scans. Expected Tri-Mode x1 connections do not trigger native-drive lane degradation warnings. For mixed Lenovo RAID 940 configurations, expandable manufacturer guidance explains the documented x1 connections without presenting them as measured values.
 
 | Drive Column | Description & Evaluation Logic | vSAN ESA / OSA Significance | External Documentation |
 |---|---|---|---|
@@ -86,10 +90,10 @@ For enterprise NVMe drives, the assessment tool queries all 20 standardized SMAR
 | **Power Cycles** | Number of power-on cycles experienced by the drive. | Operational lifecycle tracking; high power cycles indicate rack power instability. |
 | **Power On Hours** | Cumulative operating hours the drive has been energized. | Silicon aging metric used to forecast Mean Time Between Failures (MTBF). |
 | **Unsafe Shutdowns** | Number of unexpected power loss events without prior host shutdown notification. | High counts risk metadata corruption and indicate emergency power-off events. |
-| **Media & Data Integrity Errors**| Cumulative count of uncorrectable read/write errors, ECC failures, or CRC mismatches. | **0:** Any value &gt;0 indicates physical media decay requiring immediate drive RMA. |
+| **Media & Data Integrity Errors**| Cumulative count of uncorrectable read/write errors, ECC failures, or CRC mismatches. | Non-zero values require vendor-guided triage with timestamps, trends and current health; a lifetime counter alone does not establish an immediate RMA. |
 | **Error Information Log Entries**| Cumulative count of error information log events recorded in the drive controller memory. | High error log frequency indicates bus transfer instability or interface errors. |
 | **Warning Composite Temp Time** | Cumulative time (minutes) the drive operated above warning thermal thresholds. | Extended duration indicates inadequate server chassis airflow or cooling fan failure. |
 | **Critical Composite Temp Time**| Cumulative time (minutes) the drive operated above critical thermal shutdown thresholds. | Indicates severe thermal events that accelerate silicon wear and cause I/O aborts. |
 | **Thermal Mgmt Transitions** | Count of times the drive throttled performance to control operating temperature. | Confirms thermal throttling events that directly penalize cluster I/O latency. |
 | **Thermal Mgmt Time** | Cumulative time (seconds) spent in active thermal throttling states. | Validates chassis thermal optimization effectiveness. |
-| **End-to-End Data Path Errors** | Cumulative count of parity/CRC transfer errors detected between PCIe bus and flash memory. | **0:** Any non-zero count indicates hardware interface decay or controller corruption. |
+| **End-to-End Data Path Errors** | Cumulative count of parity/CRC transfer errors detected between PCIe bus and flash memory. | Non-zero values require correlation with current device health, logs and vendor diagnostics; a lifetime counter alone does not establish the cause. |

@@ -22,7 +22,8 @@ INVENTORY_VIEW_CSS = """
 #invRoot .inv-layout select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:4px 8px}
 #invRoot .inv-layout label{font-size:12px;display:flex;align-items:center;gap:8px}
 #invRoot .inv-columns{position:relative;border:0;margin:0;padding:0}
-#invRoot .inv-columns summary{cursor:pointer;list-style:none;display:flex;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text)}
+#invRoot .inv-columns summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text)}
+#invRoot .inv-columns summary>.ui-icon{margin:0}
 #invRoot .inv-columns summary:after{content:' ▾';margin-left:8px}
 #invRoot .inv-column-options{position:absolute;top:100%;left:0;z-index:120;min-width:220px;max-height:60vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:12px;box-shadow:0 4px 12px #0002}
 #invRoot .inv-column-options label{min-height:32px;font-size:14px;white-space:nowrap}
@@ -63,15 +64,19 @@ INVENTORY_VIEW_JS = """<script>
   function persist(){try{localStorage.setItem(storageKey,JSON.stringify({density:state.density,hidden:state.hidden}));}catch(e){}}
   function apply(){
    root.dataset.density=state.density;
+   document.documentElement.dataset.reportDensity=state.density;
+   try{localStorage.setItem('vcf-report-density',state.density);}catch(e){}
    var density=document.getElementById('invDensity');if(density)density.value=state.density;
    table.querySelectorAll('[data-column-key]').forEach(function(cell){cell.hidden=state.hidden.indexOf(cell.dataset.columnKey)>=0;});
    options.querySelectorAll('input').forEach(function(input){input.checked=state.hidden.indexOf(input.dataset.columnChoice)<0;});
+   if(window.VCFReportUI&&window.VCFReportUI.syncTableWidths)window.VCFReportUI.syncTableWidths(table);
    var count=keys.length-state.hidden.length;
    table.querySelectorAll('tbody td[colspan]').forEach(function(cell){cell.colSpan=count;});
   }
   window.VCFInventoryView={reset:function(){
    state={density:'comfortable',hidden:defaultHidden.slice()};
-   table.querySelectorAll('th').forEach(function(th){th.style.removeProperty('width');th.style.removeProperty('min-width');});
+   if(window.VCFReportUI&&window.VCFReportUI.resetTableWidths)window.VCFReportUI.resetTableWidths(table);
+   table.querySelectorAll('th').forEach(function(th){th.style.removeProperty('width');th.style.removeProperty('min-width');th.style.removeProperty('max-width');});
    apply();persist();
   }};
   root.addEventListener('change',function(e){

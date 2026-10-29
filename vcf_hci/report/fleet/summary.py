@@ -4,19 +4,25 @@ import os
 import re
 from typing import Optional
 
+from vcf_hci.bios.x2apic import refresh_x2apic_guidance
 from vcf_hci.branding import FAVICON_DATA_URI, MARK_SVG
+from vcf_hci.collector.oem.dell_storage import normalize_dell_backplanes
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.gpu_label import format_gpu_count_label
 from vcf_hci.logging_utils import sanitize_filename
 from vcf_hci.obfuscation import _pii_span
+from vcf_hci.report.executive import write_executive_reports
 from vcf_hci.report.fleet.fc_matrix import build_fleet_fc_matrix_html
 from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
 from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
 from vcf_hci.report.fleet.vendor import normalize_oem_vendor
+from vcf_hci.report.formatting import fleet_tpm_badge, format_report_html
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.presentation import REPORT_UI_JS
+from vcf_hci.report.readiness import cpu_verdict_unassessed
 from vcf_hci.report.styles import FLEET_PAGE_CSS, THEME_TOGGLE_JS
 from vcf_hci.security.scoring import score_host_security
+from vcf_hci.storage_pcie import storage_pcie_view
 
 logger = logging.getLogger("vcf_assess")
 
@@ -29,6 +35,10 @@ def generate_summary_html(
     failed_hosts: Optional[list] = None,
 ):
     """One-page fleet health dashboard with 13 check tiles, per-host assessment table, and failed host roster."""
+    all_results = [storage_pcie_view(host) for host in all_results]
+    for host in all_results:
+        refresh_x2apic_guidance(host)
+        normalize_dell_backplanes(host)
     _page_salt = os.urandom(16).hex()
 
     if obfuscated and all_results:
@@ -98,7 +108,7 @@ def generate_summary_html(
               <td style="padding:0.5rem;"><code>{ip}</code></td>
               <td style="padding:0.5rem;">{host}</td>
               <td style="padding:0.5rem;">{label}</td>
-              <td style="padding:0.5rem;"><small style="color:#64748b">[{stg}] {detail}</small></td>
+              <td style="padding:0.5rem;"><small style="color:var(--text-muted)">[{stg}] {detail}</small></td>
             </tr>"""
 
         failed_table_html = f"""
@@ -152,7 +162,11 @@ def generate_summary_html(
         osa_nvme_count = sum(1 for d in all_drives if d.get("category") == "vSAN OSA Only")
         esa_nvme_tb = round(sum(d.get("capacity_gb", 0) for d in all_drives if d.get("category") == "vSAN ESA/OSA NVMe") / 1000, 1)
         verdict = cpu_info.get("verdict", "")
-        if "Unsupported" in verdict:
+        if cpu_verdict_unassessed(verdict):
+            cpu_td = "<span class='badge info'>Not assessed</span>"
+            _cpu_sort = "5"
+            _row_unsupported = "0"
+        elif "Unsupported" in verdict:
             cpu_td = "<span class='badge danger'>🔴 Unsupported</span>"
             _cpu_sort = "4"
             _row_unsupported = "1"
@@ -174,7 +188,7 @@ def generate_summary_html(
         _cpu_socket_label = f"{_cpu_count}× " if _cpu_count else ""
         cpu_model_td = (
             f"<small style='display:block;line-height:1.35'>{_h(_cpu_model_raw)}</small>"
-            f"<small style='color:#64748b'>{_cpu_socket_label}socket(s)</small>"
+            f"<small style='color:var(--text-muted)'>{_cpu_socket_label}socket(s)</small>"
         )
         vmd_on = (data.get("bios_checks") or {}).get("vmd_enabled_flag", False)
         trimode_nvme = sum(1 for d in all_drives if d.get("behind_trimode") or d.get("category") == "Unsupported NVMe Tri-Mode")
@@ -195,9 +209,9 @@ def generate_summary_html(
             total_nvme_tb=esa_nvme_tb,
         )
         if "ESA Ready" in vsan_verdict:
-            esa_td = f"<span class='badge success'>🟢 ESA Ready</span> <small style='color:#64748b'>{esa_count} NVMe</small>"
+            esa_td = f"<span class='badge success'>🟢 ESA Ready</span> <small style='color:var(--text-muted)'>{esa_count} NVMe</small>"
         elif "ESA Storage Met" in vsan_verdict:
-            esa_td = f"<span class='badge warning'>🟡 ESA Storage Met</span> <small style='color:#64748b'>{esa_count} NVMe</small>"
+            esa_td = f"<span class='badge warning'>🟡 ESA Storage Met</span> <small style='color:var(--text-muted)'>{esa_count} NVMe</small>"
         elif "OSA" in vsan_verdict:
             if esa_count > 0 and osa_count > 0:
                 _subtext = f"{esa_count} ESA + {osa_count} OSA"
@@ -208,15 +222,15 @@ def generate_summary_html(
             else:
                 _subtext = f"{osa_count} drives"
             _title_attr = f" title='{_h(vsan_detail)}'" if vsan_detail else ""
-            esa_td = f"<span class='badge warning'{_title_attr}>🟡 OSA</span> <small style='color:#64748b'>{_subtext}</small>"
+            esa_td = f"<span class='badge warning'{_title_attr}>🟡 OSA</span> <small style='color:var(--text-muted)'>{_subtext}</small>"
         elif "Intel VMD Enabled" in vsan_verdict:
-            esa_td = f"<span class='badge danger'>🔴 VMD Enabled</span> <small style='color:#64748b'>{esa_count} NVMe</small>"
+            esa_td = f"<span class='badge danger'>🔴 VMD Enabled</span> <small style='color:var(--text-muted)'>{esa_count} NVMe</small>"
         elif "Tri-Mode RAID" in vsan_verdict:
-            esa_td = f"<span class='badge danger'>🔴 Tri-Mode RAID</span> <small style='color:#64748b'>{trimode_nvme} NVMe</small>"
+            esa_td = f"<span class='badge danger'>🔴 Tri-Mode RAID</span> <small style='color:var(--text-muted)'>{trimode_nvme} NVMe</small>"
         elif "Behind RAID" in vsan_verdict or "NVMe Behind RAID" in vsan_verdict:
-            esa_td = f"<span class='badge danger'>🔴 Behind RAID</span> <small style='color:#64748b'>{raid_nvme} NVMe</small>"
+            esa_td = f"<span class='badge danger'>🔴 Behind RAID</span> <small style='color:var(--text-muted)'>{raid_nvme} NVMe</small>"
         else:
-            esa_td = f"<span class='badge danger'>🔴 Insufficient</span> <small style='color:#64748b'>{esa_count}</small>"
+            esa_td = f"<span class='badge danger'>🔴 Insufficient</span> <small style='color:var(--text-muted)'>{esa_count}</small>"
         _esa_sort = str(esa_count)
         psu = data.get("psu_status", {})
         is_redundant = bool(psu.get("redundant"))
@@ -260,12 +274,12 @@ def generate_summary_html(
         else:
             gpu_td = "—"
 
-        tpm = sys_info.get("tpm_status_badge", "<span class='badge warning'>⚠️ Unknown</span>")
+        tpm = fleet_tpm_badge(sys_info)
         _tpm_sort = "1" if "success" in tpm else ("3" if "danger" in tpm else "2")
 
         mem_topo = data.get("memory_topology") or VCF9CompatibilityEngine.evaluate_memory_topology(data.get("memory_subsystem", {}), sys_info.get("cpu_summary", {}))
         _mem_pct = mem_topo.get("interleaving_score_pct", 0) or 0
-        mem_td = f"{mem_topo.get('status_badge')} <small style='color:#64748b'>({_mem_pct}%)</small>"
+        mem_td = f"{mem_topo.get('status_badge')} <small style='color:var(--text-muted)'>({_mem_pct}%)</small>"
 
         # OS column
         _row_hos = data.get("host_os", {})
@@ -277,8 +291,8 @@ def generate_summary_html(
         _row_os_lbl    = _row_os_upd or _row_os_name
         _row_os_sort   = _row_os_lbl or "zzz"  # sort unknowns to end
         if _row_os_lbl:
-            _ver_small = f"<small style='display:block;line-height:1.3;color:#64748b'>{_h(_row_os_ver)}</small>" if _row_os_ver and not _row_os_upd else ""
-            _src_small = f"<small style='display:block;line-height:1.2;color:#94a3b8;font-size:.75rem'>{_h(_row_os_src)}</small>" if _row_os_src else ""
+            _ver_small = f"<small style='display:block;line-height:1.3;color:var(--text-muted)'>{_h(_row_os_ver)}</small>" if _row_os_ver and not _row_os_upd else ""
+            _src_small = f"<small style='display:block;line-height:1.2;color:var(--text-muted);font-size:.75rem'>{_h(_row_os_src)}</small>" if _row_os_src else ""
             os_td = (
                 f"<small style='display:block;line-height:1.35'>{_h(_row_os_lbl)}</small>"
                 f"{_ver_small}"
@@ -286,7 +300,7 @@ def generate_summary_html(
                 f"{_src_small}"
             )
         else:
-            os_td = "<span style='color:#94a3b8'>—</span>"
+            os_td = "<span style='color:var(--text-muted)'>—</span>"
 
         os_td_cell = f"<td data-sort='{_h(_row_os_sort)}'>{os_td}</td>" if has_any_host_os else ""
         report_file = f"{_report_prefix}{sanitize_filename(sys_info.get('ip', 'unknown'))}.html"
@@ -335,20 +349,20 @@ def generate_summary_html(
             _comp_pct = _sec_score.get("compliance_pct", 0.0)
             _tip = f"{_f_cnt} Failed, {_p_cnt} Passed, {_u_cnt} Unknown ({_comp_pct}% compliance). Click to view BMC security audit."
             if _posture == "Baseline Met":
-                sec_badge = f"<span class='badge success'>🟢 Met</span> <small style='color:#64748b'>{_p_cnt}P</small>"
+                sec_badge = f"<span class='badge success'>🟢 Met</span> <small style='color:var(--text-muted)'>{_p_cnt}P</small>"
                 _sec_sort = "1"
             elif _posture == "Action Required":
-                sec_badge = f"<span class='badge danger'>🔴 Action Req</span> <small style='color:#64748b'>{_f_cnt}F &middot; {_p_cnt}P</small>"
+                sec_badge = f"<span class='badge danger'>🔴 Action Req</span> <small style='color:var(--text-muted)'>{_f_cnt}F &middot; {_p_cnt}P</small>"
                 _sec_sort = "3"
             else:
-                sec_badge = f"<span class='badge warning'>🟡 Partial</span> <small style='color:#64748b'>{_u_cnt}U &middot; {_p_cnt}P</small>"
+                sec_badge = f"<span class='badge warning'>🟡 Partial</span> <small style='color:var(--text-muted)'>{_u_cnt}U &middot; {_p_cnt}P</small>"
                 _sec_sort = "2"
             sec_td = (
                 f"<a href='{_h(report_file)}#tab-security' class='btn-link' "
                 f"title='{_h(_tip)}' style='text-decoration:none;display:inline-block'>{sec_badge}</a>"
             )
         else:
-            sec_td = "<span style='color:#94a3b8'>—</span>"
+            sec_td = "<span style='color:var(--text-muted)'>—</span>"
             _sec_sort = "5"
 
         _cpu_tip = f"{_cpu_model_raw} — Click to view host CPU details" if _cpu_model_raw and _cpu_model_raw != "—" else "Click to view host CPU details"
@@ -361,7 +375,7 @@ def generate_summary_html(
             f"<tr data-host-idx='{idx}' data-vendor='{_h(_vendor_norm)}' data-unsupported='{_row_unsupported}'>"
             f"<td data-sort='{_h(link_label)}'>"
             f"<a href='{_h(report_file)}' class='btn-link'><strong>{_pii_link_label}</strong></a>"
-            f"<br><small style='color:#64748b'>{_pii_ip}</small></td>"
+            f"<br><small style='color:var(--text-muted)'>{_pii_ip}</small></td>"
             f"<td data-sort='{_h(_model_str)}'>{_h(_model_str)}{_partial_badge}</td>"
             f"<td data-sort='{_h(_cpu_model_raw)}'>{cpu_model_td}</td>"
             f"<td data-sort='{_cpu_sort}'>{cpu_jump}</td>"
@@ -386,11 +400,12 @@ def generate_summary_html(
     dark_site_banner = ""
     if hcl_bundle_metadata:
         _age = hcl_bundle_metadata.get("dataset_age_days", 0)
-        _b_cls = "success" if _age <= 45 else "warning"
+        _b_cls = "success" if isinstance(_age, (int, float)) and _age <= 30 and not hcl_bundle_metadata.get("dataset_is_baseline") else "warning"
+        _age_label = f"{_age} days" if isinstance(_age, (int, float)) else "Unknown"
         dark_site_banner = (
             f'<div class="alert alert-success" style="margin-bottom:1rem;">'
             f'<strong>🔒 Air-Gapped Dark-Site HCL Bundle Active:</strong> {_h(hcl_bundle_metadata.get("bundle_filename"))} '
-            f'<span class="badge {_b_cls}">Dataset Age: {_age} days</span> '
+            f'<span class="badge {_b_cls}">Dataset Age: {_age_label}</span> '
             f'({hcl_bundle_metadata.get("json_models_count", 0) + hcl_bundle_metadata.get("csv_models_count", 0)} drives indexed)'
             f'</div>'
         )
@@ -409,7 +424,7 @@ def generate_summary_html(
     _obf_controls_sum = (
         '<span class="badge cyber-recovery" style="font-size:.82rem;padding:.3rem .75rem;border:1px solid #7c3aed">🔒 Obfuscated Fleet Summary</span>'
     ) if obfuscated else (
-        '<label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.82rem;color:#64748b" title="Cosmetic in-browser view mask. For external sharing, use generated 00_OBFUSCATED_*.html reports.">'
+        '<label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.82rem;color:var(--text-muted)" title="Cosmetic in-browser view mask. For external sharing, use generated 00_OBFUSCATED_*.html reports.">'
         '<input type="checkbox" id="maskPII" style="cursor:pointer">'
         'Obfuscate view (client-side)'
         '</label>'
@@ -446,7 +461,7 @@ def generate_summary_html(
 <div class="container">
 {_obf_banner_sum}
 <h1 style="display:flex;align-items:center">{MARK_SVG}VCF / vSphere 9.1 Readiness \u2014 Fleet Health Dashboard</h1>
-<p style="color:#64748b">
+<p style="color:var(--text-muted)">
   {host_count} host(s) assessed &mdash; click a hostname to open the full per-host report.
   &nbsp;&nbsp;
   {_obf_controls_sum}
@@ -516,6 +531,7 @@ def generate_summary_html(
     dlBtn.addEventListener('click', function(e) {{
       e.preventDefault();
       var clone = document.documentElement.cloneNode(true);
+      clone.querySelectorAll('.executive-report-links').forEach(function(el) {{ el.remove(); }});
       clone.querySelectorAll('.pii').forEach(function(el) {{
         var mask = el.dataset.mask || el.textContent;
         el.textContent = mask;
@@ -564,6 +580,7 @@ def generate_summary_html(
     dlFleetBtn.addEventListener('click', function(e) {{
       e.preventDefault();
       var clone = document.documentElement.cloneNode(true);
+      clone.querySelectorAll('.executive-report-links').forEach(function(el) {{ el.remove(); }});
       clone.querySelectorAll('.pii').forEach(function(el) {{
         var mask = el.dataset.mask || el.textContent;
         el.textContent = mask;
@@ -669,6 +686,13 @@ def generate_summary_html(
 {REPORT_UI_JS}
 </body>
 </html>"""
+    executive_html_path, executive_pdf_path = write_executive_reports(all_results, os.path.dirname(os.path.abspath(output_filepath)), failed_hosts, obfuscated)
+    executive_links = (
+        '<nav aria-label="Executive reports" class="executive-report-links" style="padding:12px 24px">'
+        f'<a href="{_h(os.path.basename(executive_html_path))}">Executive summary</a> · '
+        f'<a href="{_h(os.path.basename(executive_pdf_path))}" download>Download executive PDF</a></nav>'
+    )
+    html_content = html_content.replace('<body>', '<body>' + executive_links, 1)
     html_safe = html_content.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
     with open(output_filepath, "w", encoding="utf-8", errors="replace") as f:
-        f.write(html_safe)
+        f.write(format_report_html(html_safe))

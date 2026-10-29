@@ -1,8 +1,11 @@
 """
 BIOS and Boot mode compatibility evaluation for VCF 9.1.
 """
+import datetime
 import re
+from typing import Optional
 
+from ..bios.advisories import evaluate_bios_advisories
 from ..constants import _CVE_TIERS, BIOS_BASELINES
 from ..logging_utils import parse_version_tuple
 from .firmware_currency import _cmp, classify_currency, currency_badge, match_baseline, parse_version
@@ -38,28 +41,24 @@ def evaluate_boot_mode(boot_mode: str) -> dict:
 
 
 def _cve_tier_from_date(bios_date: str) -> tuple:
-    """Map a BIOS release date string to a CVE coverage tier.
-
-    Returns (tier_int, tier_label, badge_class, description).
-    Falls back to tier 0 when the date cannot be parsed or predates all thresholds.
-    Only fires when bios_date is a recognisable ISO-like date string.
-    For OEMs that don't expose a release date (Lenovo, Supermicro, Cisco), callers
-    should rely on the version-based spectre_status badge instead.
-    """
-    if not bios_date or bios_date in ("N/A", "Unknown", ""):
-        return (-1, "N/A", "info", "BIOS release date not available — version-based assessment only.")
-    # Normalise common OEM date formats → YYYY-MM-DD
-    # Dell:  "2024-03-15T00:00:00+00:00" or "2024-03-15"
-    # HPE:   "03/15/2024" or "15 Mar 2024"
-    normalised = bios_date.strip()
-    m_iso = re.match(r"(\d{4}-\d{2}-\d{2})", normalised)
-    m_mdy = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", normalised)
-    if m_iso:
-        normalised = m_iso.group(1)
-    elif m_mdy:
-        normalised = f"{m_mdy.group(3)}-{m_mdy.group(1).zfill(2)}-{m_mdy.group(2).zfill(2)}"
-    else:
-        return (-1, "N/A", "info", "BIOS release date format unrecognised.")
+    """Return a historical BIOS-date estimate, never microcode assurance."""
+    if not isinstance(bios_date, str) or not bios_date.strip():
+        return (-1, "Not Assessed", "info", "BIOS release date unavailable; mitigation state is not verified.")
+    value = bios_date.strip()
+    m_iso = re.fullmatch(r"(\d{4}-\d{2}-\d{2})(?:T[^\s]+)?", value)
+    m_mdy = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", value)
+    try:
+        if m_iso:
+            parsed = datetime.date.fromisoformat(m_iso.group(1))
+        elif m_mdy:
+            parsed = datetime.date(int(m_mdy.group(3)), int(m_mdy.group(1)), int(m_mdy.group(2)))
+        else:
+            return (-1, "Not Assessed", "info", "BIOS date missing or unrecognized; mitigation state is not verified.")
+    except ValueError:
+        return (-1, "Not Assessed", "info", "Invalid BIOS release date; mitigation state is not verified.")
+    if parsed > datetime.datetime.now(datetime.timezone.utc).date():
+        return (-1, "Not Assessed", "info", "BIOS release date is in the future; mitigation state is not verified.")
+    normalised = parsed.isoformat()
 
     tier_result = _CVE_TIERS[0][1:4] + (_CVE_TIERS[0][4],)  # default to tier 0 data
     for cutoff, tier_int, label, badge_cls, desc in _CVE_TIERS:
@@ -73,18 +72,23 @@ def _cve_tier_from_date(bios_date: str) -> tuple:
     return tier_result
 
 
-def evaluate_bios_version(model_name: str, installed_version: str, release_date: str = "N/A") -> dict:
+def bios_date_estimate_fields(release_date: str) -> dict:
+    """Refresh legacy cve_* fields from date evidence, including offline renders."""
+    tier, label, badge, description = _cve_tier_from_date(release_date)
+    return {
+        "cve_tier": tier, "cve_tier_label": label, "cve_tier_badge": badge,
+        "cve_tier_desc": description, "cve_assessment_basis": "bios_release_date_estimate",
+        "cve_mitigations_verified": False,
+    }
+
+
+def evaluate_bios_version(model_name: str, installed_version: str, release_date: str = "N/A", system_info: Optional[dict] = None) -> dict:
     model_key = str(model_name or "").upper().strip()
     installed_str = str(installed_version or "N/A")
     baseline_key, baseline = match_baseline(BIOS_BASELINES, model_key)
-    cve_tier_int, cve_tier_label, _cve_badge, cve_tier_desc = _cve_tier_from_date(release_date)
-    cve_fields = {
-        "cve_tier": cve_tier_int,
-        "cve_tier_label": cve_tier_label,
-        "cve_tier_badge": _cve_badge,
-        "cve_tier_desc": cve_tier_desc,
-        "baseline_key": baseline_key,
-    }
+    cve_fields = {**bios_date_estimate_fields(release_date), "baseline_key": baseline_key,
+                  "firmware_advisories": evaluate_bios_advisories({**(system_info or {}), "bios_release_date": release_date}),
+                  "security_floor_version": baseline.get("min_spectre") if baseline else None}
     if not baseline:
         return {
             "badge": f"<span class='badge info'>ℹ️ v{installed_str} ({release_date})</span>",
@@ -121,7 +125,7 @@ def _spectre_badge(installed_str: str, baseline: dict) -> tuple:
         return (
             "ok",
             (
-                f"<span class='badge success'>\U0001f6e1️ Spectre Microcode: OK "
+                f"<span class='badge success'>\U0001f6e1️ Recorded BIOS Security Floor Met "
                 f"(≥ v{floor})</span>"
             ),
         )
@@ -131,21 +135,23 @@ def _spectre_badge(installed_str: str, baseline: dict) -> tuple:
     if not inst_nums or not sp_nums:
         inst = parse_version_tuple(installed_str)
         sp = parse_version_tuple(floor)
-        covered = inst >= sp and inst != (0, 0, 0, 0)
+        if inst == (0, 0, 0, 0) or sp == (0, 0, 0, 0):
+            return ("unverified", "<span class='badge info'>Recorded BIOS Security Floor: Not Assessed</span>")
+        covered = inst >= sp
     else:
         covered = _cmp(inst_nums, sp_nums) >= 0
     if covered:
         return (
             "ok",
             (
-                f"<span class='badge success'>\U0001f6e1️ Spectre Microcode: OK "
+                f"<span class='badge success'>\U0001f6e1️ Recorded BIOS Security Floor Met "
                 f"(≥ v{floor})</span>"
             ),
         )
     return (
         "exposed",
         (
-            f"<span class='badge danger'>⚠️ Pre-Spectre BIOS: v{installed_str} "
+            f"<span class='badge danger'>⚠️ Below Recorded BIOS Security Floor: v{installed_str} "
             f"— min required v{floor}</span>"
         ),
     )

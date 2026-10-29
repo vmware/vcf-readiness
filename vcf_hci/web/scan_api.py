@@ -33,6 +33,7 @@ from vcf_hci import (
 )
 from vcf_hci.summary_io import load_summary
 from vcf_hci.web import vault_session
+from vcf_hci.web.job_guard import exclusive_fleet_change, fleet_worker
 from vcf_hci.web.scan_worker import (
     _broadcast,
     _cancel_event,
@@ -121,6 +122,7 @@ class ScanApiMixin(_ApiMixinBase):
 
     # ── /api/scan ─────────────────────────────────────────────────────────────
 
+    @exclusive_fleet_change
     def _api_scan(self) -> None:
         if not _COLLECTOR_OK:
             self._send_json({"error": "Collector not available"}, 503)
@@ -240,6 +242,20 @@ class ScanApiMixin(_ApiMixinBase):
                 }, 409)
                 return
 
+        group_ids = body.get("server_group_ids")
+        if group_ids:
+            from vcf_hci.server_groups import _LOCK, GroupRegistry
+            try:
+                with _LOCK:
+                    registry = GroupRegistry()
+                    registry.require_groups(group_ids)
+                    target_ids = [registry.register({"host": ip}) for ip in ips]
+                    registry.assign(target_ids, group_ids)
+                    registry.save()
+            except (ValueError, OSError) as exc:
+                self._send_json({"error": str(exc)}, 400)
+                return
+
         scan_id = os.urandom(6).hex()
         _cancel_event.clear()
 
@@ -271,6 +287,7 @@ class ScanApiMixin(_ApiMixinBase):
             effective_initial_outdir = append_outdir if (is_retry and append_outdir) else outdir
             _state.update({
                 "scan_id": scan_id, "running": True, "done": False, "error": None,
+                "_fleet_worker_active": True,
                 "total": len(ips), "completed": 0,
                 "execution": execution,
                 "jump_host_id": jump_host_id if execution == "remote" else None,
@@ -280,7 +297,7 @@ class ScanApiMixin(_ApiMixinBase):
                 "active_hosts": {},
                 "completed_hosts": set(),
                 "skipped_ips": set(),
-                "results": prior_results, "failed_hosts": prior_failed_hosts, "partial_hosts": [], "report_paths": [],
+                "results": prior_results, "fleet_index": None, "failed_hosts": prior_failed_hosts, "partial_hosts": [], "report_paths": [],
                 "fleet_path": "", "summary_path": "", "outdir": effective_initial_outdir, "log_lines": [],
                 "disconnected_jump_scan": None,
             })
@@ -295,8 +312,8 @@ class ScanApiMixin(_ApiMixinBase):
                 scan_prof = "readiness-full"
 
         worker_fn = _get_dispatch("_run_scan_worker", _run_scan_worker)
-        threading.Thread(
-            target=worker_fn,
+        worker_thread = threading.Thread(
+            target=fleet_worker(worker_fn),
             args=(scan_id, ips, creds, outdir,
                   threads,
                   bool(body.get("quick", False)),
@@ -330,7 +347,14 @@ class ScanApiMixin(_ApiMixinBase):
                   execution,
                   jump_host_id),
             daemon=True,
-        ).start()
+        )
+        try:
+            worker_thread.start()
+        except Exception:
+            with _state_lock:
+                _state["running"] = False
+                _state.pop("_fleet_worker_active", None)
+            raise
 
         self._send_json({"ok": True, "scan_id": scan_id, "total": len(ips)})
 
@@ -485,6 +509,7 @@ class ScanApiMixin(_ApiMixinBase):
                 all_res.append({"jump_host_id": jid, "result": r})
             self._send_json({"ok": True, "results": all_res})
 
+    @exclusive_fleet_change
     def _api_scan_reconnect(self) -> None:
         if not self._vault_guard():
             return
@@ -607,7 +632,16 @@ class ScanApiMixin(_ApiMixinBase):
             except Exception:
                 logger.exception("Reconnect background worker failed")
 
-        threading.Thread(target=_reconnect_target, daemon=True).start()
+        with _state_lock:
+            _state["running"] = True
+            _state["_fleet_worker_active"] = True
+        try:
+            threading.Thread(target=fleet_worker(_reconnect_target), daemon=True).start()
+        except Exception:
+            with _state_lock:
+                _state["running"] = False
+                _state.pop("_fleet_worker_active", None)
+            raise
         self._send_json({"ok": True, "msg": "Reconnecting to jump host...", "scan_id": info.get("scan_id")})
 
     def _api_skip_host(self) -> None:

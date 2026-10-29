@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.11.0"
+TOOL_VERSION = "9.12.0"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -694,22 +694,26 @@ _UNVERIFIED = {
 # min_spectre stays the security floor and is not a currency failure by itself.
 # Lenovo/HPE min_recommended values below the OEM latest are library floors so one
 # revision behind stays a yellow age note. They are not a second vendor minimum.
-_DELL_14G_INTEL = _fw("2.28.1", "2.25.0", "1.3.7", **_DELL_CODE)
+_DELL_BIOS_CODE = {
+    "source": "Dell KB 000227230 (updated 26 Oct 2026; checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence",
+    "source_url": "https://www.dell.com/support/kbdoc/en-us/000227230",
+}
+_DELL_14G_INTEL = _fw("2.29.2", "2.25.0", "1.3.7", **_DELL_BIOS_CODE)
 _DELL_14G_AMD = _fw("1.28.0", "1.27.0", "1.0.9", **_DELL_CODE)
-_DELL_15G_INTEL = _fw("1.22.1", "1.19.2", "1.0.0", **_DELL_CODE)
-_DELL_15G_AMD = _fw("2.24.1", "2.21.1", "2.2.0", **_DELL_CODE)
-_DELL_16G_INTEL = _fw("2.11.2", "2.8.2", "1.0.0", **_DELL_CODE)
-_DELL_16G_AMD = _fw("1.18.2", "1.14.1", "1.0.0", **_DELL_CODE)
-_DELL_17G_INTEL = _fw("1.9.5", "1.5.4", "1.0.0", **_DELL_CODE)
+_DELL_15G_INTEL = _fw("1.23.1", "1.19.2", "1.0.0", **_DELL_BIOS_CODE)
+_DELL_15G_AMD = _fw("2.25.1", "2.22.0", "2.2.0", **_DELL_BIOS_CODE)
+_DELL_16G_INTEL = _fw("2.11.4", "2.8.2", "1.0.0", **_DELL_BIOS_CODE)
+_DELL_16G_AMD = _fw("1.18.14", "1.15.3", "1.0.0", **_DELL_BIOS_CODE)
+_DELL_17G_INTEL = _fw("1.9.16", "1.6.4", "1.0.0", **_DELL_BIOS_CODE)
 _DELL_17G_AMD = _fw(
-    "1.8.5", "1.4.1", "1.0.0",
+    "1.8.27", "1.5.3", "1.0.0",
     catalog_note=(
         "Dell vSAN Ready Node ESXi 9.x catalogs (KB 000337386) moved past the old 1.6.4 BOM. "
         "Currency uses this OEM latest."
     ),
-    **_DELL_CODE,
+    **_DELL_BIOS_CODE,
 )
-_DELL_17G_R7725 = _fw("1.8.5", "1.7.6", "1.0.0", catalog_note=_DELL_17G_AMD["catalog_note"], **_DELL_CODE)
+_DELL_17G_R7725 = _fw("1.8.26", "1.4.1", "1.0.0", catalog_note=_DELL_17G_AMD["catalog_note"], **_DELL_BIOS_CODE)
 
 _LENOVO_IVE = _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.16", **_LENOVO_GEN1)
 _LENOVO_AFE = _fw("AFE136D-3.60", "AFE136D-2.00", "AFE-1.00", previous_families=("TEE", "IVE"), **_LENOVO_V2)
@@ -748,8 +752,8 @@ BIOS_BASELINES = {
     "POWEREDGE R550":   _DELL_15G_INTEL,
     "POWEREDGE R6525":  _DELL_15G_AMD,
     "POWEREDGE R7525":  _DELL_15G_AMD,
-    "POWEREDGE R7515":  _fw("2.22.0", "2.14.0", "2.2.0", **_DELL_CODE),
-    "POWEREDGE R6515":  _fw("1.7.4", "1.7.4", "1.0.0", **_DELL_CODE),
+    "POWEREDGE R7515":  _DELL_15G_AMD,
+    "POWEREDGE R6515":  _DELL_15G_AMD,
     # ── Dell 16G — Intel 2.11.x and AMD 1.18.x are not the same train ─────────
     "POWEREDGE R660":   _DELL_16G_INTEL,
     "POWEREDGE R760":   _DELL_16G_INTEL,
@@ -758,22 +762,50 @@ BIOS_BASELINES = {
     "POWEREDGE R960":   _DELL_16G_INTEL,
     "POWEREDGE R6625":  _DELL_16G_AMD,
     "POWEREDGE R7625":  _DELL_16G_AMD,
-    "POWEREDGE R7615":  _fw("1.17.1", "1.8.0", "1.0.0", **_DELL_CODE),
+    "POWEREDGE R7615":  _DELL_16G_AMD,
     # ── Dell 17G (Xeon 6 / Turin) ─────────────────────────────────────────────
     "POWEREDGE R670":   _DELL_17G_INTEL,
     "POWEREDGE R770":   _DELL_17G_INTEL,
     "POWEREDGE R7715":  _DELL_17G_AMD,
     "POWEREDGE R6715":  _DELL_17G_AMD,
     "POWEREDGE R7725":  _DELL_17G_R7725,
-    "POWEREDGE R6725":  _DELL_17G_AMD,
+    "POWEREDGE R6725":  _DELL_17G_R7725,
     # ── HPE Gen9 (iLO 4) — catalog DL380 Gen9 / DL580 Gen9 ───────────────────
-    "PROLIANT DL380 GEN9": _fw("P89 v3.40", "P89 v2.76", "P89 v2.76", source="HPE Gen9 catalog baseline"),
-    "PROLIANT DL580 GEN9": _fw("U17 v3.30", "U17 v3.30", "U17 v3.30", source="HPE Gen9 catalog baseline"),
+    'PROLIANT DL380 GEN9': _fw(
+        'P89 v3.40',
+        'P89 v2.76',
+        'P89 v2.76',
+        source='Official indexed release history identifies latest; repository itself stops at 3.30 (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://support.hpe.com/connect/s/softwaredetails?language=ja&softwareId=MTX_7ea1ecfbee824e0ba345c6c69e',
+        released='2024-08-29',
+    ),
+    'PROLIANT DL580 GEN9': _fw(
+        'U17 v3.40',
+        'U17 v3.30',
+        'U17 v3.30',
+        source='Official indexed release history identifies latest; repository itself stops at 3.30 (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://support.hpe.com/connect/s/softwaredetails?collectionId=MTX-5676050b35d44b26&language=zh_TW',
+        released='2024-08-29',
+    ),
     # ── HPE Gen10 (Skylake-SP / Cascade Lake-SP) ──────────────────────────────
     # min_spectre ~ v1.22 per HPE Customer Advisory a00039267en_us (Feb 2018).
     # Family codes are part of the version: DL360 Gen10 is U32, DL380 Gen10 is U30.
-    "PROLIANT DL360 GEN10": _fw("U32 v3.66", "U32 v2.90", "U32 v1.22", **_HPE_GEN10),
-    "PROLIANT DL380 GEN10": _fw("U30 v3.66", "U30 v2.90", "U30 v1.22", **_HPE_GEN10),
+    'PROLIANT DL360 GEN10': _fw(
+        'U32 v3.70',
+        'U32 v2.90',
+        'U32 v1.22',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-08-19',
+    ),
+    'PROLIANT DL380 GEN10': _fw(
+        'U30 v3.70',
+        'U30 v2.90',
+        'U30 v1.22',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-08-19',
+    ),
     "PROLIANT DL580 GEN10": _fw("U34 v3.66", "U34 v2.90", "U34 v1.22", previous_families=("U17",), **_HPE_GEN10),
     "PROLIANT BL460C GEN10": _fw(
         "I41 v3.20", "I41 v2.90", "I41 v1.22",
@@ -784,22 +816,101 @@ BIOS_BASELINES = {
     ),
     # ── HPE Gen10 Plus (Ice Lake-SP) — U46, not the retired U32 label ─────────
     "PROLIANT DL360 GEN10 PLUS": _fw("U46 v2.64", "U46 v2.00", "U46 v1.00", previous_families=("U32",), **_HPE_GEN10),
-    "PROLIANT DL380 GEN10 PLUS": _fw("U46 v2.64", "U46 v2.00", "U46 v1.00", previous_families=("U32",), **_HPE_GEN10),
+    'PROLIANT DL380 GEN10 PLUS': _fw(
+        'U46 v2.70',
+        'U46 v2.00',
+        'U46 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-08-19',
+        previous_families=('U32', ),
+    ),
     # ── HPE Gen11 — DL360/DL380 moved onto the shared U54 ROM ─────────────────
     "PROLIANT DL360 GEN11":  _fw("U54 v2.94", "U54 v2.00", "U54 v1.00", previous_families=("U64",), **_HPE_GEN11),
-    "PROLIANT DL380 GEN11":  _fw("U54 v2.94", "U54 v2.00", "U54 v1.00", previous_families=("U60",), **_HPE_GEN11),
-    "PROLIANT DL380A GEN11": _fw("U58 v2.94", "U58 v2.00", "U58 v1.00", **_HPE_GEN11),
+    'PROLIANT DL380 GEN11': _fw(
+        'U54 v3.00',
+        'U54 v2.00',
+        'U54 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen11/current/',
+        released='2026-08-20',
+        previous_families=('U60', ),
+    ),
+    'PROLIANT DL380A GEN11': _fw(
+        'U58 v3.00',
+        'U58 v2.00',
+        'U58 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen11/current/',
+        released='2026-08-20',
+    ),
     "PROLIANT DL560 GEN11":  _fw("U59 v2.94", "U59 v2.00", "U59 v1.00", previous_families=("U36",), **_HPE_GEN11),
     # ── HPE AMD Gen10 / Gen10 Plus / Gen11 (A40 / A43 / A55 families) ────────
-    "PROLIANT DL385 GEN10": _fw("A40 v3.80", "A40 v2.72", "A40 v2.72", **_HPE_GEN10),
-    "PROLIANT DL325 GEN10": _fw("A41 v3.80", "A41 v3.80", "A41 v1.00", **_HPE_GEN10),
-    "PROLIANT DL385 GEN10 PLUS": _fw("A42 v3.10", "A42 v3.10", "A42 v1.00", **_HPE_GEN10),
-    "PROLIANT DL325 GEN10 PLUS": _fw("A43 v3.72", "A43 v3.72", "A43 v1.00", **_HPE_GEN10),
-    "PROLIANT DL385 GEN11": _fw("A55 v3.16", "A55 v1.32", "A55 v1.00", **_HPE_GEN11),
+    'PROLIANT DL385 GEN10': _fw(
+        'A40 v3.80',
+        'A40 v2.72',
+        'A40 v2.72',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-05-28',
+    ),
+    'PROLIANT DL325 GEN10': _fw(
+        'A41 v3.80',
+        'A41 v3.80',
+        'A41 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-05-28',
+    ),
+    'PROLIANT DL385 GEN10 PLUS': _fw(
+        'A42 v4.04',
+        'A42 v3.10',
+        'A42 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-04-02',
+    ),
+    'PROLIANT DL325 GEN10 PLUS': _fw(
+        'A43 v4.04',
+        'A43 v3.72',
+        'A43 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-04-02',
+    ),
+    'PROLIANT DL385 GEN11': _fw(
+        'A55 v3.22',
+        'A55 v1.32',
+        'A55 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen11/current/',
+        released='2026-08-20',
+    ),
     # ── HPE Gen12 (iLO 7) and Edgeline e910 ──────────────────────────────────
-    "PROLIANT DL380 GEN12": _fw("U68 v1.82", "U68 v1.82", "U68 v1.00", source="HPE Gen12 catalog baseline"),
-    "PROLIANT COMPUTE DL380 GEN12": _fw("U68 v1.82", "U68 v1.82", "U68 v1.00", source="HPE Gen12 catalog baseline"),
-    "PROLIANT E910": _fw("H08 v3.60", "H08 v1.84", "H08 v1.00", source="HPE Edgeline catalog baseline"),
+    'PROLIANT DL380 GEN12': _fw(
+        'U68 v1.90',
+        'U68 v1.82',
+        'U68 v1.00',
+        source='Current repository and exact package metadata (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen12/current/U68_1.90_08_20_2026.json',
+        released='2026-08-20',
+    ),
+    'PROLIANT COMPUTE DL380 GEN12': _fw(
+        'U68 v1.90',
+        'U68 v1.82',
+        'U68 v1.00',
+        source='Current repository and exact package metadata (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen12/current/U68_1.90_08_20_2026.json',
+        released='2026-08-20',
+    ),
+    'PROLIANT E910': _fw(
+        'H08 v3.70',
+        'H08 v1.84',
+        'H08 v1.00',
+        source='Newest ROM listed in current official repository; SPP corroboration where listed (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://downloads.linux.hpe.com/SDR/repo/fwpp-gen10/current/',
+        released='2026-08-19',
+    ),
     # ── Lenovo ThinkSystem Gen 1 (Skylake-SP / Cascade Lake-SP) ──────────────
     # Build-id prefix (IVE / AFE / ESE) is the family. Redfish may show "[IVE-2.93]".
     # min_spectre per Lenovo LEN-22133: firmware IVE116Y (Jun 2018) ≈ [IVE-1.16]
@@ -811,14 +922,30 @@ BIOS_BASELINES = {
     "THINKSYSTEM SN550": _LENOVO_IVE,
     "THINKSYSTEM SN850": _LENOVO_IVE,
     # ── Lenovo ThinkSystem V2 (Ice Lake, AFE) and V3 (Sapphire Rapids, ESE) ──
-    "THINKSYSTEM SR630 V2": _LENOVO_AFE,
+    "THINKSYSTEM SR630 V2": {**_LENOVO_AFE, "unverified_installed_families": ("TEE", "IVE")},
     "THINKSYSTEM SR650 V2": _LENOVO_AFE,
     "THINKSYSTEM SR850 V2": _LENOVO_AFE,
     "THINKSYSTEM SR860 V2": _LENOVO_AFE,
     "THINKSYSTEM SR630 V3": _LENOVO_ESE,
     "THINKSYSTEM SR650 V3": _LENOVO_ESE,
-    "THINKSYSTEM SR650 V4": _fw("IHE110U", "IHE110U", "IHE110U", source="Lenovo V4 catalog baseline"),
-    "THINKSYSTEM SR655":    _fw("CFE142E", "CFE142E", "CFE142E", source="Lenovo SR655 catalog baseline"),
+    'THINKSYSTEM SR650 V4': _fw(
+        'IHE120L',
+        'IHE110U',
+        'IHE110U',
+        source='Newest independently verified standalone package (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://datacentersupport.lenovo.com/us/en/downloads/ds581982',
+        released='2026-07-02',
+        display_version='IHE120L-1.50',
+    ),
+    'THINKSYSTEM SR655': _fw(
+        'CFE150F',
+        'CFE142E',
+        'CFE142E',
+        source='Newest independently verified standalone package (checked 29 Oct 2026); currency only, not CVE-2026-97631 fix evidence',
+        source_url='https://datacentersupport.lenovo.com/us/en/downloads/ds577901',
+        released='2025-09-25',
+        display_version='CFE150F-7.71',
+    ),
     # ── Lenovo ThinkAgile HX/VX (Gen1 IVE UEFI) ──────────────────────────────
     "THINKAGILE HX1320": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
     "THINKAGILE HX3320": _fw("IVE186P-4.30", "IVE186P-3.00", "IVE-1.22", **_LENOVO_GEN1),
@@ -853,8 +980,12 @@ BIOS_BASELINES = {
     ),
     "AS-2125HS": _fw("1.4", "1.3", "1.0", **_UNVERIFIED),
     # ── Quanta / GIGABYTE — no newer third-party build confirmed ─────────────
-    "QUANTAGRID D42A-2U": _fw("3A08.01", "3A06.01", "3A01.00", **_UNVERIFIED),
-    "H262-Z63-00": _fw("C27", "C20", "C10", **_UNVERIFIED),
+    "QUANTAGRID D42A-2U": _fw("3A08.01", "3A06.01", "3A01.00", currency_unverified=True,
+        source="QCT exact model download search returned no results; latest unverified (29 Oct 2026)",
+        source_url="https://www.qct.io/Download/index?method=2&category=0&keyword=D42A-2U"),
+    "H262-Z63-00": _fw("C27", "C20", "C10", currency_unverified=True,
+        source="GIGABYTE end-of-support product page; latest BIOS unverified (29 Oct 2026); verify board revision",
+        source_url="https://www.gigabyte.com/Enterprise/High-Density-Server/H262-Z63-rev-100"),
     # ── Cisco C-Series M5 — full HUU build, still on the 4.3(2) train ────────
     # Redfish BIOS "C220M5.4.3.2h..." shares the 4.3.2 train and is not failed
     # for lacking the HUU build number.
@@ -871,6 +1002,45 @@ BIOS_BASELINES = {
     "HXAF220C-M6SX": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
     "UCSC-C220-M7": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
     "UCSC-C240-M7": _fw("6.0(2.260143)", "4.3.2", "4.2.1", **_CISCO_M6),
+    'UCSB-B200-M5': _fw(
+        'B200M5.4.3.2h.0.0701261029',
+        None,
+        None,
+        source='Cisco UCS Manager 6.0(2e) exact BIOS component (checked 29 Oct 2026); verify management mode; not CVE fix evidence',
+        source_url='https://www.cisco.com/c/en/us/td/docs/unified_computing/ucs/release/notes/ciscoucsmanager-rb-6-0.html',
+        released='2026-07-01',
+        bundle_version='6.0(2e)',
+    ),
+    'UCSC-C220-M5SX': _fw(
+        'C220M5.4.3.2h.0.0701261030',
+        '4.2.3',
+        '3.1.2',
+        source='Cisco UCS Manager 6.0(2e) exact BIOS component (checked 29 Oct 2026); verify management mode; not CVE fix evidence',
+        source_url='https://www.cisco.com/c/en/us/td/docs/unified_computing/ucs/release/notes/ciscoucsmanager-rb-6-0.html',
+        released='2026-07-01',
+        bundle_version='6.0(2e)',
+    ),
+    'UCSC-C240-M5S': _fw(
+        'C240M5.4.3.2i.0.0701261030',
+        '4.2.3',
+        '3.1.2',
+        source='Cisco UCS Manager 6.0(2e) exact BIOS component (checked 29 Oct 2026); verify management mode; not CVE fix evidence',
+        source_url='https://www.cisco.com/c/en/us/td/docs/unified_computing/ucs/release/notes/ciscoucsmanager-rb-6-0.html',
+        released='2026-07-01',
+        bundle_version='6.0(2e)',
+    ),
+    'UCSC-C240-M6S': _fw(
+        'C240M6.6.0.2b.0.0526261056',
+        '4.3.2',
+        '4.2.1',
+        source='Cisco UCS Manager 6.0(2e) exact BIOS component (checked 29 Oct 2026); verify management mode; not CVE fix evidence',
+        source_url='https://www.cisco.com/c/en/us/td/docs/unified_computing/ucs/release/notes/ciscoucsmanager-rb-6-0.html',
+        released='2026-05-26',
+        bundle_version='6.0(2e)',
+    ),
+    "SYS-E200-8D": _fw("2.6a", None, None,
+        source="Supermicro exact SYS-E200-8D bundle; checked 29 Oct 2026; release date not displayed; not CVE fix evidence",
+        source_url="https://www.supermicro.com/en/support/resources/downloadcenter/firmware/SYS-E200-8D/BIOS?mlg=0"),
 }
 
 # NVMe drive firmware baselines — keyed by model-number prefix (uppercase).
@@ -1241,42 +1411,22 @@ VENDOR_HARDENING_GUIDES = {
     },
 }
 
-# CVE coverage tiers based on BIOS release date.
-# Each entry: (cutoff_date_str, tier_int, tier_label, badge_class, description)
-# A BIOS is assigned the HIGHEST tier whose cutoff_date <= bios_release_date.
-# cutoff_date = first date when the relevant Intel/AMD microcode batch was broadly
-# available in OEM BIOS releases.  None as cutoff means "no upper bound" (current tier).
+# Historical BIOS-date buckets. Legacy cve_* field names are retained for readers;
+# these are date estimates, never verified microcode or vulnerability coverage.
+# Entries use exclusive upper bounds; None is the final open-ended date window.
 _CVE_TIERS = [
-    # Tier 0 — completely unmitigated (BIOS predates Jan 2018 disclosure)
-    ("2018-01-05", 0, "No Side-Channel Coverage",
-     "danger",
-     "BIOS predates the Jan 2018 Spectre/Meltdown disclosure. No microcode "
-     "patches for CVE-2017-5715, CVE-2017-5753, or CVE-2017-5754."),
-    # Tier 1 — initial Spectre V1/V2 + Meltdown microcode (Jan-Aug 2018)
-    ("2018-08-14", 1, "Spectre/Meltdown Initial",
-     "danger",
-     "Covers initial Spectre V2 (CVE-2017-5715) and Meltdown. Missing L1TF "
-     "(CVE-2018-3646), MDS (CVE-2019-11135), and SRBDS (CVE-2020-0543)."),
-    # Tier 2 — + L1TF / Foreshadow (Intel Aug 2018 microcode batch)
-    ("2019-05-14", 2, "Spectre + L1TF",
-     "warning",
-     "Covers Spectre/Meltdown + L1TF/Foreshadow (CVE-2018-3620, CVE-2018-3646). "
-     "Missing MDS (CVE-2019-11135) and SRBDS (CVE-2020-0543)."),
-    # Tier 3 — + MDS / TAA / RIDL / Fallout (Intel May 2019 microcode)
-    ("2020-06-09", 3, "Spectre + L1TF + MDS",
-     "warning",
-     "Covers Spectre/Meltdown/L1TF + MDS/TAA (CVE-2019-11135, CVE-2019-11091). "
-     "Missing SRBDS (CVE-2020-0543). Recommended minimum for Cascade Lake."),
-    # Tier 4 — + SRBDS / CrossTalk (Intel Jun 2020 microcode)
-    ("2024-03-12", 4, "Spectre + L1TF + MDS + SRBDS",
-     "success",
-     "Covers Spectre/Meltdown/L1TF/MDS + SRBDS (CVE-2020-0543). "
-     "Adequate for most deployments. Missing RFDS (CVE-2023-28746, Intel 4th Gen+ only)."),
-    # Tier 5 — + RFDS / Register File Data Sampling (Intel IPU 2024.1)
-    (None, 5, "Full Current Coverage",
-     "success",
-     "Full side-channel microcode coverage including RFDS (CVE-2023-28746, "
-     "Intel Sapphire Rapids and newer only). Recommended for all deployments."),
+    ("2018-01-05", 0, "Pre-2018 BIOS Date Estimate", "info",
+     "BIOS date predates 2018-01-05. Date alone does not establish vulnerability or mitigation state."),
+    ("2018-08-14", 1, "2018 Initial BIOS Date Estimate", "info",
+     "BIOS date is 2018-01-05 through 2018-08-13. Check CPU-specific OEM advisories and ESXi mitigations."),
+    ("2019-05-14", 2, "2018-2019 BIOS Date Estimate", "info",
+     "BIOS date is 2018-08-14 through 2019-05-13. Installed microcode and mitigation state are not verified."),
+    ("2020-06-09", 3, "2019-2020 BIOS Date Estimate", "info",
+     "BIOS date is 2019-05-14 through 2020-06-08. Installed microcode and mitigation state are not verified."),
+    ("2024-03-12", 4, "2020-2024 BIOS Date Estimate", "info",
+     "BIOS date is 2020-06-09 through 2024-03-11. Installed microcode and mitigation state are not verified."),
+    (None, 5, "2024+ BIOS Date Estimate", "info",
+     "BIOS date is on or after 2024-03-12. This does not establish current CVE coverage; verify OEM advisories and ESXi mitigations."),
 ]
 
 # QLC NVMe model-number prefixes — all confirmed against vendor datasheets and

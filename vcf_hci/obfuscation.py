@@ -306,7 +306,11 @@ def obfuscate_host_data(
             ctrl["serial_number"] = label(salt, "SN", ctrl["serial_number"])
         if ctrl.get("nvme_subsystem_nqn"):
             ctrl["nvme_subsystem_nqn"] = nqn(salt, ctrl["nvme_subsystem_nqn"])
-        for drv in ctrl.get("drives", []):
+        drive_records = list(ctrl.get("drives", [])) + [
+            enc["source_record"] for enc in ctrl.get("enclosures", [])
+            if isinstance(enc, dict) and isinstance(enc.get("source_record"), dict)
+        ]
+        for drv in drive_records:
             if drv.get("serial"):
                 drv["serial"] = label(salt, "SN", drv["serial"])
             if drv.get("serial_number"):
@@ -673,6 +677,15 @@ def obfuscate_host_data(
     else:
         d.pop("raw_redfish_capture", None)
 
+    from vcf_hci.server_groups import normalize_groups
+    if "server_groups" in d:
+        d["server_groups"] = [
+            {"id": group["id"] if re.fullmatch(r"grp_[0-9a-f]{32}", group["id"]) else "grp_" + _obf_hash(salt, group["id"], 32),
+             "name": label(salt, "Group", group["name"])}
+            for group in normalize_groups(d["server_groups"])
+        ]
+    if d.get("server_group_host_id"):
+        d["server_group_host_id"] = "asset_" + _obf_hash(salt, str(d["server_group_host_id"]), 32)
     d["obfuscated"] = True
     return d
 

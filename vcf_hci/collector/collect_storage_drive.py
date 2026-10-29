@@ -2,38 +2,42 @@
 VCF Readiness Tool — storage drive Redfish resource parsing.
 """
 import re
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union, cast
 
+from vcf_hci.collector.drive_identity import (
+    _extract_fw_candidate as _extract_fw_candidate,
+)
+from vcf_hci.collector.drive_identity import (
+    empty_drive_record,
+    parse_drive_location,
+    resolve_drive_firmware,
+)
+from vcf_hci.collector.drive_identity import (
+    is_invalid_drive_firmware as is_invalid_drive_firmware,
+)
+from vcf_hci.collector.drive_telemetry import (
+    _first_present as _first_present,
+)
+from vcf_hci.collector.drive_telemetry import (
+    parse_drive_telemetry,
+)
+from vcf_hci.collector.drive_telemetry import (
+    sanitize_endurance_pct as sanitize_endurance_pct,
+)
+from vcf_hci.collector.drive_topology import (
+    _parse_lanes as _parse_lanes,
+)
+from vcf_hci.collector.drive_topology import (
+    derive_drive_attachment,
+    derive_drive_pcie_link,
+)
 from vcf_hci.collector.pci_utils import (
     extract_pci_ids_from_dict,
     match_pcie_cache,
-    normalize_pcie_errors,
 )
-from vcf_hci.constants import KB_TRIMODE
-from vcf_hci.hcl import detect_consumer_drive, detect_qlc_nvme
 from vcf_hci.logging_utils import get_nested
-
-
-def _first_present(*values):
-    """Select a known value without discarding zero counters or false flags."""
-    return next((value for value in values if value is not None), None)
-
-
-def sanitize_endurance_pct(val: Any) -> Optional[Union[int, float]]:
-    """Sanitize SSD endurance / media life percentage.
-
-    Returns None if value is null, 255 (standard 1-byte IPMI/Redfish unavailable sentinel),
-    less than 0, or greater than 100.
-    """
-    if val is None:
-        return None
-    try:
-        f_val = float(val)
-    except (ValueError, TypeError):
-        return None
-    if f_val == 255.0 or f_val < 0.0 or f_val > 100.0:
-        return None
-    return int(f_val) if f_val.is_integer() else round(f_val, 2)
+from vcf_hci.storage_capacity import normalize_drive_capacity
+from vcf_hci.storage_media import normalize_media_type
 
 # Known Tri-Mode controller name substrings (fallback when protocol lists are absent)
 _TRIMODE_NAMES = [
@@ -63,59 +67,6 @@ _SOFTWARE_RAID_NAMES = [
 ]
 
 
-def _parse_lanes(val: Any) -> Optional[int]:
-    if isinstance(val, int):
-        return val
-    if isinstance(val, str) and val.lower().startswith("x"):
-        try:
-            return int(val[1:])
-        except ValueError:
-            pass
-    return None
-
-
-def is_invalid_drive_firmware(fw: Any) -> bool:
-    """Return True if fw string is empty, placeholder, or a protocol/specification string."""
-    if not fw:
-        return True
-    if isinstance(fw, dict):
-        s = str(
-            get_nested(fw, "Current", "VersionString")
-            or fw.get("VersionString")
-            or fw.get("Version")
-            or ""
-        ).strip()
-    else:
-        s = str(fw).strip()
-    if not s or s.lower() in ("n/a", "none", "unknown", "null", "not available", "not_available"):
-        return True
-    if re.match(r"^0+(?:[._-]0+)*$", s):
-        return True
-    if re.search(r"^(?:NVMe\s+Spec|Supports\s+ATA|ATA\d*[-_]ACS|SCSI|SPC[-_]\d+|SBC[-_]\d+|AHCI|CPLD)", s, re.I):
-        return True
-    return bool(re.search(r"\b(?:spec|specification|cpld)\b", s, re.I))
-
-
-def _extract_fw_candidate(val: Any) -> str:
-    """Extract clean string firmware version from string or nested dict."""
-    if isinstance(val, dict):
-        res = (
-            get_nested(val, "Current", "VersionString")
-            or val.get("VersionString")
-            or val.get("Version")
-            or ""
-        )
-        return str(res).strip()
-    if val is not None:
-        s = str(val).strip()
-        if s.startswith("{"):
-            m = re.search(r"['\"]VersionString['\"]\s*:\s*['\"]([^'\"]+)['\"]", s)
-            if m:
-                return m.group(1).strip()
-        return s
-    return ""
-
-
 def parse_drive_details(
     coll: Any,
     ctrl_id: str,
@@ -129,8 +80,8 @@ def parse_drive_details(
     """Parse a single drive Redfish resource into a normalized drive dict.
 
     ctrl_pcie (from _parse_ctrl_pcie) supplies controller-level PCIe info —
-    lane width, generation, and the tri-mode flag.  These are augmented by
-    any PCIeInterface fields present directly on the drive resource itself.
+    uplink width, generation, and the tri-mode flag. Uplink properties must
+    never substitute for PCIeInterface evidence on an individual drive.
     """
     if not drive_json:
         return None
@@ -138,155 +89,10 @@ def parse_drive_details(
     ctrl_id_up = str(ctrl_id or "").upper()
     ctrl_name_up = str(ctrl_name or "").upper()
 
-    # ── Bay / slot location ────────────────────────────────────────────────
-    # Priority: DMTF PhysicalLocation ordinal → HPE Location string → Dell Id parse
-    _bay_slot: Optional[int] = None
-    _phys = drive_json.get("PhysicalLocation") or {}
-    _part_loc = _phys.get("PartLocation") or {}
-    _ordinal = _part_loc.get("LocationOrdinalValue")
-    if isinstance(_ordinal, (int, float)):
-        _bay_slot = int(_ordinal)
-    if _bay_slot is None:
-        # HPE SmartStorage: "Location" string like "1I:Box 1:Bay 3" or "1I:1:3" (ControllerPort:Box:Bay)
-        _hpe_loc = str(drive_json.get("Location") or "")
-        _bay_m = re.search(r"[Bb]ay\s*:?\s*(\d+)", _hpe_loc)
-        if _bay_m:
-            _bay_slot = int(_bay_m.group(1))
-        else:
-            _colon_m = re.search(r"^[\w\d]+:\d+:(\d+)$", _hpe_loc)
-            if _colon_m:
-                _bay_slot = int(_colon_m.group(1))
-    if _bay_slot is None:
-        # Dell: Id like "Disk.Bay.4:Enclosure.Internal.0-1:AHCI.Embedded.1-1"
-        _id_m = re.search(r"[Bb]ay\.(\d+)", str(drive_json.get("Id") or ""))
-        if _id_m:
-            _bay_slot = int(_id_m.group(1))
-    if _bay_slot is None:
-        # Dell / NVMe drive Name/Id/Location with "Slot X" (e.g. "PCIe SSD in Slot 6 in Bay 1")
-        _comb_str = f"{drive_json.get('Name') or ''} {drive_json.get('Id') or ''} {drive_json.get('Location') or ''}"
-        _slot_m = re.search(r"[Ss]lot\s*(\d+)", _comb_str)
-        if _slot_m:
-            _bay_slot = int(_slot_m.group(1))
-    if _bay_slot is None:
-        # Dell PERC/HBA drive Name like "Solid State Disk 0:1:0" (Enclosure:Slot:Target -> middle token is slot)
-        _comb_str = f"{drive_json.get('Name') or ''} {drive_json.get('Id') or ''}"
-        _perc_m = re.search(r"\b\d+:(\d+):\d+\b", _comb_str)
-        if _perc_m:
-            _bay_slot = int(_perc_m.group(1))
-
-    # ── EDSFF / form-factor detection ─────────────────────────────────────
-    # EDSFF drives (E1.S, E3.S, E1.L) are always NVMe and can be much
-    # denser than 2.5" U.2/U.3 bays.  Detect from the FormFactor field
-    # (DMTF Redfish 1.12+) and common model/PartNumber substrings.
-    _ff_raw = str(drive_json.get("FormFactor") or "").upper()
-    _id_str = str(drive_json.get("Id") or "")
-    _nm_str = str(drive_json.get("Name") or "")
-    _model_probe = str(
-        drive_json.get("Model") or drive_json.get("PartNumber") or ""
-    ).upper()
-    # FormFactor values seen in practice: "EDSFF_1U_Long", "EDSFF_1U_Short",
-    # "EDSFF", "E1.S", "E3.S" (HPE), "E1.L" etc.
-    _EDSFF_FF = {"EDSFF", "E1.S", "E3.S", "E1.L", "E3.L",
-                 "EDSFF_1U_SHORT", "EDSFF_1U_LONG", "E1_SHORT", "E3_SHORT"}
-    _EDSFF_MDL = ["E3.S", "E1.S", "E1.L", "E3.L", "EDSFF", "ESFF"]
-    is_edsff = (
-        any(tok in _ff_raw for tok in _EDSFF_FF)
-        or any(pat.upper() in _model_probe for pat in _EDSFF_MDL)
-    )
-    if is_edsff:
-        # Narrow down the label: prefer the most specific marker in ff field
-        if "E3" in _ff_raw or "E3.S" in _model_probe or "E3.L" in _model_probe:
-            form_factor_label = "E3.S"
-        elif "E1" in _ff_raw or "E1.S" in _model_probe or "E1.L" in _model_probe:
-            form_factor_label = "E1.S"
-        else:
-            form_factor_label = "EDSFF"
-    elif "M.2" in _ff_raw or "M2" in _ff_raw or "NGFF" in _ff_raw or "M.2" in _model_probe or any(k in ctrl_id_up or k in ctrl_name_up for k in ["BOSS", "NS204I", "MARVELL"]):
-        form_factor_label = "M.2"
-    elif "2.5" in _ff_raw or "SFF" in _ff_raw:
-        form_factor_label = '2.5"'
-    elif "3.5" in _ff_raw or "LFF" in _ff_raw:
-        form_factor_label = '3.5"'
-    else:
-        form_factor_label = ""
-
-    # ── Bay position (Front / Rear / Internal) ────────────────────────────
-    # Combine all textual signals that may indicate physical position.
-    _service_label = str(_part_loc.get("ServiceLabel") or "").upper()
-    _hpe_loc_up    = str(drive_json.get("Location") or "").upper()
-    _id_up         = _id_str.upper()
-    _name_up       = _nm_str.upper()
-    _combined_pos  = f"{_service_label} {_name_up} {_id_up} {_hpe_loc_up}"
-    if any(k in _combined_pos for k in ["REAR", "BACK BAY", "BACKBAY",
-                                         "BOX 2:", "BOX 3:", "BOX2", "BOX3",
-                                         "R-BAY", "RBAY"]):
-        bay_position = "Rear"
-    elif any(k in _combined_pos for k in ["BOSS", "M.2", "M2", "INTERNAL",
-                                           "EMBEDDED", "AHCI.SLOT"]):
-        bay_position = "Internal"
-    else:
-        bay_position = "Front"
-
-    # ── Absent / empty bay detection ──────────────────────────────────────
-    # Dell iDRAC returns Status.State="Absent" for unpopulated drive bays.
-    # Capture these as empty-slot records rather than dropping them.
-    _slot_state = str((drive_json.get("Status") or {}).get("State") or "").strip()
-    if _slot_state.upper() in ("ABSENT", "NOTINSTALLED", "UNAVAILABLEOFFLINE"):
-        _slot_label = (
-            drive_json.get("Name")
-            or (f"Bay {_bay_slot}" if _bay_slot is not None else "Empty Slot")
-        )
-        return {
-            "populated":           False,
-            "bay_slot":            _bay_slot,
-            "bay_position":        bay_position,
-            "is_edsff":            is_edsff,
-            "form_factor":         form_factor_label,
-            "form_factor_label":   form_factor_label,
-            "nvme_connector":      "",
-            "id":                  _id_str,
-            "name":                _slot_label,
-            "model":               "",
-            "product_id":          "",
-            "media_type":          "",
-            "protocol":            "",
-            "serial_number":       "",
-            "capacity_gb":         0,
-            "firmware":            "",
-            "endurance_remaining_pct": "N/A",
-            "drive_health":        "",
-            "temperature_c":        None,
-            "power_on_hours":       None,
-            "failure_predicted":   False,
-            "category":            "Empty",
-            "vsan_eligible":       False,
-            "status_badge":        "<span style='color:var(--text-muted)'>&#9675; Empty</span>",
-            "behind_trimode":      False,
-            "single_lane_alert":   False,
-            "pcie_lanes_in_use":   None,
-            "pcie_max_lanes":      None,
-            "pcie_gen":            None,
-            "is_qlc":              False,
-            "unsafe_shutdowns":          None,
-            "media_errors":              None,
-            "thermal_throttled":         None,
-            "plp_capacitor_health":      None,
-            "tbw_written":               None,
-            "pcie_bus_errors":           None,
-            "pcie_errors":               None,
-            "write_amplification":       None,
-            "bad_nand_blocks":           None,
-            "uncorrectable_read_errors": None,
-            "end_to_end_crc_errors":     None,
-            "available_spare_pct":       None,
-            "plp_start_count":           None,
-            "security_status":           "N/A",
-            "usage_role":                "N/A",
-            "pending_firmware":          "N/A",
-            "negotiated_speed_gbs":     None,
-            "capable_speed_gbs":        None,
-            "oem_metrics":              {},
-        }
+    location = parse_drive_location(drive_json, ctrl_id, ctrl_name)
+    empty = empty_drive_record(drive_json, location)
+    if empty is not None:
+        return empty
 
     dell_oem_raw  = get_nested(drive_json, "Oem", "Dell", "DellPhysicalDisk", default={})
     dell_oem  = dell_oem_raw if isinstance(dell_oem_raw, dict) else {}
@@ -352,7 +158,7 @@ def parse_drive_details(
     elif not raw_proto and oem_proto:
         raw_proto = oem_proto
 
-    media = str(drive_json.get("MediaType", "SSD")).upper()
+    media = normalize_media_type(drive_json.get("MediaType")) or "Unknown"
     # Magnetic (spinning) drives have no flash-endurance metric; some BMCs
     # return 0 for RemainingRatedWriteEndurancePercent on HDDs instead of
     # null, which would otherwise render as "0%" — always force N/A.
@@ -365,8 +171,8 @@ def parse_drive_details(
             raw_proto = "SAS" if is_sas_model else "SATA"
         elif (
             drive_json.get("PCIeInterface")
-            or "NVME" in _ff_raw
-            or "PCIE" in _ff_raw
+            or "NVME" in location["raw_form_factor"]
+            or "PCIE" in location["raw_form_factor"]
             or "NVME" in ctrl_id_up
             or "NVME" in ctrl_name_up
             or "NVME" in drive_name_up
@@ -397,7 +203,7 @@ def parse_drive_details(
                 pass
         if endurance is None and smc_oem.get("PercentageDriveLifeUsed") is not None:
             try:
-                val = float(smc_oem.get("PercentageDriveLifeUsed"))
+                val = float(cast(Any, smc_oem.get("PercentageDriveLifeUsed")))
                 if 0 <= val <= 100:
                     endurance = sanitize_endurance_pct(100.0 - val)
             except (ValueError, TypeError):
@@ -423,28 +229,37 @@ def parse_drive_details(
                   or "N/A")
     if product_id == "N/A" and model and model not in ("Unknown", "N/A", "Unknown Drive"):
         product_id = model
-    # Capacity calculation: check CapacityBytes, CapacityGB, CapacityMiB, or CapacityLogicalBlocks
-    cap_bytes = drive_json.get("CapacityBytes")
-    cap_gb_raw = drive_json.get("CapacityGB")
-    cap_mib_raw = drive_json.get("CapacityMiB")
-    if cap_bytes and isinstance(cap_bytes, (int, float)) and cap_bytes > 0:
-        cap_gb = round(cap_bytes / (1024 ** 3), 2)
-    elif cap_gb_raw is not None and isinstance(cap_gb_raw, (int, float)) and cap_gb_raw > 0:
-        cap_gb = round(float(cap_gb_raw), 2)
-    elif cap_mib_raw is not None and isinstance(cap_mib_raw, (int, float)) and cap_mib_raw > 0:
-        cap_gb = round(float(cap_mib_raw) / 1024, 2)
-    elif drive_json.get("CapacityLogicalBlocks") and drive_json.get("BlockSizeBytes"):
+    # Prefer explicit physical-drive capacity fields. Invalid supplied evidence
+    # remains unknown rather than being replaced by a guess from the model name.
+    capacity_info: dict = {"capacity_gb": 0}
+    for field, divisor in (("CapacityBytes", 1024 ** 3), ("CapacityGB", 1), ("CapacityMiB", 1024)):
+        raw_capacity = drive_json.get(field)
+        if raw_capacity is None or raw_capacity == "" or (not isinstance(raw_capacity, bool) and raw_capacity == 0):
+            continue
         try:
-            blocks = int(drive_json["CapacityLogicalBlocks"])
-            block_size = int(drive_json["BlockSizeBytes"])
-            cap_gb = round((blocks * block_size) / (1024 ** 3), 2)
-        except (ValueError, TypeError):
-            cap_gb = 0
+            candidate = raw_capacity if isinstance(raw_capacity, bool) else round(float(raw_capacity) / divisor, 2)
+        except (TypeError, ValueError, OverflowError):
+            candidate = raw_capacity
+        if not isinstance(candidate, bool) and candidate == 0:
+            continue
+        capacity_info["capacity_gb"] = candidate
+        break
     else:
-        cap_gb = 0
+        if drive_json.get("CapacityLogicalBlocks") and drive_json.get("BlockSizeBytes"):
+            try:
+                blocks = int(drive_json["CapacityLogicalBlocks"])
+                block_size = int(drive_json["BlockSizeBytes"])
+                capacity_info["capacity_gb"] = round((blocks * block_size) / (1024 ** 3), 2)
+            except (ValueError, TypeError, OverflowError):
+                capacity_info["capacity_gb"] = {
+                    "CapacityLogicalBlocks": drive_json["CapacityLogicalBlocks"],
+                    "BlockSizeBytes": drive_json["BlockSizeBytes"],
+                }
+    normalize_drive_capacity(capacity_info)
+    cap_gb = cast(Union[int, float], capacity_info["capacity_gb"])
 
     # Fall back to drive model / name / description regex if capacity is 0 or missing
-    if cap_gb <= 0:
+    if cap_gb <= 0 and not capacity_info.get("capacity_data_quality_note"):
         desc_text = f"{model} {drive_name} {drive_json.get('Description', '')} {product_id}"
         cap_m = re.search(r'(\d+(?:\.\d+)?)\s*(TB|GB)\b', desc_text, re.IGNORECASE)
         if cap_m:
@@ -457,6 +272,10 @@ def parse_drive_details(
                     cap_gb = round(val, 2)
             except (ValueError, TypeError):
                 pass
+
+    capacity_info["capacity_gb"] = cap_gb
+    normalize_drive_capacity(capacity_info)
+    cap_gb = capacity_info["capacity_gb"]
 
     # Model inference for NVMe SSDs where vendor omits Model (e.g. Supermicro NVMe backplanes)
     if not model or model.lower() in ("unknown", "none", "null"):
@@ -480,516 +299,15 @@ def parse_drive_details(
             raw_proto = "PCIe/NVMe"
             proto = "PCIE/NVME"
 
-    drive_id_up = str(drive_json.get("Id", "") or "").upper()
-    is_boot = (
-        bool(drive_json.get("Bootable") or drive_json.get("IsBootDisk"))
-        or any(k in ctrl_id_up or k in ctrl_name_up for k in ["BOSS", "NS204I", "M.2", "AHCI.SLOT", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "SATADOM", "IDSDM", "B545"])
-        or "MTFDDAV240TCB" in model_up
-        or any(k in model_up or k in drive_name_up or k in drive_id_up for k in ["BOOT", "BOSS", "NS204I", "SATADOM", "DOM", "IDSDM", "MARVELL", "KXG80ZNV", "BOOT_DRIVE_BAY"])
-        or ("SATA" in proto and 0 < cap_gb <= 240 and any(k in model_up or k in drive_name_up for k in ["OS", "SYS", "HYPERVISOR", "M.2"]))
-    )
-    if is_boot and "KXG80ZNV" in model_up and cap_gb <= 0:
-        cap_gb = 476.94
-    _PASS_THROUGH_CTRL_PATTERNS = [
-        "HBA", "NONRAID", "NON-RAID", "PASS", "CPU", "EXTENDER", "EXPANDER",
-        "RETIMER", "SWITCH", "BRIDGE", "DIRECT", "AHCI", "CHIPSET", "UNMANAGED",
-        "HBA3", "HBA 3", "JBOD", "NVME_CONTROLLER", "NVME CONTROLLER",
-        "BIFURCATION", "GLOTRENDS", "PU41",
-    ]
-    is_hba = any(k in ctrl_name_up or k in ctrl_id_up for k in _PASS_THROUGH_CTRL_PATTERNS)
-    _EXPLICIT_RAID_NAMES = ["RAID", "SMART ARRAY", "MEGA", "MR", "PERC H7", "PERC H8", "PERC H9", "PERC S", "PERC FD"]
-    is_raid_ctrl = (has_logical_vols or any(k in ctrl_name_up for k in _EXPLICIT_RAID_NAMES)) and not is_hba
-    is_nvme = "NVME" in proto or "PCIE" in proto
-
-    # ── PCIe topology ──────────────────────────────────────────────────────
-    cp = ctrl_pcie or {}
-    # Prefer per-drive PCIeInterface when the firmware exposes it
-    drive_pcie_if = drive_json.get("PCIeInterface") or {}
-    pcie_lanes = drive_pcie_if.get("LanesInUse") if drive_pcie_if.get("LanesInUse") is not None else cp.get("pcie_lanes_in_use")
-    pcie_max   = drive_pcie_if.get("MaxLanes")   if drive_pcie_if.get("MaxLanes")   is not None else cp.get("pcie_max_lanes")
-    pcie_gen   = drive_pcie_if.get("PCIeType")   or cp.get("pcie_gen")
-
-    _is_m2 = (
-        "M2" in _ff_raw or "M.2" in _ff_raw
-        or any(k in ctrl_id_up or k in ctrl_name_up
-               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "B545"])
-    )
-
     sw_raid_names = getattr(coll, "_SOFTWARE_RAID_NAMES", _SOFTWARE_RAID_NAMES) if coll else _SOFTWARE_RAID_NAMES
     trimode_names = getattr(coll, "_TRIMODE_NAMES", _TRIMODE_NAMES) if coll else _TRIMODE_NAMES
-
-    is_vmd_ctrl = cp.get("is_vmd", False) or any(k in ctrl_name_up or k in ctrl_id_up for k in ["VMD", "VROC"])
-
-    # Software RAID: Host/chipset CPU-assisted RAID (e.g. Dell PERC S140/S150, HPE Dynamic Smart Array, Intel VROC)
-    is_software_raid = (
-        cp.get("is_software_raid", False)
-        or is_vmd_ctrl
-        or any(p in ctrl_name_up or p in ctrl_id_up for p in sw_raid_names)
+    attachment = derive_drive_attachment(
+        drive_json, ctrl_id, ctrl_name, model, drive_name, proto, media, is_magnetic,
+        cap_gb, ctrl_pcie, location, has_logical_vols, sw_raid_names, trimode_names,
     )
 
-    # Tri-mode: controller supports both NVMe and SAS/SATA devices.
-    # Also catch via well-known name patterns when the protocol list is absent.
-    is_trimode_by_proto = cp.get("is_trimode", False) and not is_software_raid
-    is_trimode_by_name  = (
-        any(p in ctrl_name_up for p in [t.upper() for t in trimode_names])
-        and not is_software_raid
-    )
-
-    # Exclude motherboard chipset/AHCI/VMD/direct PCIe/extender/HBA/software RAID controllers from tri-mode false positives
-    _NON_TRIMODE_CTRL_PATTERNS = [
-        "AHCI", "SATA", "INTEL", "VMD", "VROC", "CPU", "DIRECT", "CHIPSET", "ASMEDIA", "AMD", "ASROCK", "ASUS",
-        "GLOTRENDS", "PU41", "BIFURCATION",
-        "EXTENDER", "EXPANDER", "RETIMER", "SWITCH", "BRIDGE", "UNMANAGED", "HBA3", "HBA 3", "HBA330", "HBA350", "HBA355",
-    ] + list(sw_raid_names)
-    _is_known_non_trimode_ctrl = (
-        any(p in ctrl_name_up or p in ctrl_id_up for p in _NON_TRIMODE_CTRL_PATTERNS)
-        and not is_trimode_by_name
-    )
-
-    # M.2 drives and direct CPU/PCIe-attached drives on non-Tri-Mode controllers are never behind Tri-Mode RAID
-    behind_trimode = (
-        is_nvme and not is_boot and not _is_m2 and not is_software_raid
-        and (is_trimode_by_name or (is_trimode_by_proto and not _is_known_non_trimode_ctrl))
-    )
-    behind_vmd = is_nvme and not is_boot and not _is_m2 and is_vmd_ctrl
-    behind_software_raid = is_nvme and not is_boot and not _is_m2 and is_software_raid
-
-    # Do not inherit controller-level PCIe uplink lanes (e.g. x8 slot uplink on RAID controllers) onto individual drives
-    if drive_pcie_if.get("LanesInUse") is None and (behind_trimode or is_raid_ctrl or cp.get("is_trimode")):
-        pcie_lanes = 4 if is_nvme else None
-    if drive_pcie_if.get("MaxLanes") is None and (behind_trimode or is_raid_ctrl or cp.get("is_trimode")):
-        pcie_max = 4 if is_nvme else None
-
-    # Single-lane: x1 PCIe on a non-boot NVMe drive (performance risk)
-    single_lane_alert = (
-        is_nvme and not is_boot
-        and isinstance(pcie_lanes, int) and pcie_lanes == 1
-    )
-
-    # ── NVMe connector type (U.2 / U.3 / M.2) ────────────────────────────
-    # Redfish FormFactor does NOT distinguish U.2 from U.3 — both show as
-    # 2.5" SFF (SFF-8639 connector).  The difference is tri-mode capability:
-    # U.3 slots can switch between NVMe, SAS, and SATA on the same connector.
-    # Detection strategy (in priority order):
-    #   1. EDSFF form factor → use the E3.S / E1.S / EDSFF label directly
-    #   2. M.2 → from FormFactor "M2*" or controller name (BOSS, NS204I, MARVELL)
-    #   3. Known U.3 model prefixes (vendor datasheets confirm SFF-8639 tri-mode)
-    #   4. Behind a tri-mode HBA → U.3 backplane (drive itself may be U.2 or U.3)
-    #   5. All other NVMe 2.5" → U.2 (statistically the most common deployment)
-    #   SAS / SATA drives: connector type irrelevant for vSAN ESA; leave blank.
-    _U3_MODEL_PREFIXES = (
-        "KCD8",    # Kioxia CD8P-V / CD8 family — explicitly marketed as U.3
-        "KCM6",    # Kioxia CM6-V U.3 enterprise read-optimised
-        "MTFDKCC", # Micron 6500 ION U.3 (SFF-8639, tri-mode backplane)
-    )
-    _is_m2 = (
-        "M2" in _ff_raw or "M.2" in _ff_raw
-        or any(k in ctrl_id_up or k in ctrl_name_up
-               for k in ["BOSS", "NS204I", "MARVELL", "MRVL", "88NR2241", "HA-RAID", "B545"])
-    )
-    if is_edsff:
-        nvme_connector = form_factor_label          # "E3.S" / "E1.S" / "EDSFF"
-    elif _is_m2:
-        nvme_connector = "M.2"
-    elif is_nvme and not is_boot:
-        if any(model_up.startswith(p) for p in _U3_MODEL_PREFIXES):
-            nvme_connector = "U.3"
-        elif behind_trimode:
-            # Tri-mode HBA implies a U.3-capable backplane; the physical drive
-            # plugged in may itself be U.2 or U.3 — label the slot, not the drive.
-            nvme_connector = "U.3 slot"
-        else:
-            nvme_connector = "U.2"
-    else:
-        nvme_connector = ""
-
-    # ── vSAN compatibility badge ───────────────────────────────────────────
-    is_qlc = False  # overridden below for direct-attached NVMe only
-    consumer_reason = detect_consumer_drive(model, manufacturer=drive_json.get("Manufacturer") or "")
-    is_consumer = consumer_reason is not None
-
-    if is_boot:
-        if is_consumer:
-            badge, category, vsan_ok = (
-                "<span class='badge' style='background:#0284c7;color:#fff'>🚀 Boot Device Only</span>"
-                "<br><small style='color:var(--text-muted,#94a3b8);font-size:.75rem'>Consumer SSD (Boot Only — Not vSAN Eligible)</small>",
-                "Boot Device", False,
-            )
-        else:
-            badge, category, vsan_ok = (
-                "<span class='badge info'>⚙️ Boot Device Only (Non-vSAN)</span>",
-                "Boot Device", False,
-            )
-    elif behind_trimode:
-        badge, category, vsan_ok = (
-            f"<span class='badge danger'>🔴 NOT Supported — NVMe Behind Tri-Mode RAID</span>"
-            f"<br><a href='{KB_TRIMODE}' target='_blank' "
-            f"style='font-size:.78rem;color:var(--danger)'>KB314305 ↗</a>",
-            "Unsupported NVMe Tri-Mode", False,
-        )
-    elif behind_software_raid:
-        badge, category, vsan_ok = (
-            f"<span class='badge warning'>⚠️ Software RAID ({ctrl_name})</span>"
-            f"<br><small style='font-size:.76rem;color:var(--warning)'>Bypass in BIOS (AHCI/Non-RAID) for direct vSAN ESA</small>",
-            "vSAN ESA/OSA NVMe", True,
-        )
-    elif is_nvme and is_raid_ctrl and not is_hba and not is_software_raid:
-        badge, category, vsan_ok = (
-            "<span class='badge danger'>🔴 NOT Supported (NVMe Behind RAID)</span>",
-            "Unsupported NVMe RAID", False,
-        )
-    elif any(k in model_up for k in ["OPTANE", "P4800X", "P4801X", "P5800X", "P1600X", "MEMPEK"]):
-        badge, category, vsan_ok = (
-            "<span class='badge danger'>🔴 Not vSAN Compatible</span>"
-            "<br><span class='badge info' style='margin-top:4px;'>🔵 Memory Tiering Candidate</span>",
-            "Optane Memory Tiering", False,
-        )
-    elif is_consumer:
-        badge, category, vsan_ok = (
-            "<span class='badge danger'>🔴 Unsupported (Consumer SSD)</span>"
-            "<br><small style='color:var(--danger,#ef4444);font-size:.75rem'>Consumer drive — lacks Power Loss Protection (PLP) &amp; not vSAN certified</small>",
-            "Unsupported Consumer SSD", False,
-        )
-    elif is_magnetic or "HDD" in media:
-        badge, category, vsan_ok = (
-            "<span class='badge' style='background:#78716c;color:#fff'>🧲 Magnetic HDD</span>",
-            "Magnetic HDD", False,
-        )
-    elif "SAS" in proto or "SATA" in proto:
-        badge, category, vsan_ok = (
-            "<span class='badge warning'>🟡 vSAN OSA Only</span>",
-            "vSAN OSA Only", True,
-        )
-    elif is_nvme:
-        is_qlc = detect_qlc_nvme(model)
-        if cap_gb > 0 and cap_gb < 1400:
-            badge, category, vsan_ok = (
-                "<span class='badge warning'>🟡 vSAN OSA Only (< 1.6TB NVMe — ESA requires ≥1.6TB)</span>",
-                "vSAN OSA Only", True,
-            )
-        else:
-            badge, category, vsan_ok = (
-                "<span class='badge success'>🟢 ESA Compatible</span>",
-                "vSAN ESA/OSA NVMe", True,
-            )
-    else:
-        badge, category, vsan_ok = (
-            "<span class='badge warning'>⚠️ Unknown / Unverified</span>",
-            "Unknown", False,
-        )
-
-    # Append single-lane warning into the vSAN badge column
-    if single_lane_alert:
-        badge += (
-            "<br><span class='badge danger' style='margin-top:4px;font-size:.78rem'>"
-            "⚠️ Single PCIe Lane (x1) — severe performance limitation</span>"
-        )
-
-    # SMART Telemetry (20 Metrics)
-    temp_c = _first_present(
-        drive_json.get("TemperatureCelsius"),
-        drive_json.get("CurrentTemperatureCelsius"),
-        metrics.get("TemperatureCelsius"),
-        oem_metrics.get("temperature_c"),
-        dell_oem.get("TemperatureCelsius"),
-        hpe_oem.get("CurrentTemperatureCelsius"),
-        lnv_oem.get("Temperature"),
-        smc_oem.get("TemperatureCelsius"),
-        smc_oem.get("Temperature"),
-    )
-    if temp_c is not None:
-        try:
-            temp_c = float(temp_c)
-        except (ValueError, TypeError):
-            temp_c = None
-    poh = _first_present(
-        drive_json.get("PowerOnHours"),
-        metrics.get("PowerOnHours"),
-        oem_metrics.get("power_on_hours"),
-        dell_oem.get("PowerOnHours"),
-        dell_oem.get("OperationHours"),
-        dell_oem.get("PowerOnHoursCount"),
-        hpe_oem.get("PowerOnHours"),
-        lnv_oem.get("PowerOnHours"),
-        lnv_oem.get("OperationHours"),
-        smc_oem.get("PowerOnHours"),
-        smc_oem.get("OperationHours"),
-        cisco_oem.get("PowerOnHours"),
-        cisco_oem.get("OperationHours"),
-    )
-    critical_warnings = _first_present(
-        oem_metrics.get("critical_warnings"),
-        drive_json.get("CriticalWarnings"),
-        drive_json.get("CriticalWarningsCount"),
-        metrics.get("CriticalWarnings"),
-        metrics.get("CriticalWarningsCount"),
-    )
-
-    failure_predicted = bool(
-        drive_json.get("FailurePredicted")
-        or (drive_json.get("FailurePredicted") is not False and (
-            (drive_json.get("Status") or {}).get("HealthRollup") == "Critical"
-            or (drive_json.get("Status") or {}).get("Health") == "Critical"
-        ))
-        or oem_metrics.get("predictive_failure")
-        or dell_oem.get("PredictiveFailure")
-        or lnv_oem.get("FailurePredicted")
-        or (isinstance(critical_warnings, (int, float)) and critical_warnings > 0)
-    )
-
-    unsafe_shutdowns = _first_present(
-        drive_json.get("UnsafeShutdowns"),
-        metrics.get("UnsafeShutdowns"),
-        oem_metrics.get("unsafe_shutdowns"),
-        dell_oem.get("UnsafeShutdowns"),
-        dell_oem.get("AbruptPowerOffCount"),
-        hpe_oem.get("UnsafeShutdowns"),
-        lnv_oem.get("UnsafeShutdowns"),
-        cisco_oem.get("UnsafeShutdowns"),
-    )
-    media_errors = _first_present(
-        drive_json.get("MediaAndDataIntegrityErrors"),
-        drive_json.get("MediaErrors"),
-        metrics.get("MediaAndDataIntegrityErrors"),
-        metrics.get("LifeTimeErrorCount"),
-        oem_metrics.get("media_errors"),
-        dell_oem.get("MediaAndDataIntegrityErrors"),
-        dell_oem.get("MediaErrorCount"),
-        hpe_oem.get("UncorrectableReadErrors"),
-        hpe_oem.get("MediaErrors"),
-        lnv_oem.get("DriveErrorCount"),
-        cisco_oem.get("MediaErrors"),
-    )
-    thermal_throttled_raw = _first_present(
-        drive_json.get("ThermalThrottling"),
-        metrics.get("ThermalThrottling"),
-        dell_oem.get("ThermalThrottled"),
-        hpe_oem.get("ThermalThrottled"),
-    )
-    thermal_throttled = None
-    if thermal_throttled_raw is not None:
-        if isinstance(thermal_throttled_raw, bool):
-            thermal_throttled = thermal_throttled_raw
-        elif isinstance(thermal_throttled_raw, (int, float)):
-            thermal_throttled = thermal_throttled_raw > 0
-        elif isinstance(thermal_throttled_raw, str):
-            thermal_throttled = thermal_throttled_raw.lower() not in ("none", "false", "0", "unthrottled", "ok")
-
-    plp_cap = (
-        drive_json.get("CapacitorHealth") or drive_json.get("PowerLossProtectionStatus")
-        or metrics.get("CapacitorHealth")
-        or dell_oem.get("PowerLossProtectionStatus") or dell_oem.get("CapacitorHealth")
-        or hpe_oem.get("PowerLossProtection")
-    )
-
-    tbw_val = oem_metrics.get("tbw_written")
-    if tbw_val is None:
-        raw_tbw = _first_present(
-            drive_json.get("DataUnitsWritten"),
-            drive_json.get("BytesWritten"),
-            drive_json.get("LifetimeWritesBytes"),
-            metrics.get("DataUnitsWritten"),
-            metrics.get("BytesWritten"),
-            dell_oem.get("DataUnitsWritten"),
-            hpe_oem.get("TotalBytesWritten"),
-        )
-        if isinstance(raw_tbw, (int, float)) and raw_tbw >= 0:
-            if raw_tbw > 1_000_000_000_000:
-                tbw_val = round(raw_tbw / (1024 ** 4), 2)
-            elif raw_tbw > 100_000_000:
-                tbw_val = round((raw_tbw * 512 * 1000) / (1024 ** 4), 2)
-            else:
-                tbw_val = round(raw_tbw, 2)
-
-    tbr_val = oem_metrics.get("tbr_read")
-    if tbr_val is None:
-        raw_tbr = _first_present(
-            drive_json.get("DataUnitsRead"),
-            drive_json.get("BytesRead"),
-            drive_json.get("LifetimeReadsBytes"),
-            metrics.get("DataUnitsRead"),
-            metrics.get("BytesRead"),
-            dell_oem.get("DataUnitsRead"),
-            hpe_oem.get("TotalBytesRead"),
-        )
-        if isinstance(raw_tbr, (int, float)) and raw_tbr >= 0:
-            if raw_tbr > 1_000_000_000_000:
-                tbr_val = round(raw_tbr / (1024 ** 4), 2)
-            elif raw_tbr > 100_000_000:
-                tbr_val = round((raw_tbr * 512 * 1000) / (1024 ** 4), 2)
-            else:
-                tbr_val = round(raw_tbr, 2)
-
-    power_cycles = _first_present(
-        oem_metrics.get("power_cycles"),
-        drive_json.get("PowerCycleCount"),
-        drive_json.get("PowerCycles"),
-        metrics.get("PowerCycles"),
-        metrics.get("PowerCycleCount"),
-        dell_oem.get("PowerCycleCount"),
-    )
-    controller_busy_time = _first_present(
-        oem_metrics.get("controller_busy_time"),
-        drive_json.get("ControllerBusyTimeMinutes"),
-        drive_json.get("ControllerBusyTime"),
-        metrics.get("ControllerBusyTime"),
-        metrics.get("ControllerBusyTimeMinutes"),
-    )
-    controller_duty_cycle_pct = None
-    if isinstance(controller_busy_time, (int, float)) and isinstance(poh, (int, float)) and poh > 0:
-        controller_duty_cycle_pct = round(min(100.0, max(0.0, (float(controller_busy_time) / (float(poh) * 60.0)) * 100.0)), 1)
-
-    host_read_commands = _first_present(
-        oem_metrics.get("host_read_commands"),
-        drive_json.get("HostReadCommandsCount"),
-        drive_json.get("HostReadCommands"),
-        metrics.get("HostReadCommands"),
-    )
-    host_write_commands = _first_present(
-        oem_metrics.get("host_write_commands"),
-        drive_json.get("HostWriteCommandsCount"),
-        drive_json.get("HostWriteCommands"),
-        metrics.get("HostWriteCommands"),
-    )
-    avail_spare_thresh = _first_present(
-        oem_metrics.get("available_spare_threshold"),
-        drive_json.get("AvailableSpareThresholdPercent"),
-        drive_json.get("AvailableSpareThreshold"),
-        metrics.get("AvailableSpareThresholdPercent"),
-        metrics.get("AvailableSpareThreshold"),
-    )
-    error_log_entries = _first_present(
-        oem_metrics.get("error_log_entries"),
-        drive_json.get("ErrorInfoCount"),
-        drive_json.get("NumOfErrorInfoLogEntries"),
-        metrics.get("NumOfErrorInfoLogEntries"),
-    )
-    max_temp_c = _first_present(
-        oem_metrics.get("max_temp_c"),
-        drive_json.get("MaximumTemperatureCelsius"),
-        hpe_oem.get("MaximumTemperatureCelsius"),
-    )
-
-    pcie_raw = None
-    for cand in (
-        drive_json.get("PCIeErrors"),
-        metrics.get("PCIeErrors"),
-        dell_oem.get("PCIeErrors"),
-        oem_metrics.get("pcie_errors"),
-        drive_json.get("PCIeCorrectableErrorCount"),
-        metrics.get("PCIeCorrectableErrors"),
-        metrics.get("PCIeCorrectableErrorCount"),
-        oem_metrics.get("pcie_bus_errors"),
-    ):
-        if cand is not None and cand != {}:
-            pcie_raw = cand
-            if isinstance(cand, dict):
-                break
-
-    pcie_errors_dict = normalize_pcie_errors(pcie_raw)
-    pcie_errs = pcie_errors_dict.get("total_errors") if pcie_errors_dict else (
-        int(pcie_raw) if isinstance(pcie_raw, (int, float)) else None
-    )
-    waf_val = _first_present(
-        drive_json.get("WriteAmplificationFactor"),
-        metrics.get("WriteAmplificationFactor"),
-    )
-    bad_nand = _first_present(
-        drive_json.get("BadUserNANDBlocks"),
-        drive_json.get("BadNANDBlockCount"),
-        drive_json.get("RetiredBlockCount"),
-        metrics.get("BadNANDBlockCount"),
-        dell_oem.get("BadNANDBlockCount"),
-        dell_oem.get("RetiredBlockCount"),
-    )
-    uncorr_reads = _first_present(
-        drive_json.get("UncorrectableReadErrors"),
-        metrics.get("UncorrectableReadErrors"),
-        hpe_oem.get("UncorrectableReadErrors"),
-        oem_metrics.get("uncorrectable_read_errors"),
-    )
-    e2e_crc = _first_present(
-        drive_json.get("EndToEndCorrectionCounts"),
-        drive_json.get("EndToEndErrors"),
-        metrics.get("EndToEndErrors"),
-    )
-    avail_spare = _first_present(
-        drive_json.get("AvailableSparePercent"),
-        drive_json.get("PercentFreeBlocks"),
-        metrics.get("AvailableSparePercent"),
-        dell_oem.get("AvailableSparePercent"),
-        oem_metrics.get("available_spare_pct"),
-    )
-    avail_spare_raw = avail_spare
-    if not isinstance(avail_spare, (int, float)) or isinstance(avail_spare, bool) or not 0 <= avail_spare <= 100:
-        avail_spare = None
-    plp_starts = _first_present(
-        drive_json.get("PLPStartCount"),
-        metrics.get("PLPStartCount"),
-    )
-    sec_status = str(
-        drive_json.get("SecurityStatus") or drive_json.get("EncryptionStatus")
-        or oem_metrics.get("security_status")
-        or dell_oem.get("SecurityStatus") or dell_oem.get("SecurityState") or dell_oem.get("EncryptionStatus")
-        or hpe_oem.get("EncrypStatus") or hpe_oem.get("EncryptionStatus")
-        or "N/A"
-    ).strip()
-    usage_role = str(
-        drive_json.get("UsageAttribute")
-        or dell_oem.get("UsageAttribute")
-        or hpe_oem.get("CarrierStatus")
-        or ("Boot Drive" if is_boot else "Data Drive")
-    ).strip()
-    pending_fw = str(
-        drive_json.get("PendingFirmwareVersion")
-        or dell_oem.get("ComponentStagingState")
-        or hpe_oem.get("PendingFirmwareVersion")
-        or "N/A"
-    ).strip()
-
-    crypto_erase_capable = bool(
-        oem_metrics.get("crypto_erase_capable")
-        or drive_json.get("CryptographicEraseCapable") == "Capable"
-        or "crypto" in str(drive_json.get("SystemEraseCapability", "")).lower()
-    )
-    erase_capability = str(
-        oem_metrics.get("erase_capability")
-        or drive_json.get("SystemEraseCapability")
-        or drive_json.get("CryptographicEraseCapable")
-        or "N/A"
-    ).strip()
-    error_description = str(
-        oem_metrics.get("error_description")
-        or drive_json.get("ErrorDescription")
-        or ""
-    ).strip()
-    if error_description.lower() in ("none", "null", "n/a"):
-        error_description = ""
-
-    pcie_cap_width = (
-        oem_metrics.get("pcie_capable_width")
-        or (f"x{pcie_max}" if isinstance(pcie_max, int) else None)
-    )
-    pcie_neg_width = (
-        oem_metrics.get("pcie_negotiated_width")
-        or (f"x{pcie_lanes}" if isinstance(pcie_lanes, int) else None)
-    )
-
-    n_lanes = _parse_lanes(pcie_neg_width)
-    c_lanes = _parse_lanes(pcie_cap_width)
-    if isinstance(n_lanes, int) and pcie_lanes is None:
-        pcie_lanes = n_lanes
-    if isinstance(c_lanes, int) and pcie_max is None:
-        pcie_max = c_lanes
-
-    pcie_downshifted = bool(
-        is_nvme
-        and not is_boot
-        and not _is_m2
-        and isinstance(n_lanes, int)
-        and isinstance(c_lanes, int)
-        and n_lanes < c_lanes
-    )
+    telemetry = parse_drive_telemetry(drive_json, metrics, oem_metrics, dell_oem, hpe_oem, lnv_oem, smc_oem, cisco_oem, attachment["is_boot"])
+    link = derive_drive_pcie_link(attachment, oem_metrics)
 
     is_nvme_pcie = any(k in proto.upper() for k in ("NVME", "PCIE", "CXL"))
     if is_nvme_pcie:
@@ -1007,47 +325,18 @@ def parse_drive_details(
             "pci_pair": "",
         }
 
-    # Drive Firmware version extraction with controller fallback
-    candidates: List[Any] = [
-        drive_json.get("Revision"),
-        drive_json.get("FirmwareVersion"),
-    ]
-    if controller_json and isinstance(controller_json, dict):
-        ctrl_sn = str(controller_json.get("SerialNumber") or "").strip()
-        ctrl_model = str(controller_json.get("Model") or "").strip()
-        sn_match = bool(
-            ctrl_sn
-            and serial_number
-            and ctrl_sn.lower() not in ("not available", "none", "unknown", "n/a")
-            and ctrl_sn.lower() == serial_number.lower()
-        )
-        model_match = bool(
-            ctrl_model
-            and model
-            and ctrl_model.lower() not in ("not available", "none", "unknown", "n/a")
-            and (ctrl_model.lower() in model.lower() or model.lower() in ctrl_model.lower())
-        )
-        if is_nvme or sn_match or model_match:
-            candidates.append(controller_json.get("FirmwareVersion"))
-            candidates.append(controller_json.get("FirmwarePackageVersion"))
-
-    drive_fw = "N/A"
-    for cand in candidates:
-        extracted = _extract_fw_candidate(cand)
-        if not is_invalid_drive_firmware(extracted):
-            drive_fw = extracted
-            break
+    drive_fw = resolve_drive_firmware(drive_json, controller_json, serial_number, model, attachment["_is_nvme"])
 
     return {
         "populated":           True,
         "controller_name":     ctrl_name,
         "controller_id":       ctrl_id,
-        "bay_slot":            _bay_slot,
-        "bay_position":        bay_position,
-        "is_edsff":            is_edsff,
-        "form_factor":         form_factor_label,
-        "form_factor_label":   form_factor_label,
-        "nvme_connector":      nvme_connector,
+        "bay_slot":            location['bay_slot'],
+        "bay_position":        location['bay_position'],
+        "is_edsff":            location['is_edsff'],
+        "form_factor":         location['form_factor_label'],
+        "form_factor_label":   location['form_factor_label'],
+        "nvme_connector":      attachment['nvme_connector'],
         "id":                  drive_json.get("Id", "Unknown"),
         "name":                drive_json.get("Name", "Unknown Drive"),
         "model":               model,
@@ -1056,30 +345,31 @@ def parse_drive_details(
         "is_magnetic":     is_magnetic,
         "protocol":        proto,
         "serial_number":   serial_number,
-        "capacity_gb":     cap_gb,
+        **capacity_info,
         "firmware":        drive_fw,
         "endurance_remaining_pct": endurance if endurance is not None else "N/A",
         "drive_health":    (drive_json.get("Status") or {}).get("Health") or "OK",
-        "temperature_c":        temp_c,
-        "power_on_hours":       poh,
-        "failure_predicted":   failure_predicted,
-        "category":        category,
-        "is_boot":         is_boot,
-        "vsan_eligible":   vsan_ok,
-        "status_badge":    badge,
+        "temperature_c":        telemetry['temperature_c'],
+        "power_on_hours":       telemetry['power_on_hours'],
+        "failure_predicted":   telemetry['failure_predicted'],
+        "category":        attachment['category'],
+        "is_boot":         attachment['is_boot'],
+        "vsan_eligible":   attachment['vsan_eligible'],
+        "status_badge":    attachment['status_badge'],
         # PCIe topology fields
-        "behind_trimode":       behind_trimode,
-        "behind_software_raid": behind_software_raid,
-        "behind_vmd":           behind_vmd,
-        "single_lane_alert":    single_lane_alert,
-        "pcie_lanes_in_use": pcie_lanes,
-        "pcie_lanes_source": "drive" if drive_pcie_if.get("LanesInUse") is not None else "controller" if pcie_lanes is not None else "Unknown",
-        "pcie_gen_source": "drive" if drive_pcie_if.get("PCIeType") else "controller" if pcie_gen else "Unknown",
-        "pcie_max_lanes":    pcie_max,
-        "pcie_gen":          pcie_gen,
-        "is_qlc":            is_qlc,
-        "is_consumer":       bool(is_consumer),
-        "consumer_reason":   consumer_reason or "",
+        "behind_trimode":       attachment['behind_trimode'],
+        "behind_software_raid": attachment['behind_software_raid'],
+        "behind_vmd":           attachment['behind_vmd'],
+        "single_lane_alert":    attachment['single_lane_alert'],
+        "pcie_lanes_in_use": link['pcie_lanes_in_use'],
+        "pcie_lanes_source": link['pcie_lanes_source'],
+        "pcie_max_lanes_source": link['pcie_max_lanes_source'],
+        "pcie_gen_source": link['pcie_gen_source'],
+        "pcie_max_lanes":    link['pcie_max_lanes'],
+        "pcie_gen":          link['pcie_gen'],
+        "is_qlc":            attachment['is_qlc'],
+        "is_consumer":       attachment['is_consumer'],
+        "consumer_reason":   attachment['consumer_reason'],
         "vendor_id":           pci_info["vendor_id"],
         "device_id":           pci_info["device_id"],
         "subsystem_vendor_id": pci_info["subsystem_vendor_id"],
@@ -1087,41 +377,43 @@ def parse_drive_details(
         "pci_quad":            pci_info["pci_quad"],
         "pci_pair":            pci_info["pci_pair"],
         # 20 Extended SMART Telemetry Fields
-        "unsafe_shutdowns":          unsafe_shutdowns,
-        "media_errors":              media_errors,
-        "thermal_throttled":         thermal_throttled,
-        "plp_capacitor_health":      plp_cap,
-        "tbw_written":               tbw_val,
-        "tbr_read":                  tbr_val,
-        "critical_warnings":         critical_warnings,
-        "power_cycles":              power_cycles,
-        "controller_busy_time":      controller_busy_time,
-        "controller_duty_cycle_pct": controller_duty_cycle_pct,
-        "host_read_commands":        host_read_commands,
-        "host_write_commands":       host_write_commands,
-        "available_spare_threshold": avail_spare_thresh,
-        "error_log_entries":         error_log_entries,
-        "max_temperature_c":         max_temp_c,
-        "pcie_bus_errors":           pcie_errs,
-        "pcie_errors":               pcie_errors_dict,
-        "write_amplification":       waf_val,
-        "bad_nand_blocks":           bad_nand,
-        "uncorrectable_read_errors": uncorr_reads,
-        "end_to_end_crc_errors":     e2e_crc,
-        "available_spare_pct":       avail_spare,
-        "available_spare_pct_raw":   avail_spare_raw,
-        "plp_start_count":           plp_starts,
-        "security_status":           sec_status,
-        "usage_role":                usage_role,
-        "pending_firmware":          pending_fw,
+        "unsafe_shutdowns":          telemetry['unsafe_shutdowns'],
+        "media_errors":              telemetry['media_errors'],
+        "thermal_throttled":         telemetry['thermal_throttled'],
+        "plp_capacitor_health":      telemetry['plp_capacitor_health'],
+        "tbw_written":               telemetry['tbw_written'],
+        "tbr_read":                  telemetry['tbr_read'],
+        "critical_warnings":         telemetry['critical_warnings'],
+        "power_cycles":              telemetry['power_cycles'],
+        "controller_busy_time":      telemetry['controller_busy_time'],
+        "controller_duty_cycle_pct": telemetry['controller_duty_cycle_pct'],
+        "host_read_commands":        telemetry['host_read_commands'],
+        "host_write_commands":       telemetry['host_write_commands'],
+        "available_spare_threshold": telemetry['available_spare_threshold'],
+        "error_log_entries":         telemetry['error_log_entries'],
+        "max_temperature_c":         telemetry['max_temperature_c'],
+        "pcie_bus_errors":           telemetry['pcie_bus_errors'],
+        "pcie_errors":               telemetry['pcie_errors'],
+        "write_amplification":       telemetry['write_amplification'],
+        "bad_nand_blocks":           telemetry['bad_nand_blocks'],
+        "uncorrectable_read_errors": telemetry['uncorrectable_read_errors'],
+        "end_to_end_crc_errors":     telemetry['end_to_end_crc_errors'],
+        "available_spare_pct":       telemetry['available_spare_pct'],
+        "available_spare_pct_raw":   telemetry['available_spare_pct_raw'],
+        "plp_start_count":           telemetry['plp_start_count'],
+        "security_status":           telemetry['security_status'],
+        "usage_role":                telemetry['usage_role'],
+        "pending_firmware":          telemetry['pending_firmware'],
         "negotiated_speed_gbs":     drive_json.get("NegotiatedSpeedGbs") or oem_metrics.get("link_speed"),
         "capable_speed_gbs":        drive_json.get("CapableSpeedGbs"),
-        "pcie_capable_width":       pcie_cap_width,
-        "pcie_negotiated_width":    pcie_neg_width,
-        "pcie_downshifted":         pcie_downshifted,
-        "crypto_erase_capable":     crypto_erase_capable,
-        "erase_capability":         erase_capability,
-        "error_description":        error_description,
+        "pcie_capable_width":       link['pcie_capable_width'],
+        "pcie_capable_width_source": link['pcie_capable_width_source'],
+        "pcie_negotiated_width":    link['pcie_negotiated_width'],
+        "pcie_negotiated_width_source": link['pcie_negotiated_width_source'],
+        "pcie_downshifted":         link['pcie_downshifted'],
+        "crypto_erase_capable":     telemetry['crypto_erase_capable'],
+        "erase_capability":         telemetry['erase_capability'],
+        "error_description":        telemetry['error_description'],
         "oem_metrics":              oem_metrics,
     }
 
