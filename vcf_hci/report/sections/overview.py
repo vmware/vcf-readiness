@@ -633,9 +633,9 @@ def render_alert_rollup(
             f"{_sec_audit_fails} BMC security audit failure{'s' if _sec_audit_fails != 1 else ''} ({_sec_audit_passes} passed) — see Security tab for details."
             if _sec_audit_fails else "One or more security checks failed — see Security tab for details."
         )
-        _rollup_items.append(("danger", f"🔴 Security: Action Required{_fail_txt}", "tab-security", _detail_txt))
+        _rollup_items.append(("danger", f"🔴 Security: Action Suggested{_fail_txt}", "tab-security", _detail_txt))
     elif any("warning" in b for b in _sec_rollup_badges):
-        _rollup_items.append(("warning", "⚠️ Security: Review Required", "tab-security",
+        _rollup_items.append(("warning", "⚠️ Security: Review Recommended", "tab-security",
                                "One or more security checks need attention — see Security tab."))
     elif _sec_audit_unknowns > 0:
         _rollup_items.append(("info", f"ℹ️ Security: Partially Assessed ({_sec_audit_passes} passed, {_sec_audit_unknowns} unknown)", "tab-security",

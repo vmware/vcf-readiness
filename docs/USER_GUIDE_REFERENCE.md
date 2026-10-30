@@ -941,9 +941,10 @@ The assessment engine aggregates individual control findings into a deterministi
    - Zero critical or high-priority vulnerabilities detected.
 2. **🟡 Partially Assessed (`posture: "Partially Assessed"`):**
    - **Honesty Rule:** Unknown controls never count as a pass. If certain OEM attributes could not be queried via Redfish, the posture is classified as partially assessed rather than claiming compliance.
-3. **🔴 Action Required (`posture: "Action Required"`):**
-   - High-priority security failures detected (e.g. active Telnet, default root password, unencrypted IPMI-over-LAN).
-   - Remediation is strictly required prior to commissioning nodes into enterprise clusters.
+3. **🔴 Action Suggested:**
+   - One or more hardening controls failed, including controls whose applicability depends on local policy and operational needs. Review the evidence, risk, and appropriate hardening actions.
+   - Failed hardening controls alone do not establish a VCF 9 upgrade blocker. Required changes need an applicable, cited platform support requirement; control severity and pass/fail results remain visible.
+   - Saved JSON/API posture values (`"Action Required"`), aggregate keys (`action_required_hosts`), and filter identifiers (`action_req`) retain their existing names for compatibility. Reports and exports display **Action Suggested**.
 
 #### Prioritized Issue Badges
 - **Critical Issues (Red Badges):**
@@ -1124,7 +1125,7 @@ The VCF HCI Readiness Tool's BMC Hardware Security Audit engine directly evaluat
 | **3. Harden configurations** | Minimize attack surface by disabling plaintext services, insecure protocols, and boundary-escape paths. | **C01** (HTTP-to-HTTPS Redirection), **C02** (Minimum TLS 1.2+), **C03** (TLS Encryption Strength), **C04** (TLS Cipher-Suite Restriction), **C07** (Remote Syslog TLS), **C09** (SSH Hardening), **C11** (SSH Cryptographic Policy), **C14** (USB Port Management), **C15** (OS-to-iDRAC Pass-Through), **C18/C19** (Auto-Discovery & SCP Zero-Touch), **C20** (Unused Services), **C21** (IPMI over LAN Disablement), **C22** (Serial-over-LAN), **C23** (Telnet Disablement), **C24** (SNMPv3 Only), **C28** (Authenticated NTP), **C37** (Session Timeout ≤ 1800s), **C48** (System Lockdown). | High / Medium |
 | **4. Perform routine BMC update checks** | Maintain firmware patch currency to eliminate known CVEs, remote code execution (RCE), and privilege escalation flaws. | BMC Firmware Version Audit against certified baseline lines; **O01–O04** (Firmware Update Checks & CVE Microcode Baselines). | High |
 | **5. Monitor BMC integrity** | Verify immutable hardware-anchored trust chains, secure boot validation, and cryptographically attested component integrity. | **I01–I05** (Hardware Silicon Root of Trust — Dell RoT, HPE Silicon Root of Trust), **I06–I09** (Secure Component Verification factory ledger), Host UEFI Secure Boot & TPM 2.0. | High |
-| **6. Move sensitive workloads to hardened devices** | Restrict critical applications and sensitive data to server nodes with verified hardware and BMC security compliance. | Automated BMC Security Posture Rollup (`✓ Baseline Met`, `▲ Partial`, `✗ Action Req`), host compliance scorecards, and fleet triage views. | High |
+| **6. Move sensitive workloads to hardened devices** | Restrict critical applications and sensitive data to server nodes with verified hardware and BMC security compliance. | Automated BMC Security Posture Rollup (`✓ Baseline Met`, `▲ Partial`, `✗ Action Suggested`), host compliance scorecards, and fleet triage views. | High |
 | **7. Use firmware scanning tools periodically** | Conduct routine out-of-band auditing to detect configuration drift, unpatched vulnerabilities, or unauthorized changes. | **Automated by Tool:** Read-only Redfish compliance scanning engine auditing 84 canonical controls without OS interruption. | High |
 | **8. Do not ignore BMCs** | Prevent forgotten, unconfigured, or legacy BMCs from serving as unmonitored footholds in datacenter fabrics. | Fleet-wide BMC network discovery, subnet sweeps, automated OEM identification, and multi-host inventory auditing. | High |
 

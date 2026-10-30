@@ -179,7 +179,7 @@ def build_combined_summary_rows(all_results: list, obfuscated: bool, page_salt: 
                 sec_badge = f"<span class='badge success'>🟢 Met ({_p_cnt}P)</span>"
                 _sec_sort = "1"
             elif _posture == "Action Required":
-                sec_badge = f"<span class='badge danger'>🔴 Action Req ({_f_cnt}F &middot; {_p_cnt}P)</span>"
+                sec_badge = f"<span class='badge danger'>🔴 Action Suggested ({_f_cnt}F &middot; {_p_cnt}P)</span>"
                 _sec_sort = "3"
             else:
                 sec_badge = f"<span class='badge warning'>🟡 Partial ({_u_cnt}U &middot; {_p_cnt}P)</span>"

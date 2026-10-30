@@ -980,7 +980,7 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             comp = sec_score.get("compliance_pct", 0.0)
             if f_cnt > 0:
                 sec_posture = "action_req"
-                sec_badge = f"<span class='inv-bad'>✗ Action Req ({f_cnt}F)</span>"
+                sec_badge = f"<span class='inv-bad'>✗ Action Suggested ({f_cnt}F)</span>"
                 sec_tooltip = f"BMC Security Audit: {f_cnt} failed, {p_cnt} passed, {u_cnt} unknown ({comp}% compliance)"
             elif u_cnt > 0:
                 sec_posture = "partial"
@@ -997,7 +997,7 @@ def build_host_decision_rows(all_results: List[dict]) -> List[dict]:
             warn_legacy = any(c.get("badge") == "warning" for c in checks)
             if bmc_sec.get("overall_badge") == "danger" or crit_legacy or bmc_sec.get("default_pwd_changed") is False:
                 sec_posture = "action_req"
-                sec_badge = "<span class='inv-bad'>✗ Action Req</span>"
+                sec_badge = "<span class='inv-bad'>✗ Action Suggested</span>"
                 sec_tooltip = "BMC security checks require action"
             elif bmc_sec.get("overall_badge") == "warning" or warn_legacy or bmc_sec.get("ipmi_lan_enabled") is True:
                 sec_posture = "partial"
@@ -1383,7 +1383,7 @@ def build_inventory_sheets(
         if sec_posture == "baseline_met":
             sec_cell = ("Baseline Met", "green")
         elif sec_posture == "action_req":
-            sec_cell = ("Action Required", "red")
+            sec_cell = ("Action Suggested", "red")
         elif sec_posture == "partial":
             sec_cell = ("Partially Assessed", "yellow")
         elif sec_posture == "excluded":

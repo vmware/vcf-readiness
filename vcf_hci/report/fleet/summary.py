@@ -352,7 +352,7 @@ def generate_summary_html(
                 sec_badge = f"<span class='badge success'>🟢 Met</span> <small style='color:var(--text-muted)'>{_p_cnt}P</small>"
                 _sec_sort = "1"
             elif _posture == "Action Required":
-                sec_badge = f"<span class='badge danger'>🔴 Action Req</span> <small style='color:var(--text-muted)'>{_f_cnt}F &middot; {_p_cnt}P</small>"
+                sec_badge = f"<span class='badge danger'>🔴 Action Suggested</span> <small style='color:var(--text-muted)'>{_f_cnt}F &middot; {_p_cnt}P</small>"
                 _sec_sort = "3"
             else:
                 sec_badge = f"<span class='badge warning'>🟡 Partial</span> <small style='color:var(--text-muted)'>{_u_cnt}U &middot; {_p_cnt}P</small>"

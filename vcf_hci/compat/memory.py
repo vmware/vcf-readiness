@@ -63,6 +63,10 @@ def evaluate_memory_topology(mem_details: dict, cpu_summary: Optional[dict] = No
         spd   = int(d.get("speed_mhz") or 0)
         rated = int(d.get("max_speed_mhz") or 0)
 
+        # Empty/absent resources are not installed DIMMs or active channel members.
+        if cap <= 0:
+            continue
+
         if cap > 0:
             total_ram_gb += cap
             all_capacities.add(cap)
@@ -102,8 +106,6 @@ def evaluate_memory_topology(mem_details: dict, cpu_summary: Optional[dict] = No
     total_active_chans = 0
     total_expected_chans = cpu_count * chan_per_cpu
     mixed_dpc_sockets = set()
-    total_board_slots = int(mem_details.get("slot_count") or mem_details.get("total_slots") or 0)
-    slots_per_sock = (total_board_slots // cpu_count) if (total_board_slots and cpu_count) else 0
 
     for s_id, chans in sockets.items():
         active_ch_count = len([ch for ch, dimms in chans.items() if any(d.get("capacity_gb", 0) > 0 for d in dimms)])
@@ -113,27 +115,25 @@ def evaluate_memory_topology(mem_details: dict, cpu_summary: Optional[dict] = No
         if dimm_count > 0:
             if active_ch_count < chan_per_cpu:
                 eff = round((active_ch_count / chan_per_cpu) * 100)
-                no_free_slots = (slots_per_sock > 0 and dimm_count >= slots_per_sock)
-                fewer_slots_than_chans = (slots_per_sock > 0 and slots_per_sock < chan_per_cpu)
-
-                if no_free_slots or fewer_slots_than_chans:
-                    _avail_lbl = f"{slots_per_sock} physical slot(s)" if slots_per_sock else f"{dimm_count} slot(s)"
-                    issues.append(
-                        f"<b>Partial Memory Interleaving on Socket {s_id}:</b> {active_ch_count} of {chan_per_cpu} channels active ({dimm_count} DIMMs). "
-                        f"Motherboard provides {_avail_lbl} per socket. Memory bus operating at ~{eff}% bandwidth capacity."
-                    )
-                    recommendations.append(
-                        f"All {dimm_count} physical DIMM slot(s) on Socket {s_id} are populated. "
-                        f"Replace existing DIMMs with higher-capacity modules if additional total RAM is required."
-                    )
-                else:
-                    issues.append(
-                        f"<b>Sub-Optimal Memory Interleaving on Socket {s_id}:</b> {active_ch_count} of {chan_per_cpu} channels active ({dimm_count} DIMMs). "
-                        f"Memory bus operating at ~{eff}% bandwidth capacity."
-                    )
-                    recommendations.append(
-                        f"Install {chan_per_cpu - active_ch_count} additional DIMM(s) on Socket {s_id} in empty channels to enable full {chan_per_cpu}-channel interleaving."
-                    )
+                # slot_count is the number of returned Redfish Memory resources;
+                # some BMCs return only installed modules. It cannot prove that
+                # every physical slot is occupied or that all CPU channels are wired.
+                missing_channels = ", ".join(
+                    chr(ord('A') + i) for i in range(chan_per_cpu)
+                    if not chans.get(chr(ord('A') + i))
+                )
+                issues.append(
+                    f"<b>Partial Memory Interleaving on Socket {s_id}:</b> {active_ch_count} of {chan_per_cpu} channels active ({dimm_count} DIMMs). "
+                    f"No populated DIMM reported on channel(s) {missing_channels}. "
+                    f"Channel population is ~{eff}% of the CPU channel count; actual bandwidth depends on the platform and workload."
+                )
+                recommendations.append(
+                    f"Socket {s_id}: verify physical slot availability and the OEM population guide for channel(s) {missing_channels}. "
+                    f"If supported slots are available, populate these channels with matching DIMMs "
+                    f"(re-seat existing secondary-channel DIMMs or add modules) for full {chan_per_cpu}-channel interleaving. "
+                    "The returned memory inventory does not establish that all physical DIMM slots are populated. "
+                    "Higher-capacity replacements alone do not activate additional channels."
+                )
             elif dimm_count % chan_per_cpu != 0:
                 # Mixed 1DPC + 2DPC: some channels have one DIMM, others have two.
                 # Intel/AMD memory controllers prefer uniform DIMMs-per-channel.

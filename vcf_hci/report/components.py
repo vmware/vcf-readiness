@@ -117,6 +117,9 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         spd = p.get("current_speed_gbps") or 0
         link_st = str(p.get("link_status", "Down")).capitalize()
         pid = p.get("port_id", 1)
+        # Preserve the identifier text while allowing long OEM IDs to wrap at
+        # separators inside the bounded status label.
+        pid_html = _h(str(pid)).replace("_", "_<wbr>").replace(".", ".<wbr>")
         is_port_fc = (
             is_nic_fc
             or str(pid).startswith("FC.")
@@ -130,17 +133,17 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         )
         if link_st != "Up" or spd == 0:
             if is_unreported and link_st != "Up":
-                badge_html = f"<span class='badge danger' title='BMC Redfish telemetry omitted out-of-band link polling for this port'>🔴 Port {pid}: Down / Unreported</span>"
+                badge_html = f"<span class='badge danger' title='BMC Redfish telemetry omitted out-of-band link polling for this port'><span class='badge-label'>🔴 Port {pid_html}: Down / Unreported</span></span>"
             else:
-                badge_html = f"<span class='badge danger'>🔴 Port {pid}: Link Down</span>"
+                badge_html = f"<span class='badge danger'><span class='badge-label'>🔴 Port {pid_html}: Link Down</span></span>"
         elif is_port_fc:
-            badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps FC</span>"
+            badge_html = f"<span class='badge success'><span class='badge-label'>🟢 Port {pid_html}: {spd} Gbps FC</span></span>"
         elif spd >= 25:
-            badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps — ESA Qualified</span>"
+            badge_html = f"<span class='badge success'><span class='badge-label'>🟢 Port {pid_html}: {spd} Gbps — ESA Qualified</span></span>"
         elif spd >= 10:
-            badge_html = f"<span class='badge success'>🟢 Port {pid}: {spd} Gbps — ESA Small/Edge Qualified</span>"
+            badge_html = f"<span class='badge success'><span class='badge-label'>🟢 Port {pid_html}: {spd} Gbps — ESA Small/Edge Qualified</span></span>"
         else:
-            badge_html = f"<span class='badge warning'>🟡 Port {pid}: {spd} Gbps — OSA Only (&lt; 10 GbE)</span>"
+            badge_html = f"<span class='badge warning'><span class='badge-label'>🟡 Port {pid_html}: {spd} Gbps — OSA Only (&lt; 10 GbE)</span></span>"
         if p.get("is_management"):
             badge_html += " <small>(management)</small>"
         if p.get("speed_source"):

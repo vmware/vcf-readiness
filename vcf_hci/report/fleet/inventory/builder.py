@@ -452,7 +452,7 @@ def build_detailed_inventory_html(
     </select></label>
     <label>Security <select id="invSec">
       <option value="">All Security</option>
-      <option value="action_req">Action Required</option>
+      <option value="action_req">Action Suggested</option>
       <option value="baseline_met">Baseline Met</option>
       <option value="partial">Partially Assessed</option>
     </select></label>

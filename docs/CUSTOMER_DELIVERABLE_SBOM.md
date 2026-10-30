@@ -1,12 +1,12 @@
 # Software Bill of Materials (SBOM) — Customer Deliverables
 
 > **Product:** VCF / vSphere 9.1 HCI Readiness Assessment Tool (`vcf-readiness`)
-> **Runtime version in this checkout:** 9.12.0 (`vcf_hci/constants.py`)
+> **Runtime version in this checkout:** 9.12.1 (`vcf_hci/constants.py`)
 > **Source-document review:** 2026-10-30
 > **Historical JSON inventory:** 2026-09-27; `docs/sbom/cyclonedx-customer-v9.7.1.json` and `docs/sbom/spdx-customer-v9.7.1.json`
 > **License:** [CA, Inc. Software License Agreement](../LICENSE.md)
 
-This is a source-component overview, not an attestation of a particular ZIP or executable. The v9.7.1 companion JSON remains historical. New v9.12.0 CycloneDX/SPDX JSON and a matching file-hash manifest describe a locally prepared sanitized source snapshot; they do not attest a published release or compiled executable. The development checkout includes build/export tools, management-pack sources and `tools/generate_sboms.py`; exported source distributions can omit developer tooling. The customer generator now requires an explicit sanitized artifact root and derives source/component identities and hashes from that tree. It does not infer executable contents from the developer environment.
+This is a source-component overview, not an attestation of a particular ZIP or executable. The v9.7.1 companion JSON remains historical. New v9.12.1 CycloneDX/SPDX JSON and a matching file-hash manifest describe a locally prepared sanitized source snapshot; they do not attest a published release or compiled executable. The development checkout includes build/export tools, management-pack sources and `tools/generate_sboms.py`; exported source distributions can omit developer tooling. The customer generator now requires an explicit sanitized artifact root and derives source/component identities and hashes from that tree. It does not infer executable contents from the developer environment.
 
 ## Runtime and distribution boundaries
 
@@ -20,7 +20,7 @@ Standalone builds include a selected Python interpreter and its native libraries
 
 | Component | Version / identity | License / notice | Inclusion |
 |---|---|---|---|
-| `vcf_hci` | 9.12.0 runtime label; working-tree changes may be unreleased | LicenseRef-CA-Inc | Scanner source and generated application assets |
+| `vcf_hci` | 9.12.1 runtime label; working-tree changes may be unreleased | LicenseRef-CA-Inc | Scanner source and generated application assets |
 | `@cds/core` CSS, dark theme and selected SVG outlines | 5.7.0 | MIT; [retained notice](../licenses/clarity-core-MIT.txt) | Embedded local UI/report assets; Angular and Core custom-element runtimes are not included |
 | Packaged Network I/O catalog | `vcf_hci/hcl/io_nics.json`; preserve dataset metadata/hash | Broadcom dataset terms; separate from the Clarity license | Local Network I/O correlation |
 | vSAN HCL data | Operator’s local/imported snapshot; preserve provenance, timestamp and hash | Dataset terms apply | Explicit download/import or selected distribution data; not implied by tool version |
@@ -52,7 +52,7 @@ Inventory the exact operator payload and appliance runtime separately when asses
 
 ## Artifact verification and maintenance
 
-For a release inventory, identify the exact source revision and build, enumerate the actual included files and dependency versions, retain notices, and generate/check CycloneDX or SPDX JSON against that artifact. Historical companion JSON remains historical. The current source snapshot inventories use `cyclonedx-customer-v9.12.0.json`, `spdx-customer-v9.12.0.json` and `customer-file-manifest-v9.12.0.json` under `docs/sbom/`. The manifest's inventory digest ties both formats to identical observed bytes. Metadata, Python caches and derived SBOM files are excluded to avoid self-reference. These JSON files inventory source content; separately built executables require their own build/runtime evidence and are not attested by a source inventory.
+For a release inventory, identify the exact source revision and build, enumerate the actual included files and dependency versions, retain notices, and generate/check CycloneDX or SPDX JSON against that artifact. Historical companion JSON remains historical. The current source snapshot inventories use `cyclonedx-customer-v9.12.1.json`, `spdx-customer-v9.12.1.json` and `customer-file-manifest-v9.12.1.json` under `docs/sbom/`. The manifest's inventory digest ties both formats to identical observed bytes. Metadata, Python caches and derived SBOM files are excluded to avoid self-reference. These JSON files inventory source content; separately built executables require their own build/runtime evidence and are not attested by a source inventory.
 
 From the development checkout, after preparing a sanitized source copy:
 

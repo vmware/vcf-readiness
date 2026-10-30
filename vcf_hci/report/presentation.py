@@ -31,6 +31,12 @@ REPORT_UI_CSS = """
 .report-table-region>table:not(.chassis-layout):has(>thead>tr:first-child>th:nth-child(4)){min-width:640px}
 .report-table-region>table:not(.chassis-layout):has(>thead>tr:first-child>th:nth-child(7)){min-width:960px}
 .report-table-region>table th{overflow-wrap:normal;word-break:normal}
+/* Auto-sized tables reserve status space before long evidence. User-resized
+   tables retain their explicit column widths. */
+body table:not(.chassis-layout):not([data-report-resized])>tbody>tr>td:has(>.badge){min-inline-size:10rem}
+body .security-baseline-table{min-inline-size:760px}
+body .security-baseline-table:not([data-report-resized])>thead>tr>th:nth-child(2),
+body .security-baseline-table:not([data-report-resized])>tbody>tr>td:nth-child(2){width:15rem;min-inline-size:15rem}
 .report-posture-heading{font-weight:700;margin-bottom:8px;color:var(--warning)}
 .report-boot-order>summary{align-items:flex-start}
 .report-boot-summary{flex:1;min-width:0;overflow-wrap:anywhere}
@@ -270,6 +276,7 @@ body .col-resizer:hover,body .col-resizer.resizing{background:var(--primary);opa
 :root body .badge:is(.warning,.caution){--badge-accent:var(--warning)}
 :root body .badge.danger{--badge-accent:var(--danger)}
 :root body .badge .badge-label{min-inline-size:0;color:inherit;white-space:normal;overflow-wrap:anywhere;word-break:normal}
+:root body table .badge,:root body table .badge .badge-label{overflow-wrap:break-word}
 :root body .badge .ui-icon{color:var(--badge-accent);margin-inline-end:0}
 .report-status-success,.report-status-warning,.report-status-danger,.report-status-info,.report-status-unknown{color:var(--text)}
 .report-status-success:before{color:var(--success)}.report-status-warning:before{color:var(--warning)}
