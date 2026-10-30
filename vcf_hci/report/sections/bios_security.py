@@ -877,7 +877,7 @@ def render_security_card_and_accordion(
         _cve_table_html = ""
 
     _sec_tbl_hdr = (
-        "<table style='width:100%;border-collapse:collapse'>"
+        "<table class='security-baseline-table' style='width:100%;border-collapse:collapse'>"
         "<thead><tr>"
         "<th style='width:220px'>Security Check</th><th>Status</th><th>Detail</th>"
         "</tr></thead><tbody>"
@@ -1174,7 +1174,7 @@ def render_security_card_and_accordion(
     _all_sec_badges.extend(_firmware_warning_badges)
 
     if _audit_fails > 0 or any("danger" in b for b in _all_sec_badges):
-        _sec_summary_badge = "<span class='badge danger'>🔴 Security: Action Required</span>"
+        _sec_summary_badge = "<span class='badge danger'>🔴 Security: Action Suggested</span>"
     elif any("warning" in b for b in _all_sec_badges):
         _sec_summary_badge = "<span class='badge warning'>🟡 Security: Review Recommended</span>"
     elif _audit_unknowns > 0:
@@ -1483,6 +1483,9 @@ def render_security_card_and_accordion(
         f"<span style='font-size:.85rem;color:var(--primary)'>Collapse Security Details &#9652;</span>"
         f"</summary>"
         f"<div class='accordion-body'>"
+        "<p class='muted'>Action Suggested identifies security hardening findings for review. "
+        "Failed controls alone do not establish a VCF upgrade blocker. Treat a change as required "
+        "when the finding cites an applicable platform support requirement.</p>"
         f"{_sec_tbl_hdr}{_sec_rows}{_sec_footer_row}</tbody></table>"
         f"{_conf_comp_html}"
         f"{_attestation_html}"

@@ -94,6 +94,7 @@ class TestPublicSmoke(unittest.TestCase):
                 "docs/REMOTE_JUMP_HOST_GUIDE.md", "docs/CUSTOMER_DELIVERABLE_SBOM.md",
             }
             compiled_blacklists = [
+                re.compile(r"^Plugins(?:/|$)", re.I),
                 re.compile(r"CHANGELOG\.md$", re.I),
                 re.compile(r"docs/Management_Pack_Docs", re.I),
                 re.compile(r"management_pack", re.I),
@@ -106,12 +107,18 @@ class TestPublicSmoke(unittest.TestCase):
         allowed_rel_paths.add("Plugins/README.md")
         for doc_id, doc in DOCS_DATA.items():
             rel = doc.get("rel_path", "")
+            embedded_plugin_guide = doc_id == "vdt_plugin" and rel == "Plugins/README.md"
             self.assertIn(
                 rel,
                 allowed_rel_paths,
                 f"Document '{rel}' (id: '{doc_id}') in DOCS_DATA is not in allowed document list!",
             )
             for pat in compiled_blacklists:
+                # Provenance of this one scanner-authored embedded page is not
+                # an exported directory. The physical Plugins tree remains
+                # forbidden by the exporter and its separate payload tests.
+                if embedded_plugin_guide and pat.pattern == r"^Plugins(?:/|$)":
+                    continue
                 self.assertIsNone(
                     pat.search(rel),
                     f"Document '{rel}' in DOCS_DATA matches blacklist pattern '{pat.pattern}'!",

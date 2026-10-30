@@ -26,7 +26,7 @@ def build_executive_summary(results: list, failed_hosts: Optional[list] = None, 
     metrics = {
         'cpu': Counter(dict.fromkeys(['Supported', 'Review required', 'Unsupported', 'Not assessed'], 0)),
         'storage': Counter(dict.fromkeys(['Ready', 'Upgrade or review', 'Blocked', 'Insufficient', 'Not assessed'], 0)),
-        'security': Counter(dict.fromkeys(['Baseline met', 'Action required', 'Partially assessed', 'Not assessed', 'Excluded fleet manager'], 0)),
+        'security': Counter(dict.fromkeys(['Baseline met', 'Action suggested', 'Partially assessed', 'Not assessed', 'Excluded fleet manager'], 0)),
     }
     actions = {}
     seen = {str(row.get('ip') or row.get('hostname') or host.get('host') or '') for host, row in zip(hosts, rows) if not host.get('partial_scan') and not host.get('timed_out')}
@@ -69,7 +69,7 @@ def build_executive_summary(results: list, failed_hosts: Optional[list] = None, 
             add('storage-evidence', 2, 'Complete storage and network evidence', 'Collect the storage and network inventories before accepting an ESA readiness verdict.', key, label)
 
         excluded = is_fleet_manager_asset(host)
-        posture = {'baseline_met': 'Baseline met', 'action_req': 'Action required', 'partial': 'Partially assessed'}.get(row.get('sec_posture'), 'Not assessed')
+        posture = {'baseline_met': 'Baseline met', 'action_req': 'Action suggested', 'partial': 'Partially assessed'}.get(row.get('sec_posture'), 'Not assessed')
         if excluded:
             metrics['security']['Excluded fleet manager'] += 1
         else:
@@ -83,9 +83,9 @@ def build_executive_summary(results: list, failed_hosts: Optional[list] = None, 
                 severity = str(finding.get('severity') or '').lower()
                 priority = 1 if severity in ('critical', 'high') else 3 if severity == 'low' else 2
                 title = _plain(CONTROL_CATALOG.get(control, {}).get('title') or 'BMC hardening control')
-                add('security-' + control, priority, f'Remediate BMC control {control}: {title}', 'Use the control remediation and supporting evidence in the BMC Security section of each affected host report; validate the change and rescan.', key, label)
-            if posture == 'Action required' and not failed:
-                add('security-review', 1, 'Investigate BMC security failures', 'Review the BMC security audit, resolve failed controls, and rescan. Detailed control evidence was not available in this summary.', key, label)
+                add('security-' + control, priority, f'Review BMC hardening control {control}: {title}', 'Review control applicability, risk, and supporting evidence in the BMC Security section of each affected host report; plan appropriate hardening and rescan. A failed hardening control alone does not establish a VCF upgrade blocker.', key, label)
+            if posture == 'Action suggested' and not failed:
+                add('security-review', 1, 'Investigate BMC security failures', 'Review the BMC security audit and confirm applicable hardening actions. Detailed control evidence was not available in this summary; a VCF upgrade blocker has not been established.', key, label)
             if posture in ('Partially assessed', 'Not assessed'):
                 add('security-evidence', 2, 'Complete BMC security assessment coverage', 'Collect the missing audit controls and verify unknown results. Missing evidence is not a passing security baseline.', key, label)
         drives = [drive for controller in host.get('storage_subsystem') or [] for drive in controller.get('drives') or [] if isinstance(drive, dict) and drive.get('populated', True)]

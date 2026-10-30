@@ -805,7 +805,7 @@ def _build_bmc_hardening_cell(data: dict) -> Tuple[str, str]:
         if f_cnt > 0:
             sec_slug = "action_req"
             tip = f"BMC Security Audit: {f_cnt} failed, {p_cnt} passed, {u_cnt} unknown ({comp}% compliance)"
-            tags.append(f"<span class='inv-bad' title='{_xe(tip)}'>✗ Action Req ({f_cnt}F)</span>")
+            tags.append(f"<span class='inv-bad' title='{_xe(tip)}'>✗ Action Suggested ({f_cnt}F)</span>")
         elif u_cnt > 0:
             sec_slug = "partial"
             tip = f"BMC Security Audit: {p_cnt} passed, {u_cnt} unknown controls ({comp}% compliance)"
@@ -906,9 +906,9 @@ def _build_bmc_hardening_cell(data: dict) -> Tuple[str, str]:
         elif all_issues_legacy:
             summary = "; ".join(all_issues_legacy)
             if crit_issues_legacy:
-                return f"<span class='inv-bad' title='{_xe(summary)}'>✗ Action Req</span>", sec_slug
+                return f"<span class='inv-bad' title='{_xe(summary)}'>✗ Action Suggested</span>", sec_slug
             else:
-                return f"<span class='inv-warn' title='{_xe(summary)}'>▲ Review Req</span>", sec_slug
+                return f"<span class='inv-warn' title='{_xe(summary)}'>▲ Review Recommended</span>", sec_slug
         elif checks:
             return "<span class='inv-good' title='All assessed BMC hardening checks meet baseline'>✓ Baseline Met</span>", sec_slug
         else:

@@ -732,6 +732,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
             <a href="#" class="btn-link" onclick="if(window.showTab){{showTab(1);var fn=window.showInvView||window.showInvTab;if(fn){{fn('security');}}}}return false;" style="font-size:.78rem;text-decoration:none" title="Jump to Detailed Security Inventory">Details &rarr;</a>
           </div>
           {sec_summary_counts}
+          <p style="font-size:.78rem;color:var(--text-muted)">Hardening findings suggest review; failed controls alone do not establish a VCF upgrade blocker.</p>
           {tpm_line}
           <div style="margin-top:.45rem;font-size:.82rem">
             {"".join(sec_parts)}
