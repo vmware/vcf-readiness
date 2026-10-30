@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:a9a59de2-ef78-478c-8605-a3d2c387b64b",
+  "serialNumber": "urn:uuid:caaf8320-cf9b-4fab-bb58-48c0f87643c7",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-10-29T20:45:51Z",
+    "timestamp": "2026-10-30T15:10:59Z",
     "tools": [
       {
         "vendor": "Broadcom / VMware",
@@ -31,7 +31,7 @@
     "properties": [
       {
         "name": "vcfr:source-inventory-sha256",
-        "value": "bf11465e34a8ed1d3e3acf0c1af6c389b0f9f18356518e299a834515c95e6f5d"
+        "value": "4664007f7f0fda7ebc1039baa00b43d91eb479f42191b22feca5469b4daddfc6"
       }
     ]
   },
@@ -127,7 +127,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "85026011e2fa36fdf6514fc1218f6268e063e5d1bfbae3aeff3b91fdb3765636"
+          "content": "376d294732cd686877b5a07be93f8bfb468cd0c4e88f3b0064c4a95a751e280f"
         }
       ]
     },
@@ -204,7 +204,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "e07eca7d146f70ddd3e5fd22c5be8dcdcd7394cf76af12455f5fa4bd52c8bb69"
+          "content": "4291c7d87915f1ee14ea913adb4e197950f11f1308f19ed73e04e96219f10097"
         }
       ]
     },
@@ -226,7 +226,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "39760060603aa6b025ad21b4b93991c0a9693ca29f6444110c1f6967ed98ae2b"
+          "content": "c67f380d780ecd8f8fe9b28a60997e2f6498699b599499e30f6eebb281ec2dd1"
         }
       ]
     },
@@ -292,7 +292,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "4b008af4d40d89b3dc907b287697388c3677d3919624d59ce0d2bb81004aceba"
+          "content": "10e3798846b82cd839d230931536c74d4048b1399a181b97683027418ab70a1f"
         }
       ]
     },
@@ -3493,7 +3493,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "8b5e930f0e6341de8de3bc51e3f82549c0239531dea2fdd20569c8cc70a96a72"
+          "content": "acdeec223c01ea98abb9b6977ef817d63d66596b2af05c9374b96bed5aa69909"
         }
       ]
     },

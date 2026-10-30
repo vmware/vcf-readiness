@@ -2,7 +2,7 @@
 
 > **Product:** VCF / vSphere 9.1 HCI Readiness Assessment Tool (`vcf-readiness`)
 > **Runtime version in this checkout:** 9.12.0 (`vcf_hci/constants.py`)
-> **Source-document review:** 2026-10-29
+> **Source-document review:** 2026-10-30
 > **Historical JSON inventory:** 2026-09-27; `docs/sbom/cyclonedx-customer-v9.7.1.json` and `docs/sbom/spdx-customer-v9.7.1.json`
 > **License:** [CA, Inc. Software License Agreement](../LICENSE.md)
 
@@ -36,9 +36,23 @@ Upstream VDT remains operator-supplied through ZIP upload/install or an approved
 
 The Redfish working/reference library, private PSO copies, captures and experiments are outside customer shipment sources. Release tools apply private-experiment exclusions to staged copies. Review the manifest of the actual sanitized export before making shipment claims.
 
+## Optional VDT runtime and review scope
+
+An excluded shipment component can still be an execution prerequisite. The scanner includes its own VDT integration code, but its source SBOM does not inventory an operator's uploaded VDT distribution or the libraries already installed on a vCenter appliance.
+
+| Component or workflow | What the scanner supplies | Additional review/requirements |
+| --- | --- | --- |
+| Native Redfish scan | Scanner collectors and existing offline assets; no required pip packages. | Python/native runtime, BMC read-only credentials and the selected trust/network settings. No VDT or appliance root/SSO access is needed. |
+| VDT ZIP installation and JSON import | Bounded local installer, static discovery, export parser and hybrid report integration. | Original operator-supplied payload, its hashes/notices and a writable local plugin directory. Installation/discovery does not execute uploaded Python; manual import needs no appliance credentials. |
+| Managed VDT 2.3.2 vCenter profile | Scanner-owned SSH orchestration, exact-source hash gate and restricted appliance adapter. | System OpenSSH client tools, already-enabled appliance SSH with verified host-key pinning, effective root access, separate SSO credentials, appliance Python 3.9+, existing native VDT dependencies and at least 192 MiB free writable `/tmp`. |
+
+Managed collection uploads and executes code, adapts its temporary runtime configuration, writes logs/exports, retrieves private files and attempts cleanup. It is not covered by a blanket no-write/no-deployment statement about the core Redfish scanner. No persistent configuration changes, service enablement, dependency installation or remediation are part of the reviewed profile. Failed/cancelled runs or cleanup failures can leave owned temporary evidence; normal authentication/audit records can also remain. Its selected/excluded/unexecuted checks describe reduced coverage, not full VDT parity.
+
+Inventory the exact operator payload and appliance runtime separately when assessing this workflow. Appliance-provided Python packages are execution dependencies of that optional profile, not newly mandatory workstation dependencies or evidence that their code was bundled into the scanner. Do not infer their versions or approval from this source inventory or from the scanner release number. Preserve upstream notices, validate the reviewed source hashes, and review private VDT/hybrid results separately from native obfuscated reports. See the [security requirements and limits](SECURITY_ARCHITECTURE.md#35-optional-vdt-plugin-security-boundary).
+
 ## Artifact verification and maintenance
 
-For a release inventory, identify the exact source revision and build, enumerate the actual included files and dependency versions, retain notices, and generate/check CycloneDX or SPDX JSON against that artifact. Historical companion JSON remains historical. The current source snapshot inventories use `cyclonedx-customer-v9.12.0.json`, `spdx-customer-v9.12.0.json` and `customer-file-manifest-v9.12.0.json` under `docs/sbom/`. The manifest’s inventory digest ties both formats to identical observed bytes. Metadata, Python caches and derived SBOM files are excluded to avoid self-reference. This workflow did not build or publish a release executable.
+For a release inventory, identify the exact source revision and build, enumerate the actual included files and dependency versions, retain notices, and generate/check CycloneDX or SPDX JSON against that artifact. Historical companion JSON remains historical. The current source snapshot inventories use `cyclonedx-customer-v9.12.0.json`, `spdx-customer-v9.12.0.json` and `customer-file-manifest-v9.12.0.json` under `docs/sbom/`. The manifest's inventory digest ties both formats to identical observed bytes. Metadata, Python caches and derived SBOM files are excluded to avoid self-reference. These JSON files inventory source content; separately built executables require their own build/runtime evidence and are not attested by a source inventory.
 
 From the development checkout, after preparing a sanitized source copy:
 

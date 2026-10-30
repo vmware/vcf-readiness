@@ -1,8 +1,8 @@
 {
   "scope": "sanitized-source-snapshot",
   "version": "9.12.0",
-  "generated_at": "2026-10-29T20:45:51Z",
-  "inventory_sha256": "bf11465e34a8ed1d3e3acf0c1af6c389b0f9f18356518e299a834515c95e6f5d",
+  "generated_at": "2026-10-30T15:10:59Z",
+  "inventory_sha256": "4664007f7f0fda7ebc1039baa00b43d91eb479f42191b22feca5469b4daddfc6",
   "exclusions": [
     ".git",
     "__pycache__",
@@ -17,9 +17,9 @@
     },
     {
       "path": "ARCHITECTURE.md",
-      "sha256": "85026011e2fa36fdf6514fc1218f6268e063e5d1bfbae3aeff3b91fdb3765636",
-      "sha1": "ee5e5065af017cd02361025ff978c74d7c897a86",
-      "size": 13170
+      "sha256": "376d294732cd686877b5a07be93f8bfb468cd0c4e88f3b0064c4a95a751e280f",
+      "sha1": "faa7b30a031612b90bcfc60d5aea2ee6f73dbf59",
+      "size": 14074
     },
     {
       "path": "LICENSE.md",
@@ -59,9 +59,9 @@
     },
     {
       "path": "docs/CUSTOMER_DELIVERABLE_SBOM.md",
-      "sha256": "e07eca7d146f70ddd3e5fd22c5be8dcdcd7394cf76af12455f5fa4bd52c8bb69",
-      "sha1": "861fc07d7e3f44265d4098dce7ff7dab79f12463",
-      "size": 6341
+      "sha256": "4291c7d87915f1ee14ea913adb4e197950f11f1308f19ed73e04e96219f10097",
+      "sha1": "366ddb1d6dfc6d3363cfd2147e30f7cc35fb5a6a",
+      "size": 9040
     },
     {
       "path": "docs/EXECUTIVE_REPORT.md",
@@ -71,9 +71,9 @@
     },
     {
       "path": "docs/INSTALL.md",
-      "sha256": "39760060603aa6b025ad21b4b93991c0a9693ca29f6444110c1f6967ed98ae2b",
-      "sha1": "0145dce3cd363cb95d19c4d925f162e8658d9cd7",
-      "size": 9446
+      "sha256": "c67f380d780ecd8f8fe9b28a60997e2f6498699b599499e30f6eebb281ec2dd1",
+      "sha1": "10ed89e9a7eeb4ceaca42d820ebee0483dfbbc4f",
+      "size": 9687
     },
     {
       "path": "docs/INVENTORY_REFERENCE.md",
@@ -107,9 +107,9 @@
     },
     {
       "path": "docs/SECURITY_ARCHITECTURE.md",
-      "sha256": "4b008af4d40d89b3dc907b287697388c3677d3919624d59ce0d2bb81004aceba",
-      "sha1": "3c8431d6599d7393f3df0e9fbd5fc2e26a992948",
-      "size": 45549
+      "sha256": "10e3798846b82cd839d230931536c74d4048b1399a181b97683027418ab70a1f",
+      "sha1": "2c4b47481943d3854f2add49c8fa14e79f7f2e23",
+      "size": 52638
     },
     {
       "path": "docs/USER_GUIDE_REFERENCE.md",
@@ -1853,9 +1853,9 @@
     },
     {
       "path": "vcf_hci/web/docs_data.py",
-      "sha256": "8b5e930f0e6341de8de3bc51e3f82549c0239531dea2fdd20569c8cc70a96a72",
-      "sha1": "ae740e4b71831104f543530d6ed9874edd4a4ba2",
-      "size": 231392
+      "sha256": "acdeec223c01ea98abb9b6977ef817d63d66596b2af05c9374b96bed5aa69909",
+      "sha1": "3c330b30f2dcc71ab6e416d77f7978e7afa6b1ba",
+      "size": 244643
     },
     {
       "path": "vcf_hci/web/docs_html.py",

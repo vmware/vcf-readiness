@@ -9,7 +9,7 @@
 
 The **VCF / vSphere 9.1 HCI Readiness Assessment Tool** is a non-intrusive, read-only hardware auditor designed to evaluate enterprise server compatibility against VMware Cloud Foundation (VCF) 9.1 and vSAN Express Storage Architecture (ESA) standards.
 
-This document describes native BMC collection. Optional VDT appliance diagnostics are a separate, operator-triggered workflow: they require appliance SSH/root and separate SSO access, deploy reviewed operator-supplied code, and write owned temporary files and local artifacts. See [VDT workflow and limitations](../Plugins/README.md). Statements about no host credentials or deployment below apply to native BMC collection.
+Security review must distinguish native BMC collection from optional plugin workflows. Native Redfish collection is read-only with respect to managed hardware configuration and data; it still creates local reports and normal authentication/session records. Managed VDT appliance collection requires SSH/root access, separate SSO credentials, uploaded executable code and temporary appliance writes. It must not be described as having the native scanner's no-deployment/no-host-access boundary. The [workflow requirements and limits](#35-optional-vdt-plugin-security-boundary) below apply even though upstream VDT is not bundled.
 
 The native scanner uses these boundaries:
 
@@ -151,7 +151,28 @@ A remote scan is still started from the workstation UI on `127.0.0.1`. The works
 - Jump-host profiles, including any stored private key, sit in the same PBKDF2-HMAC-SHA256 vault as BMC passwords.
 - `--allow-remote` (binding the web server beyond localhost) still disables the vault. Remote *execution* requires the opposite: a localhost UI and an unlocked vault.
 
-## 4. Source Code Auditability & Zero Black-Box Risk
+## 3.5 Optional VDT plugin security boundary
+
+The VDT integration has distinct modes. Installing a ZIP or importing an export does not start appliance execution.
+
+| Workflow | Access and prerequisites | Execution and writes |
+| --- | --- | --- |
+| Native BMC assessment | Least-privileged BMC credentials; access to the BMC management network. Optional jump-host execution additionally needs an unprivileged SSH account, pinned host key and Python on that jump host. | Reads BMC evidence, with the session/protocol exceptions in section 3. Local reports are written; jump-host mode also deploys its temporary collector. No appliance VDT payload or hypervisor credentials are needed. |
+| Local VDT ZIP installation and discovery | Operator-supplied original VDT ZIP; authenticated local UI; a writable plugin destination. | Creates `Plugins/` on demand in the source root or beside the executable, or uses `--plugins-dir`. Validates and extracts into a private staging directory, then installs atomically. Discovery/installation does not import or execute uploaded Python. Upstream payloads remain outside scanner shipments. |
+| Import of existing VDT JSON and hybrid reporting | An operator-provided export and explicit product/target labels. No appliance credentials or SSH connection are needed for manual import. | Parses bounded JSON locally into session-owned evidence. Downloads and reports create local files. Importing evidence does not install VDT on an appliance or authorize its execution. |
+| Managed VDT appliance collection | Local UI; system OpenSSH tools on the workstation; already-enabled appliance SSH with a verified, pinned host key; an account whose effective UID is root (automatic sudo is unsupported); separate valid vCenter SSO credentials; noninteractive appliance Python 3.9+ and its existing native libraries; writable `/tmp` with at least 192 MiB free. | Uploads the reviewed payload and adapter, executes on the appliance, writes temporary runtime configuration/logs/exports, retrieves private local results and attempts scoped cleanup. This is privileged remote execution with bounded intended writes, not a zero-write scan. |
+
+**Supported execution scope.** Managed execution accepts only the source-hash-pinned VDT 2.3.2 vCenter profile. Its thirteen selected native check IDs cover appliance/inventory information, proxy observations, root expiry, service state/priority, storage/inodes/logs, core/heap files and cluster SSL options where applicable. Legacy VDT 1.1.4 remains manual-only; SDDC Manager and VKS execution are unsupported by this adapter. Version selection or a valid ZIP does not bypass the runtime and source-hash checks. Missing native dependencies or insufficient diagnostic access are failures or missing coverage, not permission to install packages or escalate access automatically.
+
+**Intended writes and restrictions.** Deployment, the adapted runtime copy, configuration, logs and exports use a marker-owned `/tmp/vcfr_vdt_<run-id>` directory. The reviewed profile restricts subprocess executable/argument combinations and filesystem writes, opens SQLite read-only, suppresses support-bundle manifest registration and excludes unreviewed checks and machine/Supervisor credential extraction. It does not enable SSH, alter account/login-shell settings, configure sudo, install packages, restart services, reboot, flash firmware or perform remediation. Normal service authentication/audit logs and transient API sessions may still occur. These application-level restrictions apply to the exact reviewed payload; they are not an OS sandbox for arbitrary root Python or a guarantee about independently executed upstream VDT.
+
+**Identity, credentials and data.** Optional anonymous HTTPS ServiceContent discovery identifies a vCenter version/build before credential entry. It accepts appliance certificates without certificate identity verification; that discovery is not authenticated appliance identity or HTTPS pinning. Appliance SSH trust is separate and requires the verified pinned host key. SSH/root and SSO authentication are separate contexts; the BMC read-only account cannot substitute for either. Credentials are transient and are not saved in preferences, the vault or job/report metadata, or placed in command arguments. Diagnostic exports and hybrid reports can contain identifiers, paths, configuration and free-form details. Native-report obfuscation does not automatically sanitize VDT/hybrid evidence; review those artifacts separately before sharing.
+
+**Lifecycle and coverage.** Successful transfer requires bounded regular files, verified checksums and valid native JSON before the adapter removes its own remote directory. Cleanup failures are reported with the retained location while preserving valid local results. Failed/cancelled runs retain remote evidence; cancellation targets only the owned process group, and network loss can delay confirmation until bounded execution stops. The appliance runner has a fifteen-minute execution limit. The native export and hybrid appendix preserve selected, excluded and unexecuted checks. Reduced diagnostic coverage, collection errors or absent checks must not be represented as full VDT parity or a passing readiness/compliance decision.
+
+Security review should identify which of these modes is in scope and review the actual upstream payload, its notices/dependencies, appliance privileges, network paths, temporary storage, retained evidence and cleanup outcome. The [customer SBOM guide](CUSTOMER_DELIVERABLE_SBOM.md#optional-vdt-runtime-and-review-scope) distinguishes scanner shipment contents from operator/appliance runtime requirements. The scanner's bundled **Help → Optional VDT Collection** provides operator instructions.
+
+## 4. Source Code and Runtime Auditability
 
 Security teams often restrict pre-compiled binaries due to opacity and potential code injection risks. The tool addresses this directly:
 
@@ -169,7 +190,7 @@ python3 vcfr_web.py
 python3 vcfr_collector.py --targets 192.0.2.10-20 --username readonly_audit --output-dir ./audit_reports
 ```
 
-### Zero External Package Dependencies
+### Core and optional runtime dependencies
 The core scanner has no required third-party runtime packages. Its normal runtime uses Python standard-library modules; the opt-in vault can dynamically load installed AES support:
 
 ```python
@@ -323,13 +344,13 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 
 | Security Question | Architecture Finding | Evidence / Reference |
 |---|---|---|
-| **Does the tool install agents on OS/hypervisors?** | **No.** Operates purely via Out-of-Band BMC network. | `vcf_hci/collector/` |
-| **Are administrator write privileges required?** | **No.** Standard read-only BMC accounts are used. | [Section 3](#3-principle-of-least-privilege-credentials--access) |
-| **Does the software execute binary code that cannot be inspected?** | **No.** Plain Python 3.9+ source is fully auditable. | `vcfr_web.py`, `vcf_hci/` |
-| **Does the tool introduce external supply-chain dependencies?** | **No required pip packages.** Optional AES, bundled assets and the selected Python/build runtime have their own dependencies and notices. | `pyproject.toml`, `vcf_hci/` |
+| **Does the tool deploy code to managed systems?** | Native BMC scanning installs no host agent. Optional jump-host mode deploys its temporary collector; managed VDT uploads and executes code on the appliance, without installing a persistent daemon. | [Sections 3.4](#34-ephemeral-remote-execution-and-jump-hosts-experimental) and [3.5](#35-optional-vdt-plugin-security-boundary) |
+| **Are administrator privileges or remote writes required?** | Native BMC scans use read-only credentials. Managed VDT requires appliance root, separate SSO credentials and writable temporary storage; configuration/remediation actions remain excluded. | [Section 3](#3-principle-of-least-privilege-credentials--access), [VDT boundary](#35-optional-vdt-plugin-security-boundary) |
+| **What code and runtimes need review?** | Scanner source is inspectable. Standalone builds include Python/native libraries and a bootloader. Operator-supplied VDT and appliance dependencies require separate review; they are not covered by inspecting the core scanner alone. | [Customer SBOM](CUSTOMER_DELIVERABLE_SBOM.md), `LICENSE.md` |
+| **Does the tool introduce external supply-chain dependencies?** | Core scanning has no required pip packages. Optional AES, bundled assets and build runtimes have notices. Managed VDT additionally depends on the separately supplied payload and existing appliance libraries. | `pyproject.toml`, [VDT review scope](#35-optional-vdt-plugin-security-boundary) |
 | **Does the tool transmit customer data outside the company?** | **No scan telemetry.** A default-on UI GitHub release check sends version metadata; disable it before launch. HCL, warranty and credential-provider requests are explicit. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
 | **Can the tool function in an air-gapped network?** | **Yes.** Supports offline dark-site HCL zip bundles. | `vcf_hci/hcl/bundle_manager.py` |
-| **Can sensitive identifiers be redacted before sharing reports?** | **Yes.** SHA-256 deterministic salted PII hashing engine. | `vcf_hci/obfuscation.py` |
+| **Can sensitive identifiers be redacted before sharing reports?** | Native obfuscated exports mask selected identifiers. VDT/hybrid exports require separate review and are not automatically sanitized by native obfuscation. | `vcf_hci/obfuscation.py`, [VDT data boundary](#35-optional-vdt-plugin-security-boundary) |
 | **Is the local web UI protected against CSRF and DNS rebinding?** | **Yes.** Loopback by default, one-time launch token exchanged for an `HttpOnly` / `SameSite=Strict` session cookie (`Secure` on HTTPS), strict host headers. Exposed listeners require TLS. | `vcf_hci/web/server.py` |
 | **Can enterprise CA certificates and TLS pinning be enforced?** | **Yes.** `--verify-ssl`, `--ca-bundle`, and TOFU thumbprint pinning. | `vcf_hci/tls_utils.py` |
 | **How are per-host BMC passwords stored if the operator opts in?** | **Encrypted, off by default.** PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM (with optional pycryptodomex) or stdlib HMAC-SHA256-EtM, `0600` file, no plaintext export, disabled under `--allow-remote`. | [Section 3.3](#33-optional-encrypted-local-credential-vault-opt-in-off-by-default), `vcf_hci/vault/` |
@@ -340,7 +361,7 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 
 ## 11. Recommended Execution Procedure for Security Teams
 
-To execute the assessment under maximum security controls:
+The procedure below is for native BMC assessment. Approving that procedure does not authorize managed VDT execution; use the distinct prerequisites and write/cleanup boundaries in [section 3.5](#35-optional-vdt-plugin-security-boundary) for that optional workflow.
 
 1. **Create Read-Only Credentials:** Provision temporary `ReadOnly` accounts on target BMCs with no configuration or reboot permissions.
 2. **Inspect the Python Source:** (Optional) Run `git clone`, inspect the codebase, and verify runtime dependencies using your internal SAST/LLM tools.

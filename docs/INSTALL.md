@@ -7,7 +7,7 @@ Running the Python source is the supported, auditable path. Release archives may
 - Python 3.9 or newer.
 - A modern browser for the web UI.
 - Network access to authorized BMC management addresses.
-- A read-only BMC account.
+- A read-only BMC account for native hardware scans. Optional managed VDT collection has separate appliance root/SSH, SSO, runtime and temporary-write requirements; see the [plugin security boundary](SECURITY_ARCHITECTURE.md#35-optional-vdt-plugin-security-boundary).
 
 No runtime `pip install` is required. VCF Readiness uses the Python standard library.
 
