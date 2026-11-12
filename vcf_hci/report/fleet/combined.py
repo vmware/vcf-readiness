@@ -2,7 +2,7 @@
 import logging
 import os
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from vcf_hci.constants import COMBINED_HTML_DEFAULT_MAX_HOSTS
 from vcf_hci.report.fleet.combined_assets import render_combined_document
@@ -38,8 +38,13 @@ def _generate_combined_html(
     output_filename: Optional[str] = None,
     embed_mode: Optional[str] = None,
     json_hcl: Optional[dict] = None,
+    vinv_report: Optional[Any] = None,
 ) -> str:
-    """Generate a single combined tabbed HTML report containing all host reports."""
+    """Generate a single combined tabbed HTML report containing all host reports.
+
+    vinv_report (experimental) is a ReconciliationReport whose identifiers already
+    match all_results (obfuscated by the caller when obfuscated=True).
+    """
     all_results = prepare_combined_results(all_results)
     if not all_results:
         return ""
@@ -57,7 +62,8 @@ def _generate_combined_html(
     n_hosts = len(all_results)
     mode = embed_mode or ("inline" if n_hosts <= COMBINED_HTML_DEFAULT_MAX_HOSTS else "sidecar")
     host_html_list = load_inline_host_reports(all_results, report_paths, outdir, obfuscated) if mode == "inline" else []
-    summary_tab = build_combined_summary(all_results, obfuscated, _page_salt)
+    summary_kwargs = {"vinv_report": vinv_report} if vinv_report is not None else {}
+    summary_tab = build_combined_summary(all_results, obfuscated, _page_salt, json_hcl=json_hcl, **summary_kwargs)
     sibling_xlsx = select_sibling_workbook(mode, outdir, obfuscated)
     inv_rows = build_host_decision_rows(all_results)
     inventory_tab = build_detailed_inventory_html(

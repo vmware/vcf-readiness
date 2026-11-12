@@ -696,7 +696,10 @@ def create_scan_zip_archive(scan_dir: str, zip_filepath: Optional[str] = None) -
 
     with zipfile.ZipFile(zip_filepath, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for root, _dirs, files in os.walk(scan_dir):
+            _dirs[:] = [name for name in _dirs if name != "__MACOSX" and not name.startswith("._")]
             for file in files:
+                if file in (".DS_Store", "Icon\r") or file.startswith("._"):
+                    continue
                 abs_path = os.path.join(root, file)
                 if os.path.abspath(abs_path) == zip_filepath:
                     continue

@@ -1,6 +1,20 @@
 """VDT installation, collection and import workflow beneath Plugins."""
 
-VDT_NAV = '<a href="#vdt-plugin" data-section-link="vdt-plugin">VDT</a>'
+from vcf_hci.web.plugin_credential_html import service_picker
+
+VDT_NAV = '<a href="#plugins" data-section-link="plugins">Plugins</a>'
+
+PUBLIC_PLUGINS_PANEL = '''
+<section id="plugins" data-app-section aria-labelledby="pluginsHeading" hidden>
+  <h1 id="pluginsHeading" class="section-heading" tabindex="-1">Plugins</h1>
+  <p>Choose an assessment extension. Each tool states its collection scope and requirements.</p>
+  <div class="plugin-card-grid"><div class="card"><div class="card-body">
+    <h2>VDT</h2><p id="vdtLandingState" class="plugin-state">Checking package availability</p>
+    <p>Install Broadcom VDT ZIP packages, collect reviewed appliance checks, or import an existing export.</p>
+    <a class="btn btn-outline" href="#vdt-plugin" data-section-link="vdt-plugin">Open VDT</a>
+  </div></div></div>
+</section>
+'''
 
 VDT_WIZARD = '''<div class="alert alert-info"><strong>Optional management diagnostics</strong><p>For a hybrid assessment, complete this native scan, then <a href="#vdt-plugin">collect and import VDT evidence</a> for the same environment. Use remote collection to supply appliance SSH and vCenter SSO credentials for this run, or collect an export on the appliance and import it manually.</p></div>'''
 
@@ -119,3 +133,5 @@ VDT_PANEL = '''
   </div></div>
 </section>
 '''
+
+VDT_PANEL = VDT_PANEL.replace('<div class="clr-form-group mt-half"><label class="clr-control-label" for="vdtRemoteHost">', service_picker('vdt', 'vdt-plugin', 'vdtRemoteHost', 'vdtRemoteSsoUsername', 'vdtRemoteSsoPassword', '', 'vdtRemoteApiPort') + '<div class="clr-form-group mt-half"><label class="clr-control-label" for="vdtRemoteHost">', 1)

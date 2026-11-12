@@ -4,6 +4,7 @@ from typing import Optional
 
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.inventory_tables import build_host_decision_rows
+from vcf_hci.report.memory_tiering import host_memory_tiering_drives
 from vcf_hci.report.readiness import chassis_qualification, cpu_verdict_unassessed
 
 COMPONENT_CERTIFICATION_BLOG = 'https://blogs.vmware.com/cloud-foundation/2026/02/25/vcf-9-0-server-certification-preserving-your-hardware-investment-and-giving-the-best-roi/'
@@ -14,14 +15,17 @@ COMPONENT_CERTIFICATION_NOTE = (
 )
 
 
-def fleet_overview_groups(all_results: list) -> list:
+def fleet_overview_groups(all_results: list, json_hcl: Optional[dict] = None) -> list:
     """Keep host indices per dimension; never add overlapping dimensions together."""
     rows = build_host_decision_rows(all_results)
     server = {'Server supported': [], 'components certified': [], 'Review / Override Required': [], 'Unsupported for VCF 9.x': [], 'Not assessed': []}
     esa = {'Ready': [], 'Storage met / upgrade needed': [], 'Blocked / insufficient': [], 'Unknown': []}
     security = {'Baseline met': [], 'Action suggested': [], 'Partially assessed': [], 'Not assessed': []}
+    memory_tiering = {'Ready — drives available': [], 'No drives identified': []}
     for row in rows:
         idx = row['host_idx']
+        count = host_memory_tiering_drives(all_results[idx], json_hcl)['total']
+        memory_tiering['Ready — drives available' if count else 'No drives identified'].append(idx)
         verdict = str(row.get('cpu_verdict') or '').strip()
         if cpu_verdict_unassessed(verdict):
             label = 'Not assessed'
@@ -44,6 +48,9 @@ def fleet_overview_groups(all_results: list) -> list:
         {'title': 'Server Readiness', 'total': len(rows), 'counts': server, 'success': 'Server supported', 'statuses': {'components certified': 'info'}, 'note': 'Check vendor qualifications for continued hardware support.'},
         {'title': 'vSAN storage readiness', 'total': len(rows), 'counts': esa, 'success': 'Ready'},
         {'title': 'BMC security', 'total': sum(map(len, security.values())), 'counts': security, 'success': 'Baseline met'},
+        {'title': 'NVMe Memory Tiering', 'total': len(rows), 'counts': memory_tiering,
+         'success': 'Ready — drives available', 'statuses': {'No drives identified': 'unknown'},
+         'note': 'Counts hosts with identified drives. Verify firmware, ESXi release, namespace sizing and dedicated drive use before deployment.'},
     ]
 
 

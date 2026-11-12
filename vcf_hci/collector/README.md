@@ -13,6 +13,7 @@
    ┌────────────────────┴────────────────────────────────┐
    │ Domain Mixins:                                     │
    │   • _SystemMixin (collect_system.py)              │
+   │   • _BmcSecurityMixin (collect_bmc_security.py)   │
    │   • _StorageMixin (collect_storage.py)            │
    │   • _NetworkMixin (collect_network.py)            │
    │   • _PowerMixin (collect_power.py)                │
@@ -45,6 +46,7 @@ DellCollector      HPECollector    SupermicroCollector    CiscoCollector ...
 - **`os_eval.py`**: `_evaluate_os_info` helper evaluating OS name, build numbers, lifecycle/EOL status, and ESXi update badges.
 - **`async_helpers.py`**: Asynchronous execution helpers (`_safe_result`, `_timed`, `_h`, `_SECTION_DEFAULTS`).
 - **`collect_system.py`**: `_SystemMixin`, preserved utility imports and explicit system-summary assembly/state updates; also retains memory, BIOS, BMC and firmware collection.
+- **`collect_bmc_security.py`**: `_BmcSecurityMixin` collecting BMC security configuration and audit evidence. `BaseRedfishCollector` inherits it beside the other domain mixins.
 - **`system_cpu.py`**: Processor acquisition and pure CPU normalization. GPU discovery is yielded immediately so the facade retains collector-state timing.
 - **`system_boot.py`**: Bounded boot-option acquisition, reference aliases and pure persistent/override resolution; preserves the original Boot object across fetches.
 - **`system_identity.py`**: OS hooks, System/chassis/FRU identity, SKU/serial separation and chassis-only/hardware evidence. Acquisition helpers use the narrow `SystemCollector` protocol in `contracts.py`; pure helpers receive explicit evidence.
@@ -84,7 +86,10 @@ no collector-wide context object or compatibility-engine dependency is added.
   - **`oem/supermicro.py`**: Supermicro BMC collector (`SimpleStorage` fallback, DCMS license gate detection).
   - **`oem/cisco.py`**: Cisco IMC collector (`/Managers/CIMC` path, chassis-level SEL).
   - **`oem/lenovo.py`**: Lenovo XCC collector (`LicenseService` tiering).
-  - **`oem/intel.py`**: Intel BMC collector.
+  - **`oem/intel.py`**: Intel BMC collector. `oem_manager_paths()` adds `/Managers/BMC` and `/Managers/1`.
+  - **`oem/quanta.py`**: Quanta collector. `oem_fastpath_roots()` probes `/redfish/v1/Systems/Self`; `oem_storage_endpoints()` adds `{sys_uri}/SimpleStorage`. The adapter sets `expand_supported = False`, and `oem_expandable_collections()` returns `{}`.
+  - **`oem/gigabyte.py`**: GIGABYTE AMI MegaRAC collector. Fast-path `/Systems/Self`. `oem_expandable_collections()` maps Storage and Memory at level 1 for the active system URI and for `/Systems/Self` and `/Systems/1`. `oem_drive_metrics()` reads `Oem.GBT` (including `SlotNumber`) and `Oem.Gigabyte`.
+  - **`oem/asrock.py`**: ASRock Rack collector, last in `_REGISTRY`. Same Self fast-path and Storage/Memory level-1 expand map. `oem_manager_paths()` returns `/Managers/Self` and `/Managers/1`.
 
 ---
 
@@ -94,13 +99,14 @@ To add or modify vendor-specific Redfish behaviors, override these hook methods 
 
 | Method Hook | Default Return | Purpose |
 |-------------|----------------|---------|
-| `oem_bios_date(sys_data)` | `""` | Extract vendor BIOS release date string |
-| `oem_sku(sys_data)` | `""` | Extract host part number / SKU |
+| `oem_bios_date(sys_data)` | `"N/A"` | Extract vendor BIOS release date string |
+| `oem_sku(sys_data)` | `SKU`, else `Oem.Hpe.ProductId`, else `""` | Extract host part number / SKU |
 | `oem_storage_endpoints()` | `[]` | Return extra OEM storage URIs (e.g. SmartStorage) |
 | `oem_drive_endurance(drive)` | `None` | Extract remaining drive write endurance % |
 | `oem_cpu_cache(proc_data)` | `[]` | Extract L1/L2/L3 CPU cache hierarchy |
 | `oem_memory_usage(sys_data)`| `{}` | Extract memory bus utilization telemetry |
-| `oem_nic_firmware(adapter)` | `""` | Extract NIC firmware version string |
-| `oem_license_info(mgr, sys)`| `{}` | Extract BMC license state and tier badge |
+| `oem_nic_firmware(adapter)` | `"N/A"` when no standard or Dell/HPE firmware field is present | Extract NIC firmware version string |
+| `oem_license_info(mgr, sys)`| `{"license_name": "N/A", "badge": "", "vendor_note": ""}` | Extract BMC license state and tier badge |
 | `oem_handle_retry(data, uri)`| `False` | Handle transient 503/Busy errors (e.g. iLO ResourceNotReady) |
 | `oem_manager_paths()` | `[]` | Return non-standard Manager URIs (e.g. `/Managers/CIMC`) |
+| `oem_expandable_collections()` | `{}` | Map collection keys to URIs that accept OData `$expand`. Vendor maps are in [SCANNING_OPTIMIZATIONS.md](SCANNING_OPTIMIZATIONS.md) |

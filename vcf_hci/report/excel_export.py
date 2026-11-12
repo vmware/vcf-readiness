@@ -7,6 +7,7 @@ Uses stdlib zipfile and xml formatting — zero third-party dependencies (no ope
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -15,7 +16,14 @@ from io import BytesIO
 from typing import Any, Optional, Union
 from xml.sax.saxutils import escape as _xe
 
-from vcf_hci.report.inventory_tables import _safe_int, build_inventory_sheets
+from vcf_hci.report.firmware_readiness import (
+    UPGRADE_HEADERS,
+    firmware_rows,
+    nic_readiness,
+    safe_bcg_url,
+    upgrade_summary,
+)
+from vcf_hci.report.inventory_tables import _link_is_up, _safe_int, build_inventory_sheets
 from vcf_hci.report.schema_registry import (
     FLEET_SUMMARY_FIELDS,
     color_for_verdict,
@@ -39,8 +47,14 @@ def _build_excel_sheets(
     all_results: list,
     failed_hosts: Optional[list] = None,
     obfuscated: bool = False,
+    vinv_snapshot: Optional[Any] = None,
+    vinv_source_results: Optional[list] = None,
 ) -> list:
     """Build unified multi-tab spreadsheet structure for _write_xlsx.
+
+    vinv_snapshot (experimental) adds a Reconciliation tab after Decision and the
+    vSphere inventory tabs at the end. vinv_source_results are the un-obfuscated
+    results used for matching when all_results were obfuscated by the caller.
 
     Includes:
     - Tab 1: Summary (Executive Overview — Schema v2.0 typed fields)
@@ -50,14 +64,17 @@ def _build_excel_sheets(
     - Tab 5: vStorage (Detailed Controllers & Disks)
     - Tab 6: vNetwork (Detailed Adapters, Ports & LLDP)
     - Tab 7: vGPU (Accelerators & PCIe)
-    - Tab 8: vFirmware (Component Firmware Inventory)
+    - Tab 8: vFirmware (9.1 Firmware Evidence & BMC Age Advisory)
     - Tab 9: vHBA (Fibre Channel HBAs)
     - Tab 10: vBIOS (BIOS Settings & Side-Channel Mitigation)
     - Tab 11: Health_Alarms (Consolidated Subsystem Faults & Predictive Alerts)
-    - Tab 12: Security (BMC, TPM, Secure Boot & Protocol Hardening)
-    - Tab 13: Security_Audit (Normalized SCG Findings & Control Posture)
-    - Tab 14: Failed_Hosts (Optional — Preflight & Scan Errors)
+    - Tab 12: Remediation (Firmware Evidence Gaps & NIC Link Review)
+    - Tab 13: Security (BMC, TPM, Secure Boot & Protocol Hardening)
+    - Tab 14: Security_Audit (Normalized SCG Findings & Control Posture)
+    - Tab 15: Failed_Hosts (Optional — Preflight & Scan Errors)
     """
+    _vinv_source = list(vinv_source_results if vinv_source_results is not None else all_results)
+    _salt = ""
     if obfuscated:
         _salt = os.urandom(16).hex()
         if all_results:
@@ -85,12 +102,28 @@ def _build_excel_sheets(
                 failed_hosts = obfuscate_failed_hosts(failed_hosts, salt=_salt, start_idx=len(all_results) + 1)
 
     # ── Tab 1: Fleet Summary (Executive Overview) ─────────────────────────────
-    sum_hdr = [(f.header, "header") for f in FLEET_SUMMARY_FIELDS]
+    from vcf_hci.hcl import load_vsan_hcl_json
+
+    try:
+        json_hcl = load_vsan_hcl_json()
+    except Exception:
+        logging.getLogger(__name__).warning("Firmware HCL unavailable; workbook assessments will remain incomplete", exc_info=True)
+        json_hcl = {}
+    sum_hdr = [("All NICs Ready" if f.key == "nic_25g_ready" else f.header, "header") for f in FLEET_SUMMARY_FIELDS]
+    sum_hdr.extend((h, "header") for h in UPGRADE_HEADERS)
     sum_rows = [sum_hdr]
+    remediation_rows = [[(h, "header") for h in (
+        "Host IP", "Hostname", "Area", "Component / Port", "Status", "Action / Evidence", "BCG Reference",
+    )]]
+    remediation_links = {}
 
     for data in all_results:
+        assessments = firmware_rows(data, json_hcl)
         row = []
         for f in FLEET_SUMMARY_FIELDS:
+            if f.key == "nic_25g_ready":
+                row.append(nic_readiness(assessments))
+                continue
             try:
                 val = f.extractor(data)
             except Exception:
@@ -102,10 +135,26 @@ def _build_excel_sheets(
                 row.append((val, c_style) if c_style != "header" else val)
             else:
                 row.append(val if val is not None else "")
+        row.extend(upgrade_summary(assessments))
         sum_rows.append(row)
+        si = data.get("system") or {}
+        identity = [str(si.get("ip") or si.get("bmc_ip") or data.get("host") or ""), str(si.get("hostname") or "")]
+        for assessment in assessments:
+            if assessment["upgrade"] != "No":
+                if assessment["bcg_url"]:
+                    remediation_links[(len(remediation_rows), 6)] = assessment["bcg_url"]
+                remediation_rows.append(identity + [assessment["kind"], assessment["name"],
+                    (assessment["upgrade"], "yellow" if assessment["kind"] == "BMC" or assessment["upgrade"] == "Incomplete" else "red"),
+                    assessment["reason"], assessment["bcg_label"]])
+        for nic in data.get("network_adapters") or []:
+            for port in nic.get("ports") or [{}]:
+                link = str(port.get("link_status") or "Unknown")
+                if not _link_is_up(link):
+                    remediation_rows.append(identity + ["NIC link", str(nic.get("name") or nic.get("id") or "NIC") + " / " + str(port.get("port_id") or port.get("name") or "Port"),
+                        (link, "yellow"), "Review cabling / intended port usage; link state does not determine 9.1 firmware support.", ""])
 
     # ── Tabs 2..11: Decision Matrix & Granular Components ─────────────────────
-    inv_sheets = build_inventory_sheets(all_results, obfuscated=obfuscated)
+    inv_sheets = build_inventory_sheets(all_results, obfuscated=obfuscated, json_hcl=json_hcl)
 
     # ── Tab 10: Security & BMC Configuration ──────────────────────────────────
     sec_hdr = [
@@ -172,6 +221,7 @@ def _build_excel_sheets(
 
     sheets = [{"name": "Summary", "rows": sum_rows}]
     sheets.extend(inv_sheets)
+    sheets.append({"name": "Remediation", "rows": remediation_rows, "hyperlinks": remediation_links})
     sheets.append({"name": "Security", "rows": sec_rows})
 
     # ── Tab 11: Security Audit Findings (Normalized SCG Findings) ─────────────
@@ -256,6 +306,14 @@ def _build_excel_sheets(
             ])
         sheets.append({"name": "Failed_Hosts", "rows": failed_rows})
 
+    if vinv_snapshot is not None:
+        from vcf_hci.plugins.vinv.report_bridge import insert_vinv_sheets, prepare_reconciliation
+
+        _report, _shown_snapshot = prepare_reconciliation(
+            _vinv_source, all_results, vinv_snapshot, obfuscated, _salt or os.urandom(16).hex()
+        )
+        sheets = insert_vinv_sheets(sheets, _report, _shown_snapshot)
+
     return sheets
 
 
@@ -296,10 +354,11 @@ def _write_xlsx(sheets: list) -> bytes:
     _STYLE = {"header": 1, "green": 2, "yellow": 3, "red": 4}
     STYLES = (
         '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        '<fonts count="3">'
+        '<fonts count="4">'
         '<font><sz val="10"/><name val="Calibri"/></font>'
         '<font><b/><sz val="10"/><name val="Calibri"/><color rgb="FF1E3A5F"/></font>'
         '<font><b/><sz val="10"/><name val="Calibri"/></font>'
+        '<font><u/><sz val="10"/><name val="Calibri"/><color rgb="FF0563C1"/></font>'
         '</fonts>'
         '<fills count="6">'
         '<fill><patternFill patternType="none"/></fill>'
@@ -311,12 +370,13 @@ def _write_xlsx(sheets: list) -> bytes:
         '</fills>'
         '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
         '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-        '<cellXfs count="5">'
+        '<cellXfs count="6">'
         '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
         '<xf numFmtId="0" fontId="1" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
         '<xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/>'
         '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>'
         '<xf numFmtId="0" fontId="0" fillId="4" borderId="0" xfId="0" applyFill="1"/>'
+        '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
         '</cellXfs>'
         '</styleSheet>'
     )
@@ -342,8 +402,11 @@ def _write_xlsx(sheets: list) -> bytes:
             ct_overrides += (f'<Override PartName="/xl/worksheets/sheet{si}.xml" '
                              f'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>')
             sx = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+                  ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
                   '<sheetData>')
+            hyperlinks = []
+            hyperlink_rels = []
             for ri, row in enumerate(sheet.get("rows", [])):
                 sx += f'<row r="{ri+1}">'
                 for ci, cell in enumerate(row):
@@ -352,10 +415,29 @@ def _write_xlsx(sheets: list) -> bytes:
                     if isinstance(cell, tuple):
                         val, style_key = cell
                         style = _STYLE.get(style_key, 0)
+                    url = safe_bcg_url(sheet.get("hyperlinks", {}).get((ri, ci)))
+                    if url:
+                        rid = f"rId{len(hyperlinks) + 1}"
+                        hyperlinks.append(f'<hyperlink ref="{ref}" r:id="{rid}"/>')
+                        target = _clean_xml_text(url).replace('"', '&quot;')
+                        hyperlink_rels.append(
+                            f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"'
+                            f' Target="{target}" TargetMode="External"/>'
+                        )
+                        if style == 0:
+                            style = 5
                     val_str = _clean_xml_text(val) if val is not None else ""
                     sx += f'<c r="{ref}" t="inlineStr" s="{style}"><is><t>{val_str}</t></is></c>'
                 sx += '</row>'
-            sx += '</sheetData></worksheet>'
+            sx += '</sheetData>'
+            if hyperlinks:
+                sx += '<hyperlinks>' + ''.join(hyperlinks) + '</hyperlinks>'
+                sheet_xmls[f"xl/worksheets/_rels/sheet{si}.xml.rels"] = (
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    + ''.join(hyperlink_rels) + '</Relationships>'
+                )
+            sx += '</worksheet>'
             sheet_xmls[f"xl/worksheets/sheet{si}.xml"] = sx
 
         wb_xml += '</sheets></workbook>'

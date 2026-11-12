@@ -7,7 +7,7 @@ No imports beyond Python stdlib re and Optional.
 import re
 from typing import Optional
 
-TOOL_VERSION = "9.12.1"
+TOOL_VERSION = "9.13.0b1"
 
 # Combined HTML tabbed report iframe srcdoc embedding cap
 COMBINED_HTML_MAX_HOSTS = 4096
@@ -465,6 +465,21 @@ HPE_SKU_CHASSIS_DB = {
     "P39366-B21": (8,  "DL345 Gen10 Plus · 8 SFF NC"),
     "P39367-B21": (24, "DL345 Gen10 Plus · 24 SFF NC"),
 }
+
+
+def hpe_unknown_sku(identity: str, sku: str) -> bool:
+    """True when an HPE SKU is present and absent from HPE_SKU_CHASSIS_DB.
+
+    An empty SKU is not an unknown SKU. Callers must not invent front-bay
+    counts for a True result.
+    """
+    text = str(identity or "").upper()
+    if "HPE" not in text and "HEWLETT" not in text and "PROLIANT" not in text:
+        return False
+    key = str(sku or "").strip().upper()
+    if not key:
+        return False
+    return key not in HPE_SKU_CHASSIS_DB
 
 # ---------------------------------------------------------------------------
 # Maps Dell order SKU (e.g. 321-BCQQ) → (front_bays, chassis_label).

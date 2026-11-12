@@ -2,25 +2,22 @@
 
 Experimental VDT integration: see **Help → VDT** in the scanner for installation, native JSON import, hybrid reports, and current limitations.
 
-<p align="center">
-  <img src="docs/branding/branding-kit/production/vcf-r-readme-header.svg" alt="VCF-R - VCF Readiness Assessment" width="720">
-</p>
+![VCF-R - VCF Readiness Assessment](docs/branding/branding-kit/production/vcf-r-readme-header.svg)
 
 > Zero-dependency Python tool for VMware Sales Engineers, Solution Architects, and IT teams to assess server hardware for VMware Cloud Foundation 9.1 and vSAN Express Storage Architecture (ESA) repurposing.
 
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
-[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-green.svg)](#)
-[![Download v9.12.1](https://img.shields.io/badge/Download-v9.12.1-brightgreen.svg)](https://github.com/vmware/vcf-readiness/releases/tag/9.12.1)
+- [Python 3.9+](https://python.org)
+- Zero dependencies
+- [Download v9.13.0b1](https://github.com/vmware/vcf-readiness/releases/tag/9.13.0-beta.1)
+- [Presentation kit](docs/INFOGRAPHIC.md)
 
 ---
 
-<p align="center">
-  <a href="#-visual-report-showcase">
-    <img src="docs/assets/vcf_readiness_showcase.gif" alt="VCF Readiness Assessment Tool Rotating Feature Showcase" width="100%">
-  </a>
-  <br>
-  <em>Automated enterprise fleet telemetry, memory topology visualizer, ToR fabric mapping, vSAN ESA HCL validation &amp; 84-point BMC security audit.</em>
-</p>
+![VCF Readiness Assessment Tool Rotating Feature Showcase](docs/assets/vcf_readiness_showcase.gif)
+
+*Automated enterprise fleet telemetry, memory topology visualizer, ToR fabric mapping, vSAN ESA HCL validation & 84-point BMC security audit.*
+
+[Visual report showcase](#-visual-report-showcase)
 
 ---
 
@@ -41,22 +38,17 @@ Watch short step-by-step video guides to get up and running, launch on macOS, an
 
 The recommended and verified installation runs directly from source using the Python 3.9+ standard library (zero external dependencies).
 
-<p align="center">
-  <a href="https://github.com/vmware/vcf-readiness/releases/download/9.12.1/Distribution-VCF-Readiness.zip" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Complete_Source_Bundle-(v9.12.1_.ZIP)-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download Source ZIP" height="42">
-  </a>
-</p>
-<p align="center">
-  <em>Includes complete source code, web UI, CLI scanner, and offline HCL database. No <code>pip install</code> required.</em>
-</p>
+[Download the complete source bundle (v9.13.0b1 ZIP)](https://github.com/vmware/vcf-readiness/releases/download/9.13.0-beta.1/Distribution-VCF-Readiness.zip)
+
+*Includes complete source code, web UI, CLI scanner, and offline HCL database. No `pip install` required.*
 
 <details>
 <summary><strong>Alternative: Pre-compiled standalone binaries (unsigned developer builds)</strong></summary>
 
-If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.12.1 page](https://github.com/vmware/vcf-readiness/releases/tag/9.12.1):
+If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.13.0-beta.1 page](https://github.com/vmware/vcf-readiness/releases/tag/9.13.0-beta.1):
 
-- **Windows:** `VCF-Readiness-Web-v9.12.1-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
-- **macOS:** `VCF-Readiness-Web-v9.12.1-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
+- **Windows:** `VCF-Readiness-Web-v9.13.0b1-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
+- **macOS:** `VCF-Readiness-Web-v9.13.0b1-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
 
 *Note: These are unsigned community convenience builds. To avoid operating system security prompts, running directly from source with Python 3.9+ is strongly recommended.*
 
@@ -146,7 +138,7 @@ Use **Scanner** for direct scan setup, **Scan Library** to import prior scans or
 
 **Scan Wizard** walks through targets, credentials and execution, HCL readiness, scan options and output, and review before running. It shares settings with Scanner. New scans use manual credentials and local execution by default; vault credentials and remote jump-host execution are explicit choices.
 
-The HCL step checks local data and offers **Refresh Live HCL** or **Import Dark-Site HCL Zip**. If download fails, expand **Cannot download? Generate a dark-site HCL ZIP** in that step. Missing, outdated, baseline, or unverified HCL data requires acknowledgment before continuing; it does not establish hardware certification. See the [offline installation guide](docs/INSTALL.md#offline-and-air-gapped-operation).
+The HCL step checks local data and offers **Refresh Live HCL** or **Import Dark-Site HCL Zip**. Web UI launch also refreshes vSAN and Memory Tiering BCG data in the background; use `--no-hcl-auto-refresh` or preload `--import-hcl` for offline HCL startup. Dark-site ZIPs include the Memory Tiering dataset. If download fails, expand **Cannot download? Generate a dark-site HCL ZIP** in that step. Missing, outdated, baseline, or unverified HCL data requires acknowledgment before continuing; it does not establish hardware certification. See the [offline installation guide](docs/INSTALL.md#offline-and-air-gapped-operation).
 
 Use **+ Server groups** to tag selected targets without requiring a probe, then filter or bulk-manage memberships in Scan Library. Scanner and report density/theme controls persist independently of assessment data. Reviewed UI symbols use always-on, offline Clarity SVG icons. See [Server Groups and Display](docs/SCANNER_GROUPS_AND_DISPLAY.md).
 
@@ -244,6 +236,8 @@ Visualizer mapping installed DIMM modules to physical CPU sockets and memory cha
 ### 5. Storage Subsystem & vSAN ESA Qualification
 Evaluates storage controllers, RAID pass-through modes, and NVMe SSDs. Performs exact PCI Quad matching (`VID:DID:SVID:SSID`) against the Broadcom vSAN HCL dataset, calculates SMART drive wear/endurance remaining %, and generates one-click BCG search links.
 
+The reports also identify Memory Tiering drive availability independently of vSAN readiness. Exact model, complete SKU, or exact local HCL alias matches link to the Memory Tiering BCG; an optional default-off preview can flag evidence-backed TLC read-intensive 1 DWPD ESA drives. See [NVMe Tiering drive detection and report features](docs/INVENTORY_REFERENCE.md#nvme-tiering-drive-detection) and the [namespace preview guide](docs/NVME_NAMESPACE_PREVIEW.md).
+
 ![Storage Subsystem and vSAN ESA Qualification](docs/images/05-storage-vsan-esa.png)
 
 - **Detailed Telemetry:** [vSAN ESA Drive Compliance](docs/assets/screenshots/vsan-esa-drive-compliance.png) • [Drive SMART Telemetry](docs/assets/screenshots/nvme-smart-health-telemetry.png) • [PCIe Lane Inventory](docs/assets/screenshots/pcie-lane-inventory.png)
@@ -308,14 +302,15 @@ A read-only BMC account is still required. A vendor may restrict some inventory 
 
 An ordinary scan contacts the targets you provide and writes reports locally. It does not send analytics, telemetry, crash reports, or scan results to the project.
 
-The browser server also checks GitHub release metadata once per launch by default. Set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable it. The CLI does not start this check. Other public-network egress requires an operator action:
+The Web UI refreshes public vSAN and Memory Tiering data at launch unless `--no-hcl-auto-refresh` or `--import-hcl` is used. CLI scans and library loads stay offline and use existing local HCL data and packaged baselines.
 
-- `--refresh-hcl`, `--bundle-hcl`, or the equivalent web action downloads public Broadcom HCL data.
+`--refresh-hcl`, `--bundle-hcl`, and the equivalent web action remain explicit downloads of public Broadcom HCL data. Warranty enrichment and external credential providers stay explicit:
+
 - Dell TechDirect warranty enrichment contacts Dell only after credentials are supplied and the feature is enabled.
 - External credential providers contact their configured service only when explicitly configured.
 - Experimental jump-host execution uses SSH only when selected in the local web UI.
 
-The CLI and web UI otherwise use existing local HCL data and packaged baselines. See [Security Architecture](docs/SECURITY_ARCHITECTURE.md) for the protocol details.
+The browser server also checks GitHub release metadata once per launch by default. Set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable it. The CLI does not start this check. See [Security Architecture](docs/SECURITY_ARCHITECTURE.md) for the protocol details.
 
 ### TLS
 
@@ -330,6 +325,7 @@ Depending on what a BMC exposes, reports can include:
 - CPU generation and VCF support classification.
 - Memory inventory and topology observations.
 - Storage controllers, physical drives, NVMe health, and vSAN readiness.
+- Memory Tiering drive evidence: catalog badges and fleet/host availability counts, not firmware or deployment validation. See [Memory Tiering](docs/MEMORY_TIERING.md).
 - Network adapters, link speeds, firmware data, and LLDP/CDP neighbors.
 - BIOS, BMC firmware, TPM, boot, power, thermal, GPU, and event-log inventory.
 - Read-only BMC security findings.
@@ -341,7 +337,7 @@ Collectors include generic DMTF Redfish plus OEM handling for vendors represente
 
 - This is an assessment aid, not a substitute for current Broadcom product documentation, support policy, or a final design review.
 - A green result does not certify a server or guarantee upgrade success.
-- Compatibility data can become stale. The default-offline behavior does not refresh it automatically.
+- Compatibility data can become stale. Web UI launch refreshes public vSAN and Memory Tiering data unless disabled with `--no-hcl-auto-refresh` or an offline bundle is preloaded with `--import-hcl`. A failed refresh keeps existing data. A match is not certification.
 - Self-signed TLS is accepted unless verification is enabled.
 - Some BMCs omit fields, rate-limit requests, require extra licenses, or return partial inventory.
 - Native BMC collection does not configure hardware, remediate findings, or change firmware. Optional VDT appliance diagnostics deploy an operator-supplied, reviewed payload into owned temporary storage; see the scanner's **Help → VDT** page.

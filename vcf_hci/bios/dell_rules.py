@@ -31,7 +31,7 @@ def evaluate_system_profile(attrs: dict, vmware_guide_url: str) -> list:
     rules = []
     # ── Rule 1: SysProfile (System Profile) ─────────────────────────────────
     sys_profile = attrs.get("SysProfile")
-    if sys_profile is not None and str(sys_profile).strip():
+    if sys_profile is not None and str(sys_profile).strip().lower() not in ("", "not exposed", "not reported", "not verified", "unknown", "n/a", "none"):
         val = str(sys_profile).strip()
         val_lower = val.lower()
         if "perfoptimized" in val_lower or "densecfgoptimized" in val_lower:
@@ -113,14 +113,11 @@ def evaluate_system_profile(attrs: dict, vmware_guide_url: str) -> list:
         rules.append({
             "attribute": "SysProfile",
             "setting_name": "System Performance Profile",
-            "current_value": "Not Exposed",
+            "current_value": "Not verified",
             "expected_value": "PerfOptimized / Custom (OS DBPM)",
-            "severity": "warning",
-            "status": "drifted",
-            "rationale": (
-                "System Profile attribute not detected in BIOS telemetry. Verify BIOS is configured for Performance Optimized or Custom (OS DBPM). "
-                "Tip: Setting SysProfile to Performance Optimized automatically configures PCIe ASPM, CPU Power, and C-States by proxy."
-            ),
+            "severity": None,
+            "status": "not_verified",
+            "rationale": "Current System Profile was not returned in the available BIOS evidence. Verify the BIOS profile manually; missing telemetry does not establish configuration drift.",
             "citation": "vSphere 9.0 Performance Best Practices, Power Management BIOS Settings (p. 21)",
             "citation_url": vmware_guide_url,
         })
@@ -367,7 +364,7 @@ def evaluate_virtualization(attrs: dict, vmware_guide_url: str) -> list:
     rules = []
     # ── Rule 5: ProcVirtualization (VT-x / AMD-V) ───────────────────────────
     virt = attrs.get("ProcVirtualization")
-    if virt is not None and str(virt).strip():
+    if virt is not None and str(virt).strip().lower() not in ("", "not exposed", "not reported", "not verified", "unknown", "n/a", "none"):
         val = str(virt).strip()
         if val.lower() in ("enabled", "true", "1"):
             rules.append({
@@ -400,11 +397,11 @@ def evaluate_virtualization(attrs: dict, vmware_guide_url: str) -> list:
         rules.append({
             "attribute": "ProcVirtualization",
             "setting_name": "Hardware Virtualization (VT-x / AMD-V)",
-            "current_value": "Not Exposed",
+            "current_value": "Not verified",
             "expected_value": "Enabled",
-            "severity": "warning",
-            "status": "drifted",
-            "rationale": "CPU Virtualization Technology setting not verified in BIOS attributes. Confirm VT-x / AMD-V is enabled.",
+            "severity": None,
+            "status": "not_verified",
+            "rationale": "Current hardware virtualization setting was not returned in the available BIOS evidence. Confirm VT-x / AMD-V manually; missing telemetry does not mean virtualization is disabled.",
             "citation": "vSphere 9.0 Performance Best Practices, Hardware-Assisted Virtualization (p. 12, 21)",
             "citation_url": vmware_guide_url,
         })
@@ -1218,7 +1215,8 @@ def evaluate_catalog_alignment(bv_str: str, bios_row: dict, currency: dict) -> l
 def summarize_dell_rules(rules: list, oem_guide: dict, vmware_guide_title: str, vmware_guide_url: str) -> dict:
     """Retain applicability/scoring precedence and rules/drifts object sharing."""
     # ── Aggregate Compliance & Scoring ──────────────────────────────────────
-    applicable_rules = [r for r in rules if r.get("status") != "not_applicable"]
+    applicable_rules = [r for r in rules if r.get("status") in ("compliant", "drifted")]
+    unverified_count = sum(1 for r in rules if r.get("status") == "not_verified")
     total_rules = len(applicable_rules)
     drifts = [r for r in applicable_rules if r.get("status") == "drifted"]
     drift_count = len(drifts)
@@ -1248,6 +1246,9 @@ def summarize_dell_rules(rules: list, oem_guide: dict, vmware_guide_title: str, 
             f"<span class='badge info'>ℹ️ BIOS Optimization: {info_count} Note"
             f"{'s' if info_count > 1 else ''} ({compliance_pct}% Compliant)</span>"
         )
+    elif unverified_count:
+        status = "unknown" if total_rules == 0 else "info"
+        badge = f"<span class='badge info'>BIOS Baseline: {passed_count} Verified, {unverified_count} Not verified</span>"
     else:
         status = "pass"
         badge = "<span class='badge success'>🟢 BIOS Golden Baseline: 100% Compliant</span>"
@@ -1256,6 +1257,7 @@ def summarize_dell_rules(rules: list, oem_guide: dict, vmware_guide_title: str, 
         "compliance_pct": compliance_pct,
         "total_rules": total_rules,
         "passed_count": passed_count,
+        "unverified_count": unverified_count,
         "drift_count": drift_count,
         "blocker_count": blocker_count,
         "warning_count": warning_count,

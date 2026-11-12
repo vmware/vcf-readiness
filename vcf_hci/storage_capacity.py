@@ -1,5 +1,6 @@
 """Validate physical-drive capacity consistently across collection and reporting."""
 import math
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Union
 
 # A conservative data-quality ceiling for one physical drive, not an array/volume.
@@ -56,3 +57,21 @@ def drive_capacity_display(drive: dict, include_unit: bool = False) -> Union[int
         return "Unknown"
     value = drive.get("capacity_gb", 0)
     return f"{value} GB" if include_unit else value
+
+
+def gib_to_tib_display(value: Any) -> str:
+    """Format a binary GiB capacity as TiB for human-facing drive tables."""
+    try:
+        gib = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError, OverflowError):
+        return "Unknown"
+    if not gib.is_finite() or gib <= 0:
+        return "Unknown"
+    tib = (gib / Decimal(1024)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return f"{tib} TiB"
+
+
+def drive_capacity_tib_display(drive: dict) -> str:
+    """Display normalized physical-drive capacity in TiB."""
+    capacity = drive_capacity_display(drive)
+    return gib_to_tib_display(capacity)

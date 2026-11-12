@@ -54,7 +54,30 @@ def _kind(device: Dict[str, Any]) -> str:
     return str(device.get("device_class") or "PCIe device")
 
 
-def render_pcie_device_inventory(devices: Optional[List[Dict[str, Any]]], slots: Optional[List[Dict[str, Any]]] = None) -> str:
+def _partial_pcie_note(partial: Optional[Dict[str, Any]]) -> str:
+    """Explain a cap or deadline without treating the returned rows as the whole chassis."""
+    if not isinstance(partial, dict) or not partial.get("partial"):
+        return ""
+    available = partial.get("members_available")
+    fetched = partial.get("members_fetched")
+    reasons = []
+    if partial.get("capped"):
+        reasons.append(f"the {_h(str(partial.get('member_cap', 64)))}-member cap")
+    if partial.get("deadline"):
+        reasons.append(f"the {_h(str(partial.get('deadline_seconds', 15)))}-second deadline")
+    because = " and ".join(reasons) or "a collection limit"
+    return (
+        f"<p class='alert alert-warning'>PCIe inventory is partial: collection stopped at {because}. "
+        f"{_h(str(fetched))} of {_h(str(available))} member URIs were requested. "
+        "Devices beyond this collection are not in the table.</p>"
+    )
+
+
+def render_pcie_device_inventory(
+    devices: Optional[List[Dict[str, Any]]],
+    slots: Optional[List[Dict[str, Any]]] = None,
+    partial: Optional[Dict[str, Any]] = None,
+) -> str:
     """Show reported endpoint identity, link evidence and inventory limitations."""
     records = []
     seen = set()
@@ -69,7 +92,8 @@ def render_pcie_device_inventory(devices: Optional[List[Dict[str, Any]]], slots:
     if not records:
         return ('<section class="report-pcie-devices"><h2>PCIe Device Inventory</h2>'
                 '<p>PCIe device records were not captured. This does not establish that the host has no PCIe devices. '
-                'Physical slots and subsystem inventory are shown separately.</p></section>')
+                'Physical slots and subsystem inventory are shown separately.</p>'
+                + _partial_pcie_note(partial) + '</section>')
 
     rows = []
     simulated_count = 0
@@ -122,7 +146,8 @@ def render_pcie_device_inventory(devices: Optional[List[Dict[str, Any]]], slots:
     note = (f" {simulated_count} marked Simulated by the BMC; these are not verified installed-device counts." if simulated_count else "")
     return (
         '<section class="report-pcie-devices"><h2>PCIe Device Inventory</h2>'
-        f'<p>{len(records)} reported PCIe records.{note} Physical expansion slots are listed separately below.</p>'
+        + _partial_pcie_note(partial)
+        + f'<p>{len(records)} reported PCIe records.{note} Physical expansion slots are listed separately below.</p>'
         '<table><thead><tr><th>Device</th><th>Kind</th><th>Slot mapping</th><th>PCI IDs</th>'
         '<th>Negotiated link</th><th>Maximum capability</th><th>BMC health</th><th>Inventory evidence</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></section>'

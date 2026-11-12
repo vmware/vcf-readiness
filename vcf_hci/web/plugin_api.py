@@ -5,7 +5,9 @@ import logging
 from collections import Counter
 from typing import Any
 
+from vcf_hci.plugins.mtat.lifecycle import catalog_entry
 from vcf_hci.plugins.vdt import parse_vdt_export
+from vcf_hci.plugins.vinv.lifecycle import catalog_entry as vinv_catalog_entry
 from vcf_hci.web.export_api import _ApiMixinBase
 from vcf_hci.web.remote_vdt_api import remote_collection_available, remote_collection_capabilities
 from vcf_hci.web.scan_worker import _state, _state_lock
@@ -24,7 +26,7 @@ class PluginApiMixin(_ApiMixinBase):
         server: Any = self.server
         catalog = dict(server.vdt_plugin)
         catalog['remote_collection'] = remote_collection_capabilities(remote_collection_available(server))
-        self._send_json({'vdt': catalog}, extra_headers={'Cache-Control': 'no-store'})
+        self._send_json({'mtat': catalog_entry(bool(getattr(server, 'experimental_mtat', False))), 'vinv': vinv_catalog_entry(bool(getattr(server, 'experimental_vinv', False))), 'vdt': catalog}, extra_headers={'Cache-Control': 'no-store'})
 
     def _api_vdt(self, action: str) -> None:
         server: Any = self.server

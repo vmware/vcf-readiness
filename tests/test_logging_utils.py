@@ -189,6 +189,12 @@ class TestScanOutputAndAliases(unittest.TestCase):
             summary_path = os.path.join(scan_dir, "00_fleet_summary.html")
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write("<html>Summary</html>")
+            for metadata in (".DS_Store", "Icon\r", "._summary.html"):
+                with open(os.path.join(scan_dir, metadata), "w", encoding="utf-8") as f:
+                    f.write("Private Finder metadata")
+            os.makedirs(os.path.join(scan_dir, "__MACOSX"))
+            with open(os.path.join(scan_dir, "__MACOSX", "private.txt"), "w", encoding="utf-8") as f:
+                f.write("Private Finder metadata")
 
             zip_path = create_scan_zip_archive(scan_dir)
 
@@ -201,6 +207,7 @@ class TestScanOutputAndAliases(unittest.TestCase):
                 namelist = zf.namelist()
                 self.assertIn("Scan_2026-08-19_1430_2hosts/00_fleet_summary.html", namelist)
                 self.assertNotIn("Scan_2026-08-19_1430_2hosts/Scan_2026-08-19_1430_2hosts.zip", namelist)
+                self.assertFalse(any(".DS_Store" in n or "Icon\r" in n or "._summary" in n or "__MACOSX" in n for n in namelist))
 
     def test_update_latest_scan_aliases_creates_and_removes_aliases(self):
         with tempfile.TemporaryDirectory() as tmpdir:

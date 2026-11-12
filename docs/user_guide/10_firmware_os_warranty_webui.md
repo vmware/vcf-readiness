@@ -103,12 +103,14 @@ When sharing reports with external hardware vendors or Broadcom support, passing
 | `fleet_summary.html` | Fleet-wide overview dashboard with health tiles and host summary table. | Infrastructure Managers & Architects. |
 | `fleet_combined.html` / `00_fleet_combined.html` | Fleet Hub HTML dashboard embedding all host reports (single inline file for &le; 64 hosts, sidecar pack with lazy on-demand frames for &gt; 64 hosts up to 3,000+ hosts without 256-host cliff). | Enterprise Architects & IT Leadership. |
 | `MANIFEST.json` | Scan execution metadata manifest (`tool_version`, `scanned_at`, `host_count`, `collector_id`, `site`, `scan_profile`, `obfuscated`) for library discovery and remote drop ingestion. | Automation Engineers & Orchestrators. |
-| `vcf_readiness_<timestamp>.xlsx` | Multi-tab Excel workbook: Summary, Storage, NICs, GPUs, Security, Failed Hosts. | IT Procurement & Capacity Planners. |
+| `vcf_readiness_<timestamp>.xlsx` | Multi-tab Excel workbook with Summary, Decision, vCPU, vMemory, vStorage, vNetwork, vGPU, vFirmware, vHBA, vBIOS, Health_Alarms, Remediation, Security, Security_Audit, and optional Failed_Hosts sheets. | IT Procurement & Capacity Planners. |
 | `00_fleet_summary.csv` | Standardized tabular CSV with 40+ schema fields for automated pipeline ingestion. | Infrastructure Automation & CMDB Leads. |
 | `00_drives_inventory.csv` | Granular physical storage drive inventory across all assessed nodes. | Storage Engineers & Hardware Vendors. |
 | `00_nics_inventory.csv` | Network adapter, port, link speed, and ToR switch neighbor inventory. | Network Architects & Fabric Engineers. |
 | `00_gpus_inventory.csv` | Hardware accelerator and GPU inventory across all nodes. | AI Infrastructure & Data Science Leads. |
 | `00_failed_hosts.csv` | Preflight diagnostics, unreachable BMC IPs, and authentication errors. | Operations & Network Support Teams. |
+
+The workbook's **vFirmware** sheet evaluates BIOS, BMC, NIC, NVMe, and HBA/RAID evidence against release-specific VCF 9.1 listings where available. It separates supported, update-needed, and incomplete evidence; an old BIOS date alone does not establish firmware support. The Summary adds per-host firmware upgrade rollups and **All NICs Ready**. **Remediation** lists firmware evidence gaps and NIC link review with retained BCG references. A BMC age advisory (over 365 days at capture) indicates age only; it is not a certification or health verdict. These workbook assessments do not change the shared CSV schema or hardware compatibility verdicts.
 
 ---
 
@@ -213,6 +215,12 @@ python3 vcfr_collector.py --targets 192.0.2.0/24 --vault
 - The vault coverage indicator previews how many target hosts match `exact`, `cidr`, or `default` credentials, highlighting unmatched IPs.
 - Vault auto-locks after 60 minutes of inactivity and upon server shutdown.
 
+
+#### Saved Plugin Credentials
+
+Under **Credential Vault → vCenter & VCF Operations**, save a named HTTPS instance and its service account. Select **Use saved credentials** in a plugin to replace manual connection fields with a saved-instance selector. The selector links to the vault to unlock or add an instance, with a return link to the plugin. Editing an instance requires re-entering its password.
+
+vCenter entries are shared by VDT, MTAT Workload Assessment and vSphere Inventory Export. Operations entries apply to MTAT Operations REST only. BMC credentials and appliance SSH accounts stay separate. Normal TLS review, acknowledgements and SSH fingerprint checks still apply; saved passwords are resolved only on the server. See the [Credential Vault Guide](../CREDENTIAL_VAULT.md#saved-vcenter-and-vcf-operations-instances).
 
 #### Forgotten Vault Passphrase
 

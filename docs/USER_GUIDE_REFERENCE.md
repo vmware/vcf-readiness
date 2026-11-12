@@ -146,17 +146,24 @@ The central assessment table presents a dense multi-node compatibility matrix. S
 - **Evidence:** Critical conclusions remain visible. Expand evidence opens supporting details for reading or browser Find. Direct links reveal a closed evidence section automatically. Print/PDF includes the selected report view with its supporting evidence expanded, then restores disclosure states.
 
 #### Field-by-Field Reference
+
+The combined fleet per-host table and the standalone fleet summary use different columns. Power supply redundancy stays on the **Power Health** tile. Rows below follow the combined table; standalone-only columns are listed where that summary shows them.
+
 | Column Header | Description & Evaluation Logic | VCF 9.1 Readiness Verdict | External Reference |
 |---|---|---|---|
-| **Host / IP** | Host system hostname and out-of-band management BMC IP address. Clicking navigates directly to that server's detailed single-host report. | Identifies the physical node in the management network. | [vSphere Networking Basics](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-networking/GUID-A9648937-2E89-4DF5-BF7D-F3C6DDAE3C98.html) |
-| **Model** | Server manufacturer and chassis model. Displays a warning badge if slow BMC response times were encountered. | Hardware model must be listed as certified on the Broadcom Compatibility Guide (BCG) for vSphere 9.x. | [Broadcom Compatibility Guide (Systems)](https://compatibilityguide.broadcom.com/search?program=server) |
-| **CPU Support** | Processor family and compatibility tier: Green (`Supported`), Yellow (`Override Required`), or Red (`Unsupported`). | Intel Cascade Lake/Ice Lake/Sapphire Rapids/Emerald Rapids and AMD EPYC 7002/7003/8004/9004 are supported; Skylake-SP requires CPU support override. | [Broadcom KB 428874](https://knowledge.broadcom.com/external/article/428874) |
-| **TPM 2.0** | Cryptographic security status: Green (`Configured`), Amber (`TPM 1.2`), or Red (`Missing/Disabled`). | TPM 2.0 chip enabled in UEFI mode is required for host attestation and credential security. | [vSphere TPM 2.0 Requirements](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-security/GUID-10F7022C-DBE0-4E80-9285-EB02CEF513A1.html) |
-| **BMC Security** | Out-of-band security compliance score: Green (`Met`), Amber (`Partial`), or Red (`Action Req`). Clicking navigates to the host security tab. | BMC security audit evaluates 84 controls against the VCF Security Configuration Guide baseline. | [VCF Security Guidelines](https://github.com/vmware/vcf-security-and-compliance-guidelines) |
-| **vSAN Tier** | Storage tier readiness: Green (`ESA Ready`), Yellow (`OSA Compatible`), or Red (`None/Ineligible`). | Indicates whether the physical storage configuration qualifies for vSAN ESA, vSAN OSA, or requires hardware changes. | [vSAN Hardware Guidance](https://core.vmware.com/resource/vmware-vsan-esa-readynode-hardware-guidance) |
-| **PSU** | Power supply operational status: Green (`Redundant`) or Yellow (`Single/Degraded`). | Dual redundant power supplies connected to independent feeds are required for enterprise production clusters. | [vSphere Resiliency Best Practices](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-availability/GUID-D812833E-67A2-4D30-B147-380F7BE98E9B.html) |
-| **FC HBAs** | Count and models of installed Fibre Channel Host Bus Adapters (e.g. `2 HBA`), or `—` if none installed. | Identifies nodes capable of attaching to existing SAN storage arrays via Fibre Channel VMFS datastores. | [Broadcom Compatibility Guide (IO)](https://compatibilityguide.broadcom.com/search?program=io) |
-| **GPUs** | Count and models of detected PCIe GPU accelerators (e.g. `2 GPU`), or `—` if none installed. | Identifies hardware accelerators capable of supporting VMware Private AI Foundation workloads. | [VMware Private AI Foundation](https://docs.vmware.com/en/VMware-Cloud-Foundation/services/vcf-private-ai-deployment/GUID-A934E26F-D2E4-42B1-8C1A-2C3C58B3A829.html) |
+| **Host / IP** | Combined fleet table and standalone summary. Host system hostname and out-of-band management BMC IP address. Clicking opens that server's detailed single-host report. | Identifies the physical node in the management network. | [vSphere Networking Basics](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-networking/GUID-A9648937-2E89-4DF5-BF7D-F3C6DDAE3C98.html) |
+| **Model** | Combined fleet table and standalone summary. Server manufacturer and chassis model. The combined table adds a warning badge when slow BMC response times were encountered. | Hardware model must be listed as certified on the Broadcom Compatibility Guide (BCG) for vSphere 9.x. | [Broadcom Compatibility Guide (Systems)](https://compatibilityguide.broadcom.com/search?program=server) |
+| **CPU Model** | Standalone summary only, between Model and CPU Support. Processor model string and populated socket count. | Identifies the installed processor before the support tier is read. | [Broadcom KB 428874](https://knowledge.broadcom.com/external/article/428874) |
+| **CPU Support** | Combined fleet table and standalone summary. Visible labels are `Not assessed`, `Supported`, `Override Required`, and `Unsupported`. The combined table shows a Deprecated verdict as `Deprecated`. The standalone summary shows that verdict as `Supported (9.x)`. | Intel Cascade Lake/Ice Lake/Sapphire Rapids/Emerald Rapids and AMD EPYC 7002/7003/8004/9004 are supported; Skylake-SP requires CPU support override. | [Broadcom KB 428874](https://knowledge.broadcom.com/external/article/428874) |
+| **TPM** | Combined fleet table and standalone summary. The heading is **TPM**. A present TPM 2.0 is an accessible green check named `TPM present`. A disabled TPM reads `Disabled`. A missing TPM reads `Missing`. A legacy module reads `TPM 1.2`. Any other collected state stays visible, with the firmware version removed, and is not the green check. | TPM 2.0 enabled in UEFI mode is required for host attestation and credential security. | [vSphere TPM 2.0 Requirements](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-security/GUID-10F7022C-DBE0-4E80-9285-EB02CEF513A1.html) |
+| **Memory Interleaving** | Standalone summary only, after TPM. Memory-topology status badge and interleaving efficiency percentage. | Balanced channel population preserves memory bandwidth for vSAN ESA and dense compute. | [vSphere Performance Best Practices](https://core.vmware.com/resource/vsphere-performance-best-practices) |
+| **vSAN Tier** | Combined fleet table only. Drive-count summary: `ESA (n NVMe)` when at least two direct-attached NVMe drives are in the ESA/OSA NVMe category; `OSA` when OSA or mixed drive counts meet that same numeric threshold; otherwise `None`. | Shows whether the counted drives meet the combined table's ESA or OSA drive threshold. | [vSAN Hardware Guidance](https://core.vmware.com/resource/vmware-vsan-esa-readynode-hardware-guidance) |
+| **vSAN ESA Drives** | Standalone summary only, in the storage column. Full storage verdict: `ESA Ready`, `ESA Storage Met`, `OSA`, `VMD Enabled`, `Tri-Mode RAID`, `Behind RAID`, or `Insufficient`, with the matching drive count. | Indicates whether local drives and uplinks meet the tool's vSAN ESA or OSA checks. | [vSAN Hardware Guidance](https://core.vmware.com/resource/vmware-vsan-esa-readynode-hardware-guidance) |
+| **Memory Tier Drives** | Combined fleet table and standalone summary. Count of identified NVMe Memory Tiering drives: BCG-listed drives, plus TLC read-intensive 1 DWPD drives only when `--nvme-namespace-preview` is on. The count is drive availability, not a compatibility verdict. A drive used for Memory Tiering is not also a vSAN capacity drive. | Firmware, release, namespace sizing, and dedicated use still need confirmation. | [Broadcom Compatibility Guide (Memory Tiering)](https://compatibilityguide.broadcom.com/search?program=memorytier&persona=live) |
+| **FC cards / ports** | Combined fleet table only. Card and port summary such as `1 HBA card · 2 FC ports`, or the port count alone when card identity is unavailable. An em dash means none were found. The standalone per-host table does not include this column; Fibre Channel stays in the Fibre Channel detail view when adapters are present. | Identifies nodes capable of attaching to existing SAN storage arrays via Fibre Channel VMFS datastores. | [Broadcom Compatibility Guide (IO)](https://compatibilityguide.broadcom.com/search?program=io) |
+| **GPUs** | Combined fleet table and standalone summary. Combined cells show the accelerator count, such as `2 GPU`, or an em dash. The standalone summary shows up to three vendor-classified labels, such as `1× Intel Flex 140`, or an em dash when none are present. | Identifies hardware accelerators capable of supporting VMware Private AI Foundation workloads. | [VMware Private AI Foundation](https://docs.vmware.com/en/VMware-Cloud-Foundation/services/vcf-private-ai-deployment/GUID-A934E26F-D2E4-42B1-8C1A-2C3C58B3A829.html) |
+| **BMC Security** | Combined fleet table and standalone summary. Both tables place **BMC Security** and **Host OS** at the right. Labels are `Met`, `Partial`, and `Action Suggested`, with the matching pass, unknown, or fail counts. Fleet-management appliances read `Excluded (Fleet Mgr)`. An unassessed host stays an em dash. Clicking opens the host security tab. | BMC security audit evaluates 84 controls against the VCF Security Configuration Guide baseline. | [VCF Security Guidelines](https://github.com/vmware/vcf-security-and-compliance-guidelines) |
+| **Host OS** | Rightmost column. The combined table always includes **Host OS**. The standalone summary includes **Host OS** only when any host reports an OS. Cells show the reported OS label and version, or an em dash when that host has no OS evidence. | Identifies the installed operating system before VCF 9.1 reimaging. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
 
 ---
 
@@ -209,9 +216,9 @@ The Detailed Inventory is divided into six specialized subpanes:
 1. **Hosts:** SE Decision Matrix summarizing host compute, storage qualification, network readiness, memory interleaving, and platform security.
 2. **Drives:** Granular storage drive inventory with controller topology, endurance life percentage, protocol classification, and certified firmware tracking.
 3. **NICs:** Network interface controller port inventory with speed capabilities, link connection states, MAC addresses, and certified firmware levels.
-4. **BIOS Settings:** System firmware configurations including CPU power profiles, memory RAS modes, Intel VMD settings, boot modes, and Spectre/CVE microcode tiers.
+4. **BIOS Settings:** System firmware configurations including CPU power profiles, memory RAS modes, Intel VMD settings, boot modes, and historical BIOS date estimates.
 5. **Health Alarms:** Active hardware alarms aggregated from System Event Logs (SEL), drive S.M.A.R.T. telemetry, power supply redundancy, thermal sensors, and memory ECC counters.
-6. **Security:** Out-of-band management and host platform hardening including TPM 2.0, Secure Boot, BMC firmware baselines, CVE microcode tiers, Hyperthreading posture, NTP/time drift, DNS configuration, and BMC hardening.
+6. **Security:** Out-of-band management and host platform hardening including TPM 2.0, Secure Boot, BMC firmware baselines, historical BIOS date estimates, Hyperthreading posture, NTP/time drift, DNS configuration, and BMC hardening.
 
 ---
 
@@ -251,7 +258,7 @@ The Drives subtab details every physical storage drive detected across all stora
 | **Protocol** | Bus transport protocol: `NVMe`, `SAS`, `SATA`. | NVMe protocol required for ESA flash devices. | [vSAN ESA Technical Details](https://core.vmware.com/vsan-esa) |
 | **Category** | Classification: `vSAN ESA/OSA NVMe`, `vSAN OSA Compatible (HBA)`, `Unsupported NVMe RAID`, `Unsupported NVMe Tri-Mode`. | Directly impacts vSAN storage qualification status. | [vSAN Planning & Deployment](https://docs.vmware.com/en/VMware-vSphere/8.0/vsan-planning/GUID-10C4D04C-7682-4E57-B2E2-817DC7D57C5A.html) |
 | **Health** | Hardware diagnostic health and S.M.A.R.T. operational state (`OK`, `Warning`, `Critical`, `Degraded`). | Failing or degraded drives must be replaced before node commissioning. | [vSphere Health Monitoring](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-monitoring-and-performance/index.html) |
-| **Life%** | Remaining silicon flash endurance percentage (wear gauge). Reported directly from BMC OEM storage telemetry and NVMe log pages. | Drives with &lt;20% remaining life trigger critical replacement warnings. | [vSAN Drive Wear Monitoring](https://kb.vmware.com/s/article/2144888) |
+| **Life%** | Remaining silicon flash endurance percentage (wear gauge), when reported by BMC OEM telemetry or NVMe log pages. | In fleet Health Alarms, under 50% remaining is a warning and under 20% is critical. A missing value is unknown, not healthy. | [vSAN Drive Wear Monitoring](https://kb.vmware.com/s/article/2144888) |
 | **Firmware** | Installed drive firmware version compared against certified Broadcom HCL baselines.<br>• **✓ (Green):** Certified and current.<br>• **▲ (Amber):** Certified update available or outdated. | Drive firmware must match VMware certified HCL releases to prevent I/O timeouts. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
 
 ---
@@ -364,12 +371,15 @@ Eight high-contrast visual cards immediately communicate qualification status ac
   - `🔴 Unsupported`: Intel Haswell, Broadwell (v3/v4), or older architectures; blocks ESXi 9.1 installation.
 - **External Reference:** [Broadcom KB 428874](https://kb.vmware.com/s/article/428874).
 
-#### 2. BIOS & Microcode Card
-- **Evaluation Logic:** Compares installed BIOS firmware against OEM minimum release matrices and evaluates processor microcode side-channel security tiers.
+#### 2. BIOS & Performance Card
+- **Evaluation Logic:** Compares installed BIOS firmware with the tool’s recorded model and version baseline.
 - **Statuses:**
-  - `🟢 Baseline Met`: Installed BIOS meets the tool’s recorded model/version baseline. The separate date-based CVE tier does not prove current microcode coverage.
-  - `🟡 Update Recommended`: BIOS is below recommended baseline or aging release date detected.
-  - `🔴 Action Required`: Vulnerable microcode level (Tier <4) requiring mandatory BIOS flashing.
+  - `🟢 Up-to-Date`: Installed BIOS matches the recorded catalog version.
+  - `🟢 Ahead of catalog`: Installed BIOS is newer than the recorded catalog snapshot.
+  - `🟡 Update Available`: BIOS is behind the recorded recommendation.
+  - `🔴 Outdated BIOS`: BIOS is below the recorded minimum.
+  - `Not verified`: Version or baseline evidence was not assessed.
+- The report’s **BIOS Date Estimate** is a historical BIOS release-date estimate. It does not read installed microcode or prove current mitigation. Missing, invalid, and future dates stay unassessed. Tier windows are in [Historical BIOS Date Estimates](#cve-microcode-tiers).
 - **External Reference:** [Broadcom KB 330041](https://kb.vmware.com/s/article/330041).
 
 #### 3. TPM 2.0 Security Card
@@ -381,7 +391,7 @@ Eight high-contrast visual cards immediately communicate qualification status ac
 - **External Reference:** [vSphere TPM 2.0 Guide](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-security/GUID-10F7022C-DBE0-4E80-9285-EB02CEF513A1.html).
 
 #### 4. Memory Interleaving Card
-- **Evaluation Logic:** Assesses total system RAM, populated DIMM slot symmetry, and channel interleaving efficiency across CPU sockets.
+- **Evaluation Logic:** Assesses total system RAM, populated DIMM slot symmetry, and channel interleaving efficiency across CPU sockets. When identified NVMe Memory Tiering drives are present, the Memory card includes a compact green **NVMe Tiering** check. The check is catalog evidence of drive availability, not firmware or deployment validation.
 - **Statuses:**
   - `🟢 Balanced (100% Throughput)`: Symmetrical channel population delivering maximum memory bandwidth.
   - `🟡 Suboptimal Interleaving`: Unbalanced channel configuration causing memory throttling.
@@ -595,8 +605,14 @@ The physical drives table inventories every drive attached to storage backplanes
 | **Protocol** | Bus protocol: `NVMe (PCIe)`, `SAS`, `SATA`. | NVMe protocol delivers direct CPU register mapping with microsecond latency. | [NVM Express Standards](https://nvmexpress.org/) |
 | **Category** | Classification: `vSAN ESA/OSA NVMe`, `vSAN OSA Compatible (HBA)`, `Unsupported NVMe RAID`. | Determines eligibility in the vSAN storage pool. | [vSAN Planning Guide](https://docs.vmware.com/en/VMware-vSphere/8.0/vsan-planning/index.html) |
 | **Operational Health** | Real-time diagnostic state: `OK`, `Warning`, `Critical`, or `Degraded`. | Drives reporting degraded health must be decommissioned before cluster installation. | [vSphere Health Monitoring](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-monitoring-and-performance/index.html) |
-| **Remaining Life%** | Flash silicon endurance wear gauge (percentage of life remaining). | **Wear Alert:** Drives with &lt;20% remaining life trigger a critical replacement warning. | [Broadcom KB 2144888](https://kb.vmware.com/s/article/2144888) |
+| **Remaining Life%** | Flash silicon endurance wear gauge (percentage of life remaining), when reported. | Fleet Health Alarms show a warning below 50% remaining and critical below 20%. Missing evidence remains unknown. Host reports also show an **Aging / Wear Alert** for 30,000+ power-on hours, less than 50% endurance remaining, or a recognized firmware issue; this advisory is separate from critical health and predictive-failure alerts. | [Broadcom KB 2144888](https://kb.vmware.com/s/article/2144888) |
 | **Firmware** | Installed drive firmware revision compared against certified HCL baselines. | Firmware updates resolve drive controller lockups, command timeouts, and bad-block bugs. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
+
+### 5.3a Memory Tiering drive indicators
+
+The reports can show a **Mem Tier** badge when a drive matches the active Memory Tiering Broadcom Compatibility Guide (BCG) catalog. Matching uses an exact model, complete SKU, or exact local HCL alias; family-only matches are not enough, and capacity-bearing listings are checked against observed capacity. The badge links to the matching BCG entry. It does not validate the installed firmware or deployment configuration.
+
+The Web UI also has a default-off `--nvme-namespace-preview` option. When enabled, it can mark evidence-backed TLC read-intensive 1 DWPD vSAN ESA drives as candidates for namespace review. Unknown NAND/endurance, QLC, cyber-recovery, boot, RAID, and VMD cases are excluded. Candidate tags are not BCG listings, certification, or support approval. A drive assigned to Memory Tiering is not simultaneously available as a vSAN capacity drive. See [NVMe namespace preview](NVME_NAMESPACE_PREVIEW.md) for detection details and operator guidance.
 
 ---
 
@@ -1335,12 +1351,14 @@ When sharing reports with external hardware vendors or Broadcom support, passing
 | `fleet_summary.html` | Fleet-wide overview dashboard with health tiles and host summary table. | Infrastructure Managers & Architects. |
 | `fleet_combined.html` / `00_fleet_combined.html` | Fleet Hub HTML dashboard embedding all host reports (single inline file for &le; 64 hosts, sidecar pack with lazy on-demand frames for &gt; 64 hosts up to 3,000+ hosts without 256-host cliff). | Enterprise Architects & IT Leadership. |
 | `MANIFEST.json` | Scan execution metadata manifest (`tool_version`, `scanned_at`, `host_count`, `collector_id`, `site`, `scan_profile`, `obfuscated`) for library discovery and remote drop ingestion. | Automation Engineers & Orchestrators. |
-| `vcf_readiness_<timestamp>.xlsx` | Multi-tab Excel workbook: Summary, Storage, NICs, GPUs, Security, Failed Hosts. | IT Procurement & Capacity Planners. |
+| `vcf_readiness_<timestamp>.xlsx` | Multi-tab Excel workbook with Summary, Decision, vCPU, vMemory, vStorage, vNetwork, vGPU, vFirmware, vHBA, vBIOS, Health_Alarms, Remediation, Security, Security_Audit, and optional Failed_Hosts sheets. | IT Procurement & Capacity Planners. |
 | `00_fleet_summary.csv` | Standardized tabular CSV with 40+ schema fields for automated pipeline ingestion. | Infrastructure Automation & CMDB Leads. |
 | `00_drives_inventory.csv` | Granular physical storage drive inventory across all assessed nodes. | Storage Engineers & Hardware Vendors. |
 | `00_nics_inventory.csv` | Network adapter, port, link speed, and ToR switch neighbor inventory. | Network Architects & Fabric Engineers. |
 | `00_gpus_inventory.csv` | Hardware accelerator and GPU inventory across all nodes. | AI Infrastructure & Data Science Leads. |
 | `00_failed_hosts.csv` | Preflight diagnostics, unreachable BMC IPs, and authentication errors. | Operations & Network Support Teams. |
+
+The workbook's **vFirmware** sheet evaluates BIOS, BMC, NIC, NVMe, and HBA/RAID evidence against release-specific VCF 9.1 listings where available. It separates supported, update-needed, and incomplete evidence; an old BIOS date alone does not establish firmware support. The Summary adds per-host firmware upgrade rollups and **All NICs Ready**. **Remediation** lists firmware evidence gaps and NIC link review with retained BCG references. A BMC age advisory (over 365 days at capture) indicates age only; it is not a certification or health verdict. These workbook assessments do not change the shared CSV schema or hardware compatibility verdicts.
 
 ---
 
@@ -1445,6 +1463,12 @@ python3 vcfr_collector.py --targets 192.0.2.0/24 --vault
 - The vault coverage indicator previews how many target hosts match `exact`, `cidr`, or `default` credentials, highlighting unmatched IPs.
 - Vault auto-locks after 60 minutes of inactivity and upon server shutdown.
 
+
+#### Saved Plugin Credentials
+
+Under **Credential Vault → vCenter & VCF Operations**, save a named HTTPS instance and its service account. Select **Use saved credentials** in a plugin to replace manual connection fields with a saved-instance selector. The selector links to the vault to unlock or add an instance, with a return link to the plugin. Editing an instance requires re-entering its password.
+
+vCenter entries are shared by VDT, MTAT Workload Assessment and vSphere Inventory Export. Operations entries apply to MTAT Operations REST only. BMC credentials and appliance SSH accounts stay separate. Normal TLS review, acknowledgements and SSH fingerprint checks still apply; saved passwords are resolved only on the server. See the [Credential Vault Guide](CREDENTIAL_VAULT.md#saved-vcenter-and-vcf-operations-instances).
 
 #### Forgotten Vault Passphrase
 

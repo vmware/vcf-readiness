@@ -31,8 +31,9 @@ def _newer_release(current_version: str, release: dict) -> dict:
     tag = release.get('tag_name')
     if not isinstance(tag, str):
         return {}
-    current, latest = _version(current_version), _version(tag)
-    if current is None or latest is None or latest <= current:
+    beta = re.fullmatch(r'(\d+\.\d+\.\d+)(?:b|-beta\.)[1-9]\d*', current_version)
+    current, latest = _version(beta.group(1) if beta else current_version), _version(tag)
+    if current is None or latest is None or latest < current or (latest == current and not beta):
         return {}
     return {
         'latest_version': '.'.join(str(part) for part in latest),

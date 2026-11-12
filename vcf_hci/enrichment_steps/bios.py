@@ -53,6 +53,21 @@ def enrich_oem_baseline(host_data: Dict[str, Any], system: Dict[str, Any]) -> No
         bios_checks = host_data["bios_checks"]
 
     raw_attrs = bios_checks.get("attributes") or host_data.get("bios_attributes") or {}
+    if not raw_attrs:
+        # Recover only an unambiguous current BIOS resource; never use staged Settings.
+        capture = host_data.get("raw_redfish_capture") or {}
+        candidates = []
+        if isinstance(capture, dict):
+            for endpoint, payload in capture.items():
+                path = str(endpoint).split("?", 1)[0].rstrip("/").lower()
+                if (path.startswith("/redfish/v1/systems/") and path.endswith("/bios")
+                        and isinstance(payload, dict) and isinstance(payload.get("Attributes"), dict)
+                        and payload["Attributes"]):
+                    candidates.append(payload["Attributes"])
+        if len(candidates) == 1:
+            raw_attrs = dict(candidates[0])
+            bios_checks["attributes"] = raw_attrs
+            bios_checks["attributes_source"] = "captured_current_bios"
     norm_attrs = bios_checks.get("normalized_attributes") or {}
     cpu_info = system.get("cpu_summary") or {}
     compat = host_data.get("compatibility") or {}

@@ -17,7 +17,9 @@ from vcf_hci.constants import (
     is_unfriendly_nic_name,
     prefer_storage_ctrl_display_name,
 )
+from vcf_hci.drive_counters import nonnegative_io_total
 from vcf_hci.logging_utils import sanitize_filename
+from vcf_hci.report.formatting import compact_storage_tier_labels
 from vcf_hci.report.schema_registry import (
     FLEET_SUMMARY_FIELDS,
     strip_html,
@@ -93,6 +95,7 @@ def generate_drives_csv(
                 if ep in (255, "255", "255%"):
                     ep = "N/A"
                 ep_str = f"{ep}%" if (ep != "" and ep != "N/A" and ep is not None) else "N/A"
+                tbw = nonnegative_io_total(d.get("tbw_written"))
                 writer.writerow([
                     ip,
                     host,
@@ -107,10 +110,10 @@ def generate_drives_csv(
                     str(d.get("protocol") or "").strip(),
                     drive_capacity_display(d),
                     strip_html(d.get("category", "")),
-                    strip_html(d.get("hcl_str") or d.get("status_badge", "")),
+                    compact_storage_tier_labels(strip_html(d.get("hcl_str") or d.get("status_badge", ""))),
                     strip_html(d.get("drive_health", "")),
                     ep_str,
-                    str(d.get("tbw_written") if d.get("tbw_written") is not None else ""),
+                    str(tbw) if tbw is not None else "",
                     str(d.get("power_on_hours") if d.get("power_on_hours") is not None else ""),
                     str(d.get("temperature_c") if d.get("temperature_c") is not None else ""),
                     str(d.get("unsafe_shutdowns") if d.get("unsafe_shutdowns") is not None else ""),

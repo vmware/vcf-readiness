@@ -6,9 +6,9 @@ The Detailed Inventory is divided into six specialized subpanes:
 1. **Hosts:** SE Decision Matrix summarizing host compute, storage qualification, network readiness, memory interleaving, and platform security.
 2. **Drives:** Granular storage drive inventory with controller topology, endurance life percentage, protocol classification, and certified firmware tracking.
 3. **NICs:** Network interface controller port inventory with speed capabilities, link connection states, MAC addresses, and certified firmware levels.
-4. **BIOS Settings:** System firmware configurations including CPU power profiles, memory RAS modes, Intel VMD settings, boot modes, and Spectre/CVE microcode tiers.
+4. **BIOS Settings:** System firmware configurations including CPU power profiles, memory RAS modes, Intel VMD settings, boot modes, and historical BIOS date estimates.
 5. **Health Alarms:** Active hardware alarms aggregated from System Event Logs (SEL), drive S.M.A.R.T. telemetry, power supply redundancy, thermal sensors, and memory ECC counters.
-6. **Security:** Out-of-band management and host platform hardening including TPM 2.0, Secure Boot, BMC firmware baselines, CVE microcode tiers, Hyperthreading posture, NTP/time drift, DNS configuration, and BMC hardening.
+6. **Security:** Out-of-band management and host platform hardening including TPM 2.0, Secure Boot, BMC firmware baselines, historical BIOS date estimates, Hyperthreading posture, NTP/time drift, DNS configuration, and BMC hardening.
 
 ---
 
@@ -48,7 +48,7 @@ The Drives subtab details every physical storage drive detected across all stora
 | **Protocol** | Bus transport protocol: `NVMe`, `SAS`, `SATA`. | NVMe protocol required for ESA flash devices. | [vSAN ESA Technical Details](https://core.vmware.com/vsan-esa) |
 | **Category** | Classification: `vSAN ESA/OSA NVMe`, `vSAN OSA Compatible (HBA)`, `Unsupported NVMe RAID`, `Unsupported NVMe Tri-Mode`. | Directly impacts vSAN storage qualification status. | [vSAN Planning & Deployment](https://docs.vmware.com/en/VMware-vSphere/8.0/vsan-planning/GUID-10C4D04C-7682-4E57-B2E2-817DC7D57C5A.html) |
 | **Health** | Hardware diagnostic health and S.M.A.R.T. operational state (`OK`, `Warning`, `Critical`, `Degraded`). | Failing or degraded drives must be replaced before node commissioning. | [vSphere Health Monitoring](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-monitoring-and-performance/index.html) |
-| **Life%** | Remaining silicon flash endurance percentage (wear gauge). Reported directly from BMC OEM storage telemetry and NVMe log pages. | Drives with &lt;20% remaining life trigger critical replacement warnings. | [vSAN Drive Wear Monitoring](https://kb.vmware.com/s/article/2144888) |
+| **Life%** | Remaining silicon flash endurance percentage (wear gauge), when reported by BMC OEM telemetry or NVMe log pages. | In fleet Health Alarms, under 50% remaining is a warning and under 20% is critical. A missing value is unknown, not healthy. | [vSAN Drive Wear Monitoring](https://kb.vmware.com/s/article/2144888) |
 | **Firmware** | Installed drive firmware version compared against certified Broadcom HCL baselines.<br>• **✓ (Green):** Certified and current.<br>• **▲ (Amber):** Certified update available or outdated. | Drive firmware must match VMware certified HCL releases to prevent I/O timeouts. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
 
 ---

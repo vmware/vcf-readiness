@@ -57,6 +57,7 @@ from vcf_hci.web.desktop import (  # noqa: F401
 )
 from vcf_hci.web.group_api import GroupApiMixin
 from vcf_hci.web.hcl_export_api import HclExportApiMixin
+from vcf_hci.web.mtat_api import MtatApiMixin
 from vcf_hci.web.plugin_api import PluginApiMixin
 from vcf_hci.web.remote_vdt_api import RemoteVdtApiMixin, cancel_remote_jobs
 from vcf_hci.web.scan_worker import (  # noqa: F401
@@ -86,6 +87,8 @@ from vcf_hci.web.session_store import (  # noqa: F401
 )
 from vcf_hci.web.update_check import ReleaseUpdateChecker
 from vcf_hci.web.vdt_setup_api import VdtSetupApiMixin
+from vcf_hci.web.vinv_api import UPLOAD_BODY_LIMIT as _VINV_UPLOAD_BODY_LIMIT
+from vcf_hci.web.vinv_api import VinvApiMixin, VinvLibrary
 
 _COLLECTOR_OK = True
 
@@ -264,7 +267,7 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         super().handle_error(request, client_address)
 
 
-class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtApiMixin, PluginApiMixin, ApiMixin, BaseHTTPRequestHandler):
+class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtApiMixin, MtatApiMixin, VinvApiMixin, PluginApiMixin, ApiMixin, BaseHTTPRequestHandler):
     server_version = f"VCFReadiness/{TOOL_VERSION}"
 
     def handle(self):
@@ -353,7 +356,12 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             length = int(self.headers.get("Content-Length", 0))
         except (ValueError, TypeError):
             return {}
-        if length <= 0 or length > self.MAX_BODY_SIZE:
+        body_limit = self.MAX_BODY_SIZE
+        if getattr(self, "path", "").split("?", 1)[0] in ("/api/plugins/mtat/jobs", "/api/plugins/mtat/preflight"):
+            body_limit = 4 * ((32 * 1024 * 1024 + 2) // 3) + 65536
+        elif getattr(self, "path", "").split("?", 1)[0] == "/api/plugins/vinv/import":
+            body_limit = _VINV_UPLOAD_BODY_LIMIT
+        if length <= 0 or length > body_limit:
             return {}
         try:
             return json.loads(self.rfile.read(length))
@@ -750,6 +758,8 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
         elif path == "/api/vault/entries":
             self._api_vault_entries()
 
+        elif path == "/api/vault/services":
+            self._api_vault_services("list")
         elif path == "/api/vault/jump-hosts":
             self._api_jump_hosts_list()
 
@@ -818,6 +828,19 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
 
         elif path == "/metrics":
             self._serve_prometheus_metrics(parsed.query)
+
+        elif path == "/api/plugins/mtat":
+            self._api_mtat_catalog()
+        elif path.startswith("/api/plugins/mtat/jobs/"):
+            self._api_mtat_job_get(path)
+        elif path == "/api/plugins/vinv":
+            self._api_vinv_catalog()
+        elif path.startswith("/api/plugins/vinv/jobs/"):
+            self._api_vinv_job_get(self.path)
+        elif path == "/api/plugins/vinv/library" or path.startswith("/api/plugins/vinv/library/"):
+            self._api_vinv_library_get(self.path)
+        elif path == "/api/plugins/vinv/reconciled/fleet.html":
+            self._api_vinv_reconciled_fleet()
 
         else:
             self.send_error(404)
@@ -927,6 +950,10 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             self._api_vault_lock()
         elif path == "/api/vault/entries":
             self._api_vault_set_entry()
+        elif path == "/api/vault/services":
+            self._api_vault_services("save")
+        elif path == "/api/vault/services/remove":
+            self._api_vault_services("remove")
         elif path == "/api/vault/remove":
             self._api_vault_remove()
         elif path == "/api/vault/import-csv":
@@ -958,6 +985,23 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             self._send_json({"ok": True})
             threading.Thread(target=lambda: (time.sleep(0.3),
                                              _shutdown_event.set()), daemon=True).start()
+        elif path == "/api/plugins/mtat/preflight":
+            self._api_mtat_preflight()
+        elif path == "/api/plugins/mtat/jobs":
+            self._api_mtat_jobs_post()
+        elif path.startswith("/api/plugins/mtat/jobs/") and path.endswith("/cancel"):
+            self._api_mtat_cancel(path)
+        elif path == "/api/plugins/vinv/preflight":
+            self._api_vinv_preflight()
+        elif path == "/api/plugins/vinv/jobs":
+            self._api_vinv_jobs_post()
+        elif path.startswith("/api/plugins/vinv/jobs/") and path.endswith("/cancel"):
+            self._api_vinv_cancel(path)
+        elif path == "/api/plugins/vinv/import":
+            self._api_vinv_import()
+        elif path == "/api/plugins/vinv/detach" or path.startswith("/api/plugins/vinv/library/"):
+            self._api_vinv_library_post(path)
+
         else:
             self.send_error(404)
 
@@ -1014,6 +1058,10 @@ def make_server(
     server.vdt_sessions = {}
     server.vdt_plugin_root = os.path.abspath(plugins_dir) if plugins_dir is not None else str(default_plugin_root())
     server.vdt_remote_jobs = {}
+    server.experimental_vinv = True
+    server.vinv_lock = threading.Lock()
+    server.vinv_job = None
+    server.vinv_library = VinvLibrary()
     if tls_cert and tls_key:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -1087,7 +1135,30 @@ def main() -> None:
         "--crawl", "--crawl-endpoints", action="store_true", dest="crawl", help="Launch with deep Redfish crawling enabled by default"
     )
     parser.add_argument("--plugins-dir", default=None, help="Optional plugin folder (default: Plugins beside the source or executable)")
+    parser.add_argument(
+        "--nvme-namespace-preview", action="store_true",
+        help="Include TLC RI 1 DWPD ESA drive tags and NVMe namespace sizing Help (default: off)",
+    )
+    parser.add_argument(
+        "--no-hcl-auto-refresh", action="store_true",
+        help="Keep startup HCL data offline; disable the background public BCG refresh",
+    )
+    parser.add_argument(
+        "--enable-experimental-mtat",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--enable-experimental-vinv",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
+    from vcf_hci.hcl.memory_tiering import PREVIEW_ENV
+    if args.nvme_namespace_preview:
+        os.environ[PREVIEW_ENV] = "1"
+    else:
+        os.environ.pop(PREVIEW_ENV, None)
 
     # Safety check: Prevent accidental wildcard network exposures unless --allow-remote is provided
     if args.bind in ("0.0.0.0", "::", "") and not args.allow_remote:
@@ -1158,6 +1229,13 @@ def main() -> None:
         print(f"\n  [✗] SECURITY BLOCK: could not start the TLS listener: {exc}\n", file=sys.stderr)
         sys.exit(1)
 
+    from vcf_hci.plugins.mtat.lifecycle import experimental_enabled
+    server.experimental_mtat = experimental_enabled(args.enable_experimental_mtat)
+    server.mtat_lock = threading.Lock()
+    server.mtat_job = None
+    from vcf_hci.plugins.vinv.lifecycle import experimental_enabled as vinv_experimental_enabled
+    server.experimental_vinv = vinv_experimental_enabled(args.enable_experimental_vinv)
+
     scheme = "https" if server.tls_enabled else "http"
     tokenized_url = f"{scheme}://{display_host}:{port}/?token={_LAUNCH_TOKEN}"
 
@@ -1165,6 +1243,8 @@ def main() -> None:
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     server.update_checker.start()
+    from vcf_hci.web.hcl_startup import start_hcl_refresh
+    start_hcl_refresh(disabled=args.no_hcl_auto_refresh, imported_bundle=args.import_hcl)
 
     print("\n  VCF Readiness Assessment")
     print("  ─────────────────────────────────────────────────────")

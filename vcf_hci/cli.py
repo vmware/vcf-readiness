@@ -390,7 +390,7 @@ Examples:
         if len(results) > 1:
             try:
                 summary_path = os.path.join(outdir, "00_fleet_summary.html")
-                generate_summary_html(results, summary_path, hcl_bundle_metadata=hcl_bundle_metadata)
+                generate_summary_html(results, summary_path, hcl_bundle_metadata=hcl_bundle_metadata, json_hcl=json_hcl)
                 print(f"  [✓] Fleet Summary Dashboard: {summary_path}")
             except Exception as exc:
                 print(f"  [✗] Failed to generate fleet summary report: {exc}")
@@ -399,7 +399,7 @@ Examples:
                 try:
                     obf_summary_path = os.path.join(outdir, "00_OBFUSCATED_fleet_summary.html")
                     obf_results = [obfuscate_host_data(r, f"Host-{i+1}", _obf_salt) for i, r in enumerate(results)]
-                    generate_summary_html(obf_results, obf_summary_path, hcl_bundle_metadata=hcl_bundle_metadata, obfuscated=True)
+                    generate_summary_html(obf_results, obf_summary_path, hcl_bundle_metadata=hcl_bundle_metadata, obfuscated=True, json_hcl=json_hcl)
                     print(f"  [🔒] Obfuscated Fleet Summary Dashboard: {obf_summary_path}")
                 except Exception as exc:
                     print(f"  [✗] Failed to generate obfuscated fleet summary report: {exc}")

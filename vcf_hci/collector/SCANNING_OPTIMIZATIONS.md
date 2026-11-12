@@ -11,8 +11,8 @@ The Redfish collection engine employs a **two-tier concurrency model** designed 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ Tier 1: Outer Fleet Executor (vcf_hci/web/server.py or vcf_hci/cli.py)      │
-│ Default: ThreadPoolExecutor(max_workers=12-20)                              │
+│ Tier 1: Outer fleet dispatch (vcf_hci/scan.py scan_hosts)                   │
+│ --threads default 8, CLI maximum 96. In-flight hosts follow that limit.     │
 └───────────────┬─────────────────────────────────────────────┬───────────────┘
                 │ Host 1 (192.168.1.10)                       │ Host 2 (192.168.1.11)
                 ▼                                             ▼
@@ -26,38 +26,55 @@ The Redfish collection engine employs a **two-tier concurrency model** designed 
 ```
 
 ### Key Concurrency Parameters
-* **Outer Fleet Pool:** `ThreadPoolExecutor` running parallel host scans across the IP list. On low-latency enterprise LANs (<80ms RTT), outer concurrency safely scales up to 16–24 (max 32). Over high-latency WAN/VPN connections (>80ms avg RTT), the latency probe automatically auto-adjusts outer concurrency down to 6–8 threads (overrideable via `--force-threads`).
-* **Adaptive Inner BMC Condition Variable Concurrency:** Each `BaseRedfishCollector` instance maintains an inner concurrency controller backed by a `threading.Condition` variable (`self._inner_cv`) using `self._cache_lock` (`threading.RLock`). Inner concurrency is dynamically determined per BMC silicon generation (`self._max_inner_workers = 2..5`, defaulting to 3, clamped to 1 when throttled).
+* **Outer Fleet Pool:** `scan_hosts()` dispatches host scans through a `ThreadPoolExecutor`. `--threads` defaults to 8 and the CLI accepts at most 96. The pool is created with `max_workers=max(effective_threads, 96)`, and the number of in-flight hosts is `effective_threads` unless `SystemThrottleMonitor` steps it down. When requested threads are above 8 and `--force-threads` is not set, `probe_fleet_network_latency()` treats average RTT above 80 ms or maximum RTT above 150 ms as high latency and clamps the dispatch limit to 8.
+* **Adaptive Inner BMC Condition Variable Concurrency:** Each `BaseRedfishCollector` instance maintains an inner concurrency controller backed by a `threading.Condition` variable (`self._inner_cv`) using `self._cache_lock` (`threading.RLock`). `determine_inner_worker_ceiling()` sets `self._max_inner_workers` to 2, 3, 4, or 5. The initial value before that call is `_BMC_INNER_WORKERS` (3). Adaptive throttling clamps the active ceiling to 1.
 * **Active Worker Tracking:** `self._active_inner_workers` tracks concurrent HTTP requests in flight (0 to `self._max_inner_workers`).
 * **Zero Permit Leaks:** Unlike `BoundedSemaphore` with background drain threads, the Condition Variable pattern never leaks permits or leaves threads blocked across phase switches.
 * **Persistent Connection Pooling & 1:1 Socket Alignment:** Each collector operates an internal `StdlibHTTPConnectionPool` managing reusable `http.client.HTTPSConnection` instances with HTTP/1.1 Keep-Alive. Crucially, `self._conn_pool.max_connections` is dynamically aligned 1:1 with `self._max_inner_workers`, guaranteeing dedicated persistent sockets without pool contention.
 * **Dynamic Inter-Request Pacing:**
   * **Pipelined Zero-Pacing (`0.0s`):** When `MultipleHTTPRequests: true` is advertised (HPE Gen12 iLO 7, Lenovo ThinkSystem V3/V4) and the collector is unthrottled, pacing delay is reduced to 0.0s, eliminating 5–10s of artificial idle time per scan.
-  * **Conservative Pacing Floor (`>=0.10s`):** Enforced on fragile unpipelined platforms (Cisco M4/M5, Supermicro) and whenever adaptive throttling is active.
-  * **Default Pacing (`0.05s`):** Applied to standard modern enterprise BMC targets.
+  * **Conservative pacing floor (`>=0.10s`):** `compute_request_pacing()` applies it while `_throttled` is true, and also when `vendor` is `cisco` or `supermicro` and `multiple_http_requests` is false.
+  * **Default pacing (`0.05s`):** `_request_pacing_s` is `0.05` when ServiceRoot does not advertise `MultipleHTTPRequests`, and `compute_request_pacing()` returns that base value for other unthrottled vendors.
 
 ---
 
 ## 2. Phase Execution & Task Starvation Guardrails
 
-Host scanning runs in two distinct, timed execution phases:
-* **Phase 1 (~60s cap):** Basic system summary, BIOS attributes, SEL event log, OS software inventory, BMC security/license, PCIe device tree, and Firmware Inventory.
-* **Phase 2 (~60s cap):** Subsystem collectors (Storage controllers/drives, Network adapters, Memory DIMMs, GPU accelerators, FC HBAs, Power/PSUs, Thermal/Telemetry).
+Host scanning runs in two distinct, timed execution phases. `_phase_wait_budgets()` derives both waits from `--host-timeout` (default 300 seconds), not from a fixed 60-second cap:
+
+```python
+# BaseRedfishCollector._phase_wait_budgets()
+ht = float(getattr(self, "host_timeout", 300) or 300)
+if ht < 60.0:
+    ht = 60.0
+remaining = max(60.0, ht - float(elapsed_s or 0) - 15.0)
+raw_p1 = min(180.0, max(60.0, ht * 0.4))
+raw_p2 = min(300.0, max(90.0, ht * 0.6))
+if raw_p1 + raw_p2 <= remaining:
+    return raw_p1, raw_p2
+scale = remaining / (raw_p1 + raw_p2)
+p1 = max(30.0, raw_p1 * scale)
+p2 = max(60.0, remaining - p1)
+return p1, p2
+```
+
+* **Phase 1:** Basic system summary, BIOS attributes, SEL event log, OS software inventory, BMC security/license, PCIe device tree, and Firmware Inventory. `wait(_p1_futures, timeout=p1_timeout)` uses the Phase 1 budget above.
+* **Phase 2:** Subsystem collectors (Storage controllers/drives, Network adapters, Memory DIMMs, GPU accelerators, FC HBAs, Power/PSUs, Thermal/Telemetry), bounded by the Phase 2 budget.
 
 ```mermaid
 flowchart TD
-    subgraph Phase1 ["Phase 1: System, BIOS, Firmware, PCIe (60s Cap)"]
-        P1Start["Submit Phase 1 Sub-tasks"] --> P1Wait["wait(_p1_futures, timeout=60.0)"]
+    subgraph Phase1 ["Phase 1: System, BIOS, Firmware, PCIe"]
+        P1Start["Submit Phase 1 Sub-tasks"] --> P1Wait["wait(_p1_futures, timeout=p1_timeout)"]
         P1Wait --> P1Finish["Phase 1 Timeout or Completion"]
         P1Finish --> MarkExpired["self._phase1_expired = True\n_p1.shutdown(wait=False)"]
     end
 
     subgraph Yield ["Permit Yielding Mechanism"]
-        MarkExpired --> CheckThread["_thread_local.is_phase1 Check in _get()"]
-        CheckThread -->|If True| AbortP1["Abort GET & Yield _bmc_semaphore Immediately"]
+        MarkExpired --> CheckThread["_thread_local.is_phase1 Check in redfish_get"]
+        CheckThread -->|phase1 expired| AbortP1["Return None immediately"]
     end
 
-    subgraph Phase2 ["Phase 2: Storage, Network, Memory (60s Cap)"]
+    subgraph Phase2 ["Phase 2: Storage, Network, Memory"]
         AbortP1 --> PermitFree["BMC Permits Released"]
         PermitFree --> P2Start["Submit Phase 2 Sub-tasks"]
         P2Start --> P2Success["Phase 2 Tasks Execute Without Permit Starvation"]
@@ -65,7 +82,7 @@ flowchart TD
 ```
 
 ### The Permit Starvation Problem & Fix
-* **Problem:** If Phase 1 timed out at 60 seconds (due to BMC latency or a long `FirmwareInventory` sweep), background threads from Phase 1 remained active in Python's thread pool and continued making `_get()` calls. Under adaptive throttling (1 worker permit), these lingering Phase 1 threads monopolized the single BMC permit, completely blocking Phase 2 tasks (`storage`, `network`, `memory`) until Phase 2 also timed out.
+* **Problem:** If Phase 1 reached its `_phase_wait_budgets()` timeout (BMC latency or a long `FirmwareInventory` sweep), background threads from Phase 1 remained active in Python's thread pool and continued making `_get()` calls. Under adaptive throttling (1 worker permit), these lingering Phase 1 threads monopolized the single BMC permit, completely blocking Phase 2 tasks (`storage`, `network`, `memory`) until Phase 2 also timed out.
 * **Fix (Phase Isolation & Nested Pool Throttling):**
   1. Phase 1 threads are tagged via thread-local state: `_thread_local.is_phase1 = True`.
   2. Nested worker pools (NIC ports, NDFs, storage drives, DIMMs, PCIe devices) wrap their tasks via `_wrap_phase_task()` so worker threads inherit `is_phase1` / `is_phase2`.
@@ -101,7 +118,7 @@ Enterprise BMC controllers often degrade or drop TLS handshakes when under susta
 ### Implementation Highlights (`vcf_hci/collector/base.py`)
 * **Circuit Breaker Step-Down (`_handle_429_or_503` & `_handle_timeout`):** When HTTP 429/503 is received or `_consecutive_timeouts >= 2`, `self._throttled = True` is engaged. Concurrency is instantly demoted (`self._max_inner_workers = 1`), `self._conn_pool.max_connections` is clamped to 1, and inter-request pacing escalates with exponential backoff (up to 2.0s ceiling).
 * **Step-Up Recovery:** When `_consecutive_successes >= 4` while throttled, `self._throttled = False` is restored, `self._max_inner_workers = self._base_max_inner_workers` is restored, `self._conn_pool.max_connections` is re-aligned to the base worker count, and `self._inner_cv.notify_all()` unblocks waiting threads.
-* **Phase Transition Guarantee:** At Phase 2 entry, `self._throttled = False` and `self._inner_cv.notify_all()` are executed, ensuring Phase 2 tasks are never starved by earlier Phase 1 timeouts.
+* **Phase Transition Guarantee:** At Phase 2 entry, when the BMC is still responsive, `self._throttled = False` and `self._inner_cv.notify_all()` run. Pipelined targets also set `_request_pacing_s = 0.0`. That block does not assign `_max_inner_workers` back to `_base_max_inner_workers`; the base ceiling returns only after `_consecutive_successes >= 4` in `_check_adaptive_throttle()`. Phase 1 requests stop separately because `_phase1_expired` makes `redfish_get()` return `None`.
 * **SSL Handshake Backoff:** When an `SSLError` or `URLError` containing `"handshake"` or `"ssl"` occurs during retry, `time.sleep(2)` is applied before retrying to allow the BMC TLS stack to recover.
 
 ---
@@ -113,9 +130,10 @@ Enterprise BMC controllers often degrade or drop TLS handshakes when under susta
   * **Optimization (`collect_system.py`):** `collect_firmware_inventory()` filters out `Installed-*` URIs when a matching `Current-*` URI exists for the same component suffix. This reduces firmware GET calls from 50+ down to ~20 with zero loss of physical hardware data.
 * **Firmware Priority Sorting:** Remaining firmware URIs are sorted by priority: System/BIOS/iDRAC/CPLD/NIC/Storage Controller URIs (priority 0) are fetched before disk drive firmware URIs (priority 2).
 * **PCIe Device Tree Capping:** Dell servers with large expansion backplanes expose 60+ PCIe device URIs under `/Chassis/System.Embedded.1/PCIeDevices`.
-  * **Optimization (`collect_gpu.py`):** PCIe member URIs are priority-sorted using `_uri_priority_key()` (slots, integrated NICs, RAID, OCP, GPUs given priority 0; bridges and root ports given priority 2) and capped at **30 items max**, processed in time-bounded chunks with a 15-second total phase cap.
+  * **Optimization (`collect_gpu.py`):** PCIe member URIs are priority-sorted using `_uri_priority_key()` (slots, integrated NICs, RAID, OCP, GPUs given priority 0; bridges and root ports given priority 2) and capped at **64 items max**, processed in time-bounded chunks with a 15-second total phase cap. A hit on the cap or the deadline sets `pcie_inventory_partial` so the report does not present the table as complete.
+* **OData expand (`oem/dell.py` `oem_expandable_collections()`):** Models containing `R630`, `R730`, `R930`, `T630`, or `13G` return an empty map. Other Dell targets map FirmwareInventory, `{sys_uri}/EthernetInterfaces`, chassis `ThermalSubsystem/Fans`, `{sys_uri}/Memory`, and `{mgr_uri}/Oem/Dell/Jobs`.
 * **Nuvoton Arbel High Concurrency (17G / iDRAC10):**
-  * Dell PowerEdge 17G (R670, R770, R7725) features a quad-core 64-bit SoC @ 1.0 GHz with 2 GB RAM. Benchmark profiling confirms zero latency saturation up to 5 concurrent threads; dynamically sized to **5 inner workers** with 5 persistent sockets.
+  * `classify_bmc_silicon()` returns `"Nuvoton Arbel"` for `arbel`, `idrac10` / `idrac 10`, `remote access controller 10`, models `r670`, `r770`, `r7725`, `r870`, `r970`, `c670`, `poweredge 17g`, or Dell iDRAC firmware that starts with `10.`. `determine_inner_worker_ceiling()` returns **5** only when `multiple_http_requests` is true and `"arbel"` is in that silicon string. Otherwise this silicon string takes the non-pipelined path and returns **3** (`"nuvoton arbel"` does not match the Pilot/AST high-latency rule).
 
 ### HPE iLO (iLO 4 / iLO 5 / iLO 6 / iLO 7)
 * **Embedded LOM Discovery:** HPE iLO 5 exposes physical ALOM cards under `/Chassis/1/NetworkAdapters`, but exposes onboard 1GbE/10GbE LOMs (e.g. HPE 331i 4-port) under `/Systems/1/BaseNetworkAdapters` and `/Systems/1/EthernetInterfaces`.
@@ -124,48 +142,48 @@ Enterprise BMC controllers often degrade or drop TLS handshakes when under susta
   * **Optimization (`pci_utils.py`):** The loop breaks early as soon as the first function returns valid `VendorId` and `DeviceId`.
 * **Transient 503 / Resource Not Ready:** HPE iLO 5 returns `Oem.Hpe.ResourceNotReadyRetry` during background inventory refresh.
   * **Optimization (`oem/hpe.py`):** `oem_handle_retry()` detects this condition, pauses for 3 seconds, and retries the HTTP GET once.
-* **iLO 7 Pipelined Zero-Pacing & Concurrency Scaling (Gen12):**
-  * HPE Gen12 advertises `MultipleHTTPRequests: true` in `ProtocolFeaturesSupported`. The collector automatically engages pipelined zero-pacing (`_request_pacing_s = 0.0s`), eliminating the 50ms pause between queries. Concurrency dynamically scales to **4–5 inner workers** based on response latency.
+* **iLO expand (`oem/hpe.py` `oem_expandable_collections()`):** Memory, Chassis Thermal, ThermalSubsystem Fans, and FirmwareInventory are level 1. When `expand_max_levels >= 2` or `expand_syntax == "*"`, Chassis NetworkAdapters is added at level 2 and Storage at level 1.
+* **iLO 7 pipelined pacing and concurrency (Gen12):**
+  * `classify_bmc_silicon()` returns `"HPE Gen12 Custom 64-bit"` when the search text contains `ilo 7`, `ilo7`, or `gen12`. Zero pacing is `compute_request_pacing()` returning `0.0` when `multiple_http_requests` is true and the collector is not throttled; silicon alone does not force it. `determine_inner_worker_ceiling()` returns **5** when that flag is true and the silicon string contains `ilo 7` or `gen12`. The same silicon string otherwise returns **3**.
 
 ### Lenovo ThinkSystem (XCC / XCC2 / XCC3)
-* **Multi-Level NetworkAdapter Expansion (`MaxLevels: 2`):**
-  * Traverses adapters, subordinate `NetworkPorts`, and `NetworkDeviceFunctions` with PCIe functions and MAC addresses in a single HTTP GET.
-* **Pipelined Zero-Pacing (V3 / V4):**
-  * Advertises `MultipleHTTPRequests: true` on ServiceRoot. Collector sets `_request_pacing_s = 0.0s`, eliminating artificial idle delays.
-* **AST2600 Concurrency Scaling:**
-  * ThinkSystem V3/V4 on AST2600 silicon scales safely to **4 inner workers**, avoiding the saturation inflection observed at c=5 (366ms).
+* **Expand map (`oem/lenovo.py` `oem_expandable_collections()`):** FirmwareInventory, `{sys_uri}/Memory`, and `{chassis_uri}/PCIeDevices`, plus Chassis NetworkAdapters at level 2.
+* **Pipelined zero-pacing:** `_request_pacing_s` is `0.0` only when ServiceRoot `ProtocolFeaturesSupported.MultipleHTTPRequests` is true. `compute_request_pacing()` keeps that `0.0` while the collector is unthrottled.
+* **AST2600 concurrency:** `classify_bmc_silicon()` returns `"AST2600"` for `ast2600`, `sr650 v3`, `sr630 v3`, `sr650 v4`, `sr630 v4`, `sr675 v3`, `vx650 v3`, `xcc2`, `xcc3`, `x13`, `x14`, `h13`, `h14`, `c220 m6`, `c240 m6`, `c220 m7`, or `c240 m7`. `determine_inner_worker_ceiling()` returns **4** only when `multiple_http_requests` is true and `"ast2600"` is in the silicon string. Without that flag the same silicon returns **3**, or **2** when `initial_latency_ms >= 350` because `"ast"` matches the high-latency rule. The c=5 inflection at 366 ms is the existing recorded saturation observation, not a second ceiling.
 
 ### Supermicro BMC
 * **HTML 404 Non-JSON Responses:** Supermicro Lighttpd web servers return HTML 404 pages instead of Redfish JSON error bodies when an endpoint is missing.
   * **Guardrail (`base.py`):** All HTTP response parsing is wrapped in `try ... except json.JSONDecodeError` to prevent crashes.
 * **DCMS License Gating:** `/Storage` endpoints on Supermicro BMCs return `OemLicenseNotPassed` unless a DCMS license key is installed.
   * **Optimization (`oem/supermicro.py`):** `_is_license_blocked()` detects license gates and transparently falls back to `/Systems/1/SimpleStorage`.
-* **Conservative Pacing Floor:** Enforces `pacing = max(pacing, 0.10s)` and clamps legacy AST2400 (X10) to **2 inner workers**.
+* **Expand hook:** `oem_expandable_collections()` returns `{}`.
+* **Conservative pacing and legacy ceiling:** `compute_request_pacing()` applies `max(pacing, 0.10)` when `vendor == "supermicro"` and `multiple_http_requests` is false. `classify_bmc_silicon()` returns `"AST2400"` for `ast2400`, or for `x10` when the text also contains `supermicro` or `smc`. `determine_inner_worker_ceiling()` returns **2** for that silicon only on the non-pipelined path. A pipelined AST2400 target uses the pipelined branch instead (4 when `0 < initial_latency_ms < 350`, otherwise 3).
 
 ### Cisco IMC
 * **Manager Path Discrepancy:** Cisco IMC uses `/Managers/CIMC` rather than standard `/Managers/1` or `/Managers/iDRAC.Embedded.1`.
   * **Optimization (`oem/cisco.py`):** `oem_manager_paths()` registers `/Managers/CIMC`.
 * **Chassis-Level SEL:** LogServices are exposed under `/Chassis/1/LogServices/SEL` rather than the system root.
-* **Cisco VIC Subordinate Entity & Inline Port Pre-Caching (`collect_network.py`):**
-  * On Cisco UCS C-Series M6+ with VIC adapters, `$expand=*($levels=2)` on `Chassis/1/NetworkAdapters` retrieves adapters and nested `NetworkPorts` / `NetworkDeviceFunctions`.
-  * Pre-caches top-level adapter objects, ports, and functions directly into `_request_cache` (including `Oem.Cisco.VicPort` and `Oem.CIMC` structures).
-  * `pci_utils.extract_pci_ids_from_dict()` short-circuits redundant network GET requests when `Members` or dictionary structures are present.
-  * Registers `/redfish/v1/Systems/{id}/EthernetInterfaces` in `oem_expandable_collections()` for single-query bulk vNIC retrieval.
-  * Cuts network phase HTTP GET calls by >=40% with 100% field parity.
-* **Generational Concurrency:** Clamps legacy M4/M5 (Pilot-3/AST2500) to **2–3 workers** with 0.10s pacing floor; modern M6/M7 (AST2600) scales to **4 workers**.
+* **Expand hook (`oem/cisco.py` `oem_expandable_collections()`):** Returns `{}` when `expand_supported` is false. Otherwise it maps Chassis NetworkAdapters at level 2, and Memory, Storage, and `{sys_uri}/EthernetInterfaces` at level 1. A previous revision of this guide recorded at least a 40% drop in network-phase GET calls with field parity; that figure is historical and was not remeasured.
+* **Generational concurrency:** `classify_bmc_silicon()` returns `"Pilot-3"` for `c220 m4` / `c240 m4`, `"AST2500"` for `c220 m5` / `c240 m5`, and `"AST2600"` for `c220 m6`, `c240 m6`, `c220 m7`, and `c240 m7`. The ceiling is `determine_inner_worker_ceiling()`, not a separate Cisco table: non-pipelined Pilot-3 returns 2; non-pipelined AST2500 returns 3, or 2 when `initial_latency_ms >= 350`; pipelined AST2600 returns 4. `compute_request_pacing()` applies the 0.10s floor when `vendor == "cisco"` and `multiple_http_requests` is false.
 
 ### Quanta BMC
 * **Fast-Path Self Roots:** Quanta BMCs (e.g. QuantaGrid D42A-2U) place system, chassis, and manager roots under `/Systems/Self`, `/Chassis/Self`, and `/Managers/Self`.
   * **Optimization (`oem/quanta.py`):** `oem_fastpath_roots()` probes `/Systems/Self` first, avoiding slow collection member iteration.
 * **Storage Endpoint Dedup:** Redfish storage mixin probes `/Storage` automatically.
-  * **Optimization (`oem/quanta.py`):** `oem_storage_endpoints()` returns only `/SimpleStorage` to avoid redundant duplicate GETs against `/Storage`.
+  * **Optimization (`oem/quanta.py`):** `oem_storage_endpoints()` returns `{sys_uri}/SimpleStorage` when `sys_uri` is set. `oem_expandable_collections()` returns `{}`, and the adapter sets `expand_supported = False`.
 * **Shallow Crawl Tolerance:** Ingested Quanta mockups omit deep Processor and Storage leaves. The collector gracefully falls back to ProcessorSummary and SimpleStorage without failing the scan.
 
 ### GIGABYTE BMC (AMI MegaRAC)
 * **Fast-Path Self Roots:** AMI MegaRAC firmware identifies system, chassis, and manager entities under `/Self`.
   * **Optimization (`oem/gigabyte.py`):** `oem_fastpath_roots()` probes `/Systems/Self` first, immediately resolving root URIs.
 * **Drive Telemetry Mapping:** Drives expose slot numbers under `Oem.GBT.SlotNumber`.
-  * **Optimization (`oem/gigabyte.py`):** `oem_drive_metrics()` extracts slot information from `Oem.GBT` while maintaining backward compatibility with `Oem.Gigabyte`.
+  * **Optimization (`oem/gigabyte.py`):** `oem_drive_metrics()` reads `Oem.GBT`, `Oem.Gbt`, or `Oem.Gigabyte`, and copies `SlotNumber` when present.
+* **Expand hook:** `oem_expandable_collections()` maps `{sys_uri}/Storage` and `{sys_uri}/Memory` at level 1, and also registers `/redfish/v1/Systems/Self` and `/redfish/v1/Systems/1` for both collections.
+
+### ASRock Rack BMC (AMI MegaRAC)
+* **Registry:** `ASRockCollector` is the last `_REGISTRY` entry. `VENDOR_MATCH` includes `ASROCK`, `ASROCKRACK`, `ASROCK RACK`, `ROMED8`, `EPYCD8`, `GENOAD8`, and `BERGAMOD8`.
+* **Fast-path and managers:** `oem_fastpath_roots()` probes `/redfish/v1/Systems/Self` and, on success, returns Systems/Chassis/Managers `Self`. `oem_manager_paths()` returns `/redfish/v1/Managers/Self` and `/redfish/v1/Managers/1`.
+* **Expand hook (`oem_expandable_collections()`):** Storage and Memory at level 1 for the active `sys_uri`, plus the same two collections under `/redfish/v1/Systems/Self` and `/redfish/v1/Systems/1`. The constructor sets `expand_syntax = "*"`, `expand_max_levels = 2`, and `expand_supported = True`. `classify_bmc_silicon()` has no ASRock era; an empty silicon string uses the fallback in `determine_inner_worker_ceiling()`.
 
 ---
 
@@ -175,25 +193,42 @@ To safely optimize fleet collection throughput without risking watchdog resets o
 
 ### Classification & Sizing Rules (`vcf_hci/collector/discovery.py`)
 
+`classify_bmc_silicon()` checks the eras below in order and returns `""` when none match. `_configure_inner_worker_sizing()` passes that string, `multiple_http_requests`, the initial GET latency, and the root `Model` into `determine_inner_worker_ceiling()`. The connection pool is then set 1:1 with the returned ceiling.
+
 ```python
-# Sizing logic from determine_inner_worker_ceiling():
+# determine_inner_worker_ceiling() in vcf_hci/collector/discovery.py
+silicon_lower = (silicon_generation or "").strip().lower()
+model_lower = (model or "").lower()
+
 if multiple_http_requests:
-    if silicon in ("Nuvoton Arbel", "HPE Gen12 Custom 64-bit"):
-        return 5  # Quad-core / custom 64-bit ARM; zero saturation observed
-    if silicon == "AST2600" or initial_latency_ms < 350.0:
-        return 4  # Dual Cortex-A7 @ 1.2 GHz; stable through c=4
-if silicon in ("Pilot-3", "AST2400") or initial_latency_ms >= 350.0:
-    return 2      # Single ARM9 @ 400 MHz; c=3 causes 4.4x latency surge
-return 3          # Standard unpipelined fallback ceiling
+    if "arbel" in silicon_lower or "ilo 7" in silicon_lower or "gen12" in silicon_lower:
+        return 5
+    if "ast2600" in silicon_lower:
+        return 4
+    if 0 < initial_latency_ms < 350.0:
+        return 4
+    return 3
+
+if "pilot-3" in silicon_lower or "pilot3" in silicon_lower or "ast2400" in silicon_lower:
+    return 2
+if any(m in model_lower for m in ("r7525", "r6525", "r7515", "r7415", "r7425", "r6415", "r6515")):
+    return 2
+if initial_latency_ms >= 350.0 and ("pilot" in silicon_lower or not silicon_lower or "ast" in silicon_lower):
+    return 2
+return 3
 ```
 
-| Silicon Era | Microprocessor & Architecture | Representative Hardware | Root/Manager Detection Signatures | Pipelined Zero-Pacing | Inner Worker Ceiling | Socket Pool Capacity | Empirical Saturation Point |
-| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Nuvoton Arbel** | Quad 64-bit Cortex-A9 @ 1.0 GHz, 2 GB RAM | Dell PowerEdge 17G (R670, R770, R7725, R870, R970) | `arbel`, `idrac10`, `r670`, `r770`, `r7725`, `poweredge 17g`, FW `10.x` | Yes (if advertised) | **5 workers** | **5 sockets** | None (Flat across c=1..5) |
-| **HPE Gen12 Custom** | Multi-core 64-bit ARM ASIC, shared socket pool | HPE ProLiant Gen12 (DL360/DL380 Gen12, iLO 7) | `ilo 7`, `ilo7`, `gen12` | **Yes** (`0.0s`) | **4–5 workers** | **4–5 sockets** | *Rel inflection c=3 (abs <103ms) |
-| **AST2600** | Dual Cortex-A7 @ 1.2 GHz, 2–4 GB DDR4 | Lenovo SR650 V3/V4 (XCC2/3), Supermicro X13/X14, Cisco M6/M7 | `ast2600`, `sr650 v3`, `xcc2`, `xcc3`, `x13`, `x14`, `c220 m6`, `c240 m6` | **Yes** (V3/V4 `0.0s`) | **4 workers** | **4 sockets** | c = 5 (366ms, 2.9x baseline) |
-| **AST2500 / Pilot-4** | Dual ARM11 / A9 @ 800 MHz, 512MB–1GB RAM | Dell 14G/15G (iDRAC9), Cisco M5 (C220 M5), Lenovo V1/V2, Supermicro X11/X12 | `ast2500`, `pilot-4`, `r740`, `r750`, `idrac9`, `c220 m5`, `sr650`, `gen10` | Standard (50ms) | **3 workers** | **3 sockets** | c = 5 (295ms, 3.1x baseline) |
-| **Pilot-3 / AST2400** | Single ARM9 @ 400 MHz, 256MB RAM | Dell 13G (R730xd, iDRAC8), Cisco M4, Supermicro X10, HPE Gen9 (iLO 4) | `pilot-3`, `ast2400`, `r730xd`, `idrac8`, `c220 m4`, `x10`, `ilo 4` | No (Floor >=100ms) | **2 workers** | **2 sockets** | **c = 3 (2,111ms, 4.4x surge)** |
+`compute_request_pacing()` returns `0.0` when `multiple_http_requests` is true and the collector is not throttled. It returns at least `0.10` while throttled, and also for `vendor` `cisco` or `supermicro` when pipelining is off. Silicon generation does not itself select the pacing value. Recorded saturation figures below are historical observations, not additional return values.
+
+| Silicon Era | `classify_bmc_silicon()` match, in order | Ceiling from `determine_inner_worker_ceiling()` | Recorded saturation (historical) |
+| :--- | :--- | :--- | :--- |
+| **Nuvoton Arbel** | `arbel`, `idrac10`, `idrac 10`, `remote access controller 10`; or `r670`, `r770`, `r7725`, `r870`, `r970`, `c670`, `poweredge 17g`; or Dell plus iDRAC and firmware starting `10.` | **5** when `multiple_http_requests` and `"arbel"` is in the silicon string; otherwise **3** | Flat across c=1..5 |
+| **HPE Gen12 Custom 64-bit** | `ilo 7`, `ilo7`, `gen12` | **5** when `multiple_http_requests` and the silicon string contains `ilo 7` or `gen12`; otherwise **3** | Relative inflection at c=3 (absolute under 103 ms) |
+| **AST2600** | `ast2600`; `sr650 v3`, `sr630 v3`, `sr650 v4`, `sr630 v4`, `sr675 v3`, `vx650 v3`, `xcc2`, `xcc3`; `x13`, `x14`, `h13`, `h14`; `c220 m6`, `c240 m6`, `c220 m7`, `c240 m7` | **4** when `multiple_http_requests`; otherwise **3**, or **2** when latency is at least 350 ms | c=5 at 366 ms, 2.9x baseline |
+| **Pilot-3** | `pilot-3`, `pilot3`; `r730xd`, `r730`, `r630`, `r930`, `idrac8`, `idrac 8`, `remote access controller 8`; `c220 m4`, `c240 m4`, `gen9`, `ilo 4`, `ilo4` | Non-pipelined: **2**. Pipelined: **4** when `0 < latency < 350`, else **3** | c=3 at 2,111 ms, 4.4x surge |
+| **AST2400** | `ast2400`; or `x10` together with `supermicro` or `smc` | Same non-pipelined **2** / pipelined **4-or-3** split as Pilot-3 | Grouped with the Pilot-3 observation above |
+| **AST2500** (also `pilot-4` / `pilot4`) | `ast2500`, `pilot-4`, `pilot4`; `r740`, `r640`, `r750`, `r650`, `r760`, `r660`, `r7525`, `r6525`, `r7515`, `r7415`, `r7425`, `r7615`, `r7625`, `r6415`, `r6515`, `r840`, `r940`, `r960`; `idrac9`, `idrac 9`, `remote access controller 9`; `c220 m5`, `c240 m5`; bare `sr650` / `sr630`; `gen10`, `gen11`, `ilo 5`, `ilo 6`; `x11`, `x12`; `quanta`, `d42a` | Pipelined: **4** when `0 < latency < 350`, else **3**. Non-pipelined: **2** when the model contains `r7525`, `r6525`, `r7515`, `r7415`, `r7425`, `r6415`, or `r6515`; otherwise **2** at latency of at least 350 ms, else **3** | c=5 at 295 ms, 3.1x baseline |
+| **Unclassified** | return `""` | Pipelined: **4** when `0 < latency < 350`, else **3**. Non-pipelined: **2** at latency of at least 350 ms, else **3**, unless the Dell AMD model rule above matches | — |
 
 ---
 
@@ -224,8 +259,8 @@ return 3          # Standard unpipelined fallback ceiling
 | **`readiness-full`** (Default) | Exhaustive audit: Phase 1 (BIOS, SEL, Firmware Inventory, PCIe, Licenses) + Phase 2 (Storage, NICs, Memory, DIMM topology, GPUs, HBAs, LLDP, Telemetry). | ~25–60s / host | **Standard for VCF 9.1 Readiness**: produces complete hardware audit and vSAN ESA certification. |
 | **`readiness-lean`** (`--lean` / `--profile readiness-lean`) | High-speed audit: Phase 1 + Phase 2 core storage/NICs/memory, skipping historical telemetry logs, secondary member GETs, and extra sensor walks. | ~15–30s / host | **High-Throughput Fleet Audits**: ideal for large enterprise sweeps where vSAN ESA readiness verdict is required without historical metrics. |
 | **`inventory-lite`** (`--profile inventory-lite`) | Rapid pre-screening: Systems summary, CPU verdict, Power/Thermal rollup, Storage controller rollup, NIC summary (no deep DIMM/PCIe/FW walk). | Shortest supported profile | **Rapid Pre-Qualification**: filters platforms before a full readiness scan. |
-| **LAN High Concurrency** (`--threads 16-24`) | Outer fleet concurrency up to 24 workers (max 32), with inner BMC workers locked at 3. | High throughput | Recommended for dedicated 1GbE/10GbE management subnets (<80ms RTT). |
-| **VPN / WAN Auto-Throttling** (Auto / `--threads 6-8`) | Latency probe auto-clamps outer concurrency to 6–8 threads when avg RTT > 80ms. | Medium | Prevents connection drops and TCP socket exhaustion over WAN/VPN links. |
+| **LAN concurrency** (`--threads`, default 8, maximum 96) | Outer in-flight hosts follow the requested thread count. Inner workers follow `determine_inner_worker_ceiling()`, not a fixed 3. | High throughput | Operator-selected for a dedicated management subnet. The latency clamp does not raise the thread count. |
+| **VPN / WAN auto-throttle** | When requested threads are above 8 and `--force-threads` is absent, average RTT above 80 ms or maximum RTT above 150 ms clamps dispatch to 8. | Medium | Prevents connection drops and TCP socket exhaustion over WAN/VPN links. |
 | **Allow Partial Scans** (`--allow-partial`) | Harvests valid subsystems even if non-critical endpoints time out. | Resilient | **Always recommended** for large fleets with mixed or degraded BMC health. |
 
 ---
@@ -238,10 +273,10 @@ Enterprise BMCs are embedded microcontrollers running resource-constrained Real-
 
 | Symptom / Log Output | Underlying Root Cause | Impact |
 | :--- | :--- | :--- |
-| `[⚠️] <host> (Partial Scan (missing: ...))` | Redfish collection timed out during Phase 1 (60s) or Phase 2 (60s). Specific sub-tasks (e.g. storage, NICs, firmware) were cut off to prevent host hanging indefinitely. | Individual host report is marked with `⚠️ Partial (Incomplete)` banner; hardware tables missing data display warning callouts. |
+| `[⚠️] <host> (Partial Scan (missing: ...))` | Redfish collection reached the Phase 1 or Phase 2 wait from `_phase_wait_budgets()` (`--host-timeout`, default 300s). Specific sub-tasks (storage, NICs, firmware) were cut off. | Individual host report is marked with `⚠️ Partial (Incomplete)` banner; hardware tables missing data display warning callouts. |
 | `[WARN] <host> — BMC latency/timeout detected (2 consecutive timeouts) — stepping down concurrency` | The BMC embedded web server is overwhelmed or dropping connections. The collector dynamically throttles to 1 inner worker. | Scan slows down for this host to avoid tripping BMC DoS protections. |
-| `[SECTION ERROR] <host> / firmware_inventory: timed out` | Dell iDRAC or HPE iLO with 60+ firmware inventory endpoints took >60s to enumerate every firmware image. | BIOS and System summary succeed; firmware table reports missing data. |
-| `[SECTION ERROR] <host> / storage: timed out` | Controller or drive pass-through query under `/Systems/1/Storage` hung or responded in >60s. | Storage disks and controllers missing from report. |
+| `[SECTION ERROR] <host> / firmware_inventory: timed out` | Dell iDRAC or HPE iLO firmware inventory did not finish inside the Phase 1 wait. | BIOS and System summary succeed; firmware table reports missing data. |
+| `[SECTION ERROR] <host> / storage: timed out` | A controller or drive query under storage did not finish inside the Phase 2 wait. | Storage disks and controllers missing from report. |
 | `URLError / SSLError: [SSL: BAD_HANDSHAKE_LENGTH]` or Connection reset | BMC TLS session cache exhaustion. The BMC cannot negotiate new SSL handshakes. | Collector applies 2s exponential backoff and retries. |
 
 ### 7.2 Remediation Playbook
@@ -293,7 +328,7 @@ The Web UI provides a dedicated **"🔄 Retry Incomplete Hosts"** remediation bu
 
 #### Action 3: Pre-Scan Latency Probing & VPN Auto-Throttling (v7.0.0+)
 The scanner automatically performs a TCP RTT latency probe on candidate target BMCs before scanning begins (`probe_fleet_network_latency()` in `vcf_hci.protocol`):
-* If average RTT > 80ms or maximum RTT > 150ms (indicating WAN or VPN links), concurrency is automatically scaled down to **8 threads** (or fewer) to prevent TCP socket exhaustion.
+* If average RTT is above 80 ms or maximum RTT is above 150 ms, and the requested thread count is above 8, concurrency is clamped to **8 threads** unless `--force-threads` is set.
 * If unconstrained thread concurrency is explicitly required across a VPN, pass `--force-threads` on the CLI or `force_threads: True` in the Web API.
 
 #### Action 4: CLI Fleet Tuning Options for Slow BMC Networks

@@ -19,11 +19,19 @@ from vcf_hci.collector.pci_utils import clean_oem_adapter_title
 from vcf_hci.compat.firmware import is_zero_or_null_firmware
 from vcf_hci.compat_engine import check_defective_drive_firmware, evaluate_drive_fw, evaluate_pci_compatibility
 from vcf_hci.constants import KB_TRIMODE, is_generic_name, is_unfriendly_nic_name, normalize_component_manufacturer
+from vcf_hci.drive_counters import nonnegative_io_total
 from vcf_hci.hcl import evaluate_drive_hcl_tier, lookup_unique_hcl_device
 from vcf_hci.obfuscation import _pii_span
+from vcf_hci.report.drive_alerts import drive_aging_wear_reasons
+from vcf_hci.report.formatting import compact_storage_tier_labels
 from vcf_hci.report.helpers import _h, badge  # noqa: F401
 from vcf_hci.report.switch_topology import classify_switch
-from vcf_hci.storage_capacity import drive_capacity_display, normalize_storage_capacities
+from vcf_hci.storage_capacity import (
+    drive_capacity_display,
+    drive_capacity_tib_display,
+    gib_to_tib_display,
+    normalize_storage_capacities,
+)
 from vcf_hci.storage_media import drive_type_display
 from vcf_hci.storage_pcie import drive_link_description, drive_pcie_view
 from vcf_hci.ui_clarity import drive_icon_html, icon_html
@@ -922,7 +930,9 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
         _is_nvme_drive = "NVME" in _proto_up or "PCIE" in _proto_up or drive.get("is_edsff") or drive.get("is_nvme")
 
         vsan_badge = eval_hcl["status_badge"]
-        hcl_str = eval_hcl["hcl_str"]
+        hcl_str = compact_storage_tier_labels(eval_hcl["hcl_str"])
+        from vcf_hci.report.memory_tiering import drive_memory_tiering_badges
+        vsan_badge += drive_memory_tiering_badges(drive, eval_hcl, json_hcl, stacked=True)
         if (drive.get("behind_vmd") or ctrl.get("is_vmd")) and _is_nvme_drive and not drive.get("is_boot"):
             if "Requires VMD Disabled in BIOS" not in vsan_badge:
                 vsan_badge += (
@@ -952,6 +962,16 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
             media_type=drive.get("media_type", "")
         )
         pcie_html = _pcie_info_html(drive)
+        # Keep the matching method, but show the identifier once in Type/Bus.
+        displayed_pci = drive.get('pci_quad') or (
+            f"{drive.get('vendor_id')}:{drive.get('device_id')}"
+            if drive.get('vendor_id') and drive.get('device_id') else ''
+        )
+        if displayed_pci:
+            hcl_str = re.sub(
+                r'Exact PCI Quad\s+' + re.escape(_h(str(displayed_pci))) + r'(?=\))',
+                'Exact PCI Quad', hcl_str, flags=re.IGNORECASE,
+            )
         _drive_model = str(drive.get("model", "") or "")
         _drive_fw = str(drive.get("firmware", "N/A") or "N/A")
         _has_defect = bool(check_defective_drive_firmware(_drive_model, _drive_fw))
@@ -1012,7 +1032,7 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
         temp_c = drive.get("temperature_c")
         poh = drive.get("power_on_hours")
         pred_fail = drive.get("failure_predicted")
-        tbw = drive.get("tbw_written") if drive.get("tbw_written") is not None else drive.get("tbw")
+        tbw = nonnegative_io_total(drive.get("tbw_written") if drive.get("tbw_written") is not None else drive.get("tbw"))
         unsafe_sd = drive.get("unsafe_shutdowns")
 
         smart_tags = []
@@ -1028,8 +1048,13 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
         if unsafe_sd is not None and isinstance(unsafe_sd, (int, float)) and unsafe_sd > 0:
             sd_cls = "warning" if unsafe_sd >= 50 else "info"
             smart_tags.append(f"<span class='badge {sd_cls}' style='font-size:.7rem;' title='Unsafe Shutdown Count'>⚡ {int(unsafe_sd)} shutdowns</span>")
-        if (isinstance(poh, (int, float)) and poh >= 30000) or (isinstance(unsafe_sd, (int, float)) and unsafe_sd >= 50):
-            smart_tags.append("<span class='badge warning' style='font-size:.7rem;' title='High Power-On Hours (>30,000h) or Unsafe Shutdowns (>=50)'>🟡 Aging / Wear Alert</span>")
+        aging_reasons = drive_aging_wear_reasons(drive)
+        if aging_reasons:
+            alert_reason = _h("; ".join(aging_reasons))
+            smart_tags.append(
+                f"<span class='badge warning' style='font-size:.7rem;' "
+                f"title='Aging / Wear Alert: {alert_reason}'>🟡 Aging / Wear Alert</span>"
+            )
 
         smart_html = f"<br>{' '.join(smart_tags)}" if smart_tags else ""
 
@@ -1039,7 +1064,7 @@ def _render_ctrl_drives(ctrl, json_hcl=None, csv_db=None):
             f"<td><strong>{_h(drive.get('model','Unknown'))}</strong>"
             f"<br><small style='color:var(--text-muted)'>PN: {_h(drive.get('product_id','N/A'))}</small>{hcl_str}{smart_html}</td>"
             f"<td><span class='report-media'>{drive_icon_html(drive.get('protocol'), drive.get('media_type'))}<span class='report-media-label' data-preserve-emojis>{_h(drive_type_display(drive.get('media_type'), drive.get('protocol')))}</span></span>{_conn_tag}{pcie_html}</td>"
-            f"<td title='{_h(drive.get('capacity_data_quality_note', ''))}'><b>{drive_capacity_display(drive, include_unit=True)}</b></td>"
+            f"<td title='{_h(drive.get('capacity_data_quality_note', ''))}'><b>{drive_capacity_tib_display(drive)}</b></td>"
             f"<td>{_fw_cell}</td>"
             f"<td>{end_badge}</td><td>{_health_cell}</td><td>{vsan_badge}</td>"
             f"<td><a href='{bcg_ssd}' target='_blank' class='btn-link'>BCG ↗</a></td></tr>"
@@ -1090,13 +1115,23 @@ def _ctrl_meta_html(ctrl: dict, hcl_data: Optional[dict] = None) -> str:
     if b_badge and b_badge != "N/A":
         parts.append(b_badge)
 
+    volume_details = ''
     vols = ctrl.get("volumes") or []
     if vols:
-        vol_strs = []
+        volume_rows = []
         for v in vols:
-            boot_icon = " 🚀 [Boot]" if v.get("bootable") else ""
-            vol_strs.append(f"<b>{_h(v.get('name'))}</b> ({_h(v.get('volume_type'))}, {v.get('capacity_gb')} GB, {_h(v.get('health'))}{boot_icon})")
-        parts.append(f"Virtual Disks: {', '.join(vol_strs)}")
+            boot_label = ' [Boot]' if v.get('bootable') else ''
+            volume_rows.append(
+                f"<tr><td>{_h(v.get('name'))}{boot_label}</td><td>{_h(v.get('volume_type'))}</td>"
+                f"<td>{_h(gib_to_tib_display(v.get('capacity_gb')))}</td><td>{_h(v.get('health'))}</td></tr>"
+            )
+        volume_details = (
+            "<details class='accordion report-controller-volumes' style='margin-bottom:.6rem'>"
+            f"<summary>Virtual disks ({len(vols)})</summary><div class='accordion-body'>"
+            "<div style='overflow-x:auto'><table><thead><tr><th>Name</th><th>Type</th>"
+            "<th>Capacity (TiB)</th><th>Health</th></tr></thead><tbody>"
+            + ''.join(volume_rows) + '</tbody></table></div></div></details>'
+        )
 
     _ctrl_item = lookup_unique_hcl_device(
         vid=cvid, did=cdid, svid=csvid, ssid=cssid, json_hcl=hcl_data, model_name=ctrl_name
@@ -1127,11 +1162,11 @@ def _ctrl_meta_html(ctrl: dict, hcl_data: Optional[dict] = None) -> str:
         parts.append(f"<a href='{bcg_io_url}' target='_blank' class='btn-link' style='font-size:.78rem;'>I/O BCG ↗</a>")
 
     if not parts:
-        return ""
+        return volume_details
     return (
         "<p style='font-size:.82rem;color:var(--text-muted);margin:-.4rem 0 .6rem'>"
         + "&emsp;".join(parts)
-        + "</p>"
+        + "</p>" + volume_details
     )
 
 

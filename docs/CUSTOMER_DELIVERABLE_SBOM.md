@@ -22,6 +22,7 @@ Standalone builds include a selected Python interpreter and its native libraries
 |---|---|---|---|
 | `vcf_hci` | 9.12.1 runtime label; working-tree changes may be unreleased | LicenseRef-CA-Inc | Scanner source and generated application assets |
 | `@cds/core` CSS, dark theme and selected SVG outlines | 5.7.0 | MIT; [retained notice](../licenses/clarity-core-MIT.txt) | Embedded local UI/report assets; Angular and Core custom-element runtimes are not included |
+| `pyvmomi` | 9.0.0.0 pinned optional SDK wheel | Apache-2.0; [retained license](../licenses/pyvmomi/LICENSE.txt) | Lazy-loaded for MTAT and vSphere Inventory vCenter collection; not a core scan dependency |
 | Packaged Network I/O catalog | `vcf_hci/hcl/io_nics.json`; preserve dataset metadata/hash | Broadcom dataset terms; separate from the Clarity license | Local Network I/O correlation |
 | vSAN HCL data | Operator’s local/imported snapshot; preserve provenance, timestamp and hash | Dataset terms apply | Explicit download/import or selected distribution data; not implied by tool version |
 | Optional AES implementation | Actual installed `pycryptodomex` / `pycryptodome` version | Retain the installed package’s notices | Optional vault path; no required project dependency |

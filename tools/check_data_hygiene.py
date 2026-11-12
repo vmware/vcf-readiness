@@ -81,6 +81,8 @@ VIOLATION_PATTERNS = [
 ]
 
 # Substrings that are always fine (checked case-insensitively against the matched text).
+EXACT_ALLOWLIST = {"broadcom.com"}
+
 ALLOWLIST = [
     "rainpole.io",
     "rainpole.net",
@@ -124,6 +126,10 @@ if _private_rules.exists():
 
 def is_allowlisted(matched_text: str) -> bool:
     low = matched_text.lower()
+    # Public vendor root only. Substring-allowlisting this would also exempt
+    # internal subdomains, so keep exact public identities separate.
+    if low in EXACT_ALLOWLIST:
+        return True
     return any(a.lower() in low for a in ALLOWLIST)
 
 

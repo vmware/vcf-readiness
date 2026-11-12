@@ -114,17 +114,22 @@ Do not expose the UI on a reachable interface merely to avoid SSH forwarding. No
 
 Ordinary scans use packaged or existing local compatibility data and do not download HCL data automatically.
 
+The Web UI refreshes public vSAN and Memory Tiering BCG data in the background at
+launch and rebuilds the dark-site ZIP. Add `--no-hcl-auto-refresh` for offline
+startup. Preloading with `--import-hcl` also suppresses HCL startup downloads.
+Memory Tiering data is included in generated/exported ZIPs and restored on import.
+
 The browser scanner separately checks public GitHub release metadata once per launch in a background thread. A newer stable release adds an **Update available** link beside the version. The check does not send scan targets, credentials or results, and it does not install updates. Network failures do not delay scanning. To suppress this optional request on an offline host, set `VCF_READINESS_CHECK_UPDATES=0` before starting the scanner:
 
 ```bash
-VCF_READINESS_CHECK_UPDATES=0 python3 vcfr_web.py
+VCF_READINESS_CHECK_UPDATES=0 python3 vcfr_web.py --no-hcl-auto-refresh
 ```
 
 On Windows Command Prompt:
 
 ```cmd
 set VCF_READINESS_CHECK_UPDATES=0
-python vcfr_web.py
+python vcfr_web.py --no-hcl-auto-refresh
 ```
 
 In the browser, open **Advanced Configuration → Broadcom HCL Database & Dark-Site Bundle**:
@@ -224,7 +229,7 @@ Check the final output directory printed by the application. The default is unde
 
 ### The HCL appears stale
 
-Default-offline operation intentionally does not refresh data. Use an approved imported bundle or explicitly run an HCL refresh from a network where public egress is allowed.
+CLI scans and offline Web UI launches intentionally retain existing data. Use an approved imported bundle or run an HCL refresh from a network where public egress is allowed. Online Web UI startup also attempts a background refresh; failures retain existing evidence.
 
 ### Scanner appearance and forgotten vault passphrases
 
