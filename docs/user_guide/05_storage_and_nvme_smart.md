@@ -66,8 +66,14 @@ The physical drives table inventories every drive attached to storage backplanes
 | **Protocol** | Bus protocol: `NVMe (PCIe)`, `SAS`, `SATA`. | NVMe protocol delivers direct CPU register mapping with microsecond latency. | [NVM Express Standards](https://nvmexpress.org/) |
 | **Category** | Classification: `vSAN ESA/OSA NVMe`, `vSAN OSA Compatible (HBA)`, `Unsupported NVMe RAID`. | Determines eligibility in the vSAN storage pool. | [vSAN Planning Guide](https://docs.vmware.com/en/VMware-vSphere/8.0/vsan-planning/index.html) |
 | **Operational Health** | Real-time diagnostic state: `OK`, `Warning`, `Critical`, or `Degraded`. | Drives reporting degraded health must be decommissioned before cluster installation. | [vSphere Health Monitoring](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-monitoring-and-performance/index.html) |
-| **Remaining Life%** | Flash silicon endurance wear gauge (percentage of life remaining). | **Wear Alert:** Drives with &lt;20% remaining life trigger a critical replacement warning. | [Broadcom KB 2144888](https://kb.vmware.com/s/article/2144888) |
+| **Remaining Life%** | Flash silicon endurance wear gauge (percentage of life remaining), when reported. | Fleet Health Alarms show a warning below 50% remaining and critical below 20%. Missing evidence remains unknown. Host reports also show an **Aging / Wear Alert** for 30,000+ power-on hours, less than 50% endurance remaining, or a recognized firmware issue; this advisory is separate from critical health and predictive-failure alerts. | [Broadcom KB 2144888](https://kb.vmware.com/s/article/2144888) |
 | **Firmware** | Installed drive firmware revision compared against certified HCL baselines. | Firmware updates resolve drive controller lockups, command timeouts, and bad-block bugs. | [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/) |
+
+### 5.3a Memory Tiering drive indicators
+
+The reports can show a **Mem Tier** badge when a drive matches the active Memory Tiering Broadcom Compatibility Guide (BCG) catalog. Matching uses an exact model, complete SKU, or exact local HCL alias; family-only matches are not enough, and capacity-bearing listings are checked against observed capacity. The badge links to the matching BCG entry. It does not validate the installed firmware or deployment configuration.
+
+The Web UI also has a default-off `--nvme-namespace-preview` option. When enabled, it can mark evidence-backed TLC read-intensive 1 DWPD vSAN ESA drives as candidates for namespace review. Unknown NAND/endurance, QLC, cyber-recovery, boot, RAID, and VMD cases are excluded. Candidate tags are not BCG listings, certification, or support approval. A drive assigned to Memory Tiering is not simultaneously available as a vSAN capacity drive. See [NVMe namespace preview](../NVME_NAMESPACE_PREVIEW.md) for detection details and operator guidance.
 
 ---
 

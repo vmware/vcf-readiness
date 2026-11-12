@@ -11,8 +11,11 @@ from vcf_hci.ui_clarity import appearance_controls_html, replace_ui_icons
 from vcf_hci.web.app_css import APP_CSS
 from vcf_hci.web.app_js import APP_JS
 from vcf_hci.web.group_html import GROUP_LIBRARY_HTML, GROUP_SCANNER_HTML
-from vcf_hci.web.plugin_html import VDT_NAV, VDT_PANEL, VDT_WIZARD
+from vcf_hci.web.mtat_html import MTAT_PANEL
+from vcf_hci.web.plugin_credential_html import SERVICE_CREDENTIALS_PANEL
+from vcf_hci.web.plugin_html import PUBLIC_PLUGINS_PANEL, VDT_NAV, VDT_PANEL, VDT_WIZARD
 from vcf_hci.web.summary_html import SUMMARY_ACTIONS
+from vcf_hci.web.vinv_html import VINV_PANEL
 
 
 def build_app_html(tool_version: str, collector_ok: bool, server_token: str = "", oem_mode: bool = False, vdt_available: bool = False) -> str:
@@ -54,6 +57,8 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
 <!-- ── Main content ─────────────────────────────────────────────────────── -->
 <main class="main-wrap" id="mainContent" tabindex="-1">
+{MTAT_PANEL}
+{VINV_PANEL}
 
   <div id="wizardResume" class="alert alert-info" hidden>Scan setup is in progress. <a href="#scan-wizard">Return to Scan Wizard</a> to continue with your settings.</div>
 
@@ -196,7 +201,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
     <div class="card-header" id="vaultToggle" tabindex="-1">
       🔐 Encrypted Credential Vault
       <span class="text-muted text-sm" style="margin-left:.4rem;font-weight:400;text-transform:none;letter-spacing:0">
-        — optional, off by default; per-host / per-subnet / default BMC passwords, encrypted on disk
+        — optional; BMC, service accounts and jump-host credentials, encrypted on disk
       </span>
     </div>
     <div id="vaultBody">
@@ -254,6 +259,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
         <!-- Unlocked: entries + add + import -->
         <div id="vaultOpenBlock" class="hidden">
+          {SERVICE_CREDENTIALS_PANEL}
           <div class="vault-entries-toggle" id="vaultEntriesToggle">
             <strong>Stored Vault Entries</strong>
             <span class="badge badge-secondary" id="vaultEntriesCountBadge" style="margin-left:.5rem">0</span>
@@ -661,6 +667,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 {GROUP_LIBRARY_HTML}
 </section>
 
+  {PUBLIC_PLUGINS_PANEL}
   {VDT_PANEL}
   <section id="scan-wizard" data-app-section aria-labelledby="wizardHeading" hidden>
     <h1 id="wizardHeading" class="section-heading" tabindex="-1">Scan Wizard</h1>

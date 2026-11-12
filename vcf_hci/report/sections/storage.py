@@ -10,6 +10,7 @@ from vcf_hci.constants import (
     DELL_SKU_CHASSIS_DB,
     HPE_SKU_CHASSIS_DB,
     KB_TRIMODE,
+    hpe_unknown_sku,
 )
 from vcf_hci.enrichment import consolidate_direct_attached_nvme_controllers
 from vcf_hci.hcl import evaluate_drive_hcl_tier
@@ -27,6 +28,7 @@ from vcf_hci.report.components import (
 )
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.inventory_tables import _is_boot_ctrl
+from vcf_hci.report.memory_tiering import namespace_help_html
 from vcf_hci.ui_clarity import icon_html
 
 _RN_HCI_PROFILES = [
@@ -305,7 +307,7 @@ def render_storage_subsystem_section(
         '<th>Firmware</th>'
         '<th>Endurance Remaining</th>'
         '<th>Health</th>'
-        '<th>vSAN Category</th>'
+        '<th>Drive Type</th>'
         '<th>BCG Link</th>'
         '</tr></thead><tbody>'
     )
@@ -424,7 +426,11 @@ def render_storage_subsystem_section(
                 _all_host_drives.append(d_copy)
 
         _sku_sys = str(sys_info.get("sku") or "").strip().upper()
-        _sku_entry = DELL_SKU_CHASSIS_DB.get(_sku_sys) or HPE_SKU_CHASSIS_DB.get(_sku_sys)
+        _bay_not_assessed = hpe_unknown_sku(
+            f"{sys_info.get('vendor') or ''} {sys_info.get('model') or ''}",
+            _sku_sys,
+        )
+        _sku_entry = None if _bay_not_assessed else (DELL_SKU_CHASSIS_DB.get(_sku_sys) or HPE_SKU_CHASSIS_DB.get(_sku_sys))
         _chassis_cap = _sku_entry[0] if _sku_entry else None
 
         _front_drives = [
@@ -446,8 +452,14 @@ def render_storage_subsystem_section(
         _fleet_total = max(_target_front_total + len(_rear_drives), _fleet_pop)
         _fleet_empty = max(0, _fleet_total - _fleet_pop)
         _fleet_edsff = sum(1 for d in _all_host_drives if d.get("is_edsff"))
-        _sum_cls     = "warning" if _fleet_empty else "success"
-        _free_lbl    = f"{_fleet_empty} free slot{'s' if _fleet_empty != 1 else ''}" if _fleet_empty else "All slots occupied"
+        if _bay_not_assessed:
+            _sum_cls = "info"
+            _free_lbl = "Bay count not assessed"
+            _fleet_total = _fleet_pop
+            _fleet_empty = 0
+        else:
+            _sum_cls     = "warning" if _fleet_empty else "success"
+            _free_lbl    = f"{_fleet_empty} free slot{'s' if _fleet_empty != 1 else ''}" if _fleet_empty else "All slots occupied"
 
         # Chassis label title
         _chassis_title_lbl = sys_info.get("chassis_label") or f"{_h(str(sys_info.get('model', 'Server')))} Front Drive Bays"
@@ -466,19 +478,26 @@ def render_storage_subsystem_section(
             "</div>"
         )
 
-        _front_svg = _chassis_svg(
-            _front_drives,
-            position_label="Front",
-            chassis_title=_chassis_title_lbl,
-            total_slots_override=_target_front_total,
-        )
-        _front_block = (
-            ("<h5 style='margin:.4rem 0 .3rem'>Front Chassis Bays</h5>" if _has_rear else "")
-            + _front_svg
-        )
+        if _bay_not_assessed:
+            _front_block = (
+                "<p class='alert alert-info'>Bay count not assessed. This HPE SKU is not in the "
+                "chassis database, so empty bays are not inferred from a partial SAS/SATA segment "
+                "or from the drives that were reported.</p>"
+            )
+        else:
+            _front_svg = _chassis_svg(
+                _front_drives,
+                position_label="Front",
+                chassis_title=_chassis_title_lbl,
+                total_slots_override=_target_front_total,
+            )
+            _front_block = (
+                ("<h5 style='margin:.4rem 0 .3rem'>Front Chassis Bays</h5>" if _has_rear else "")
+                + _front_svg
+            )
 
         _rear_block = ""
-        if _has_rear:
+        if _has_rear and not _bay_not_assessed:
             _rear_slots: list = [int(d["bay_slot"]) for d in _rear_drives if isinstance(d.get("bay_slot"), int)]
             _max_rear_slot = max(_rear_slots) if _rear_slots else -1
             _target_rear_total = max(_max_rear_slot + 1, len(_rear_drives))
@@ -542,11 +561,15 @@ def render_storage_subsystem_section(
         _ctrl_blocks = f"{_legend}{_front_block}{_rear_block}{_ctrl_summary_table}"
 
         _edsff_badge = "&nbsp;<span class='badge info'>Includes EDSFF</span>" if _fleet_edsff else ""
+        if _bay_not_assessed:
+            _bay_badge = f"{_fleet_pop} drives reported &mdash; Bay count not assessed"
+        else:
+            _bay_badge = f"{_fleet_pop} of {_fleet_total} populated &mdash; {_free_lbl}"
         nvme_bay_section = (
             f"<details class='accordion' open>"
             f"<summary>"
             f"<div>&#128190; Drive Bays &nbsp;"
-            f"<span class='badge {_sum_cls}'>{_fleet_pop} of {_fleet_total} populated &mdash; {_free_lbl}</span>"
+            f"<span class='badge {_sum_cls}'>{_bay_badge}</span>"
             f"{_edsff_badge}</div>"
             f"<span style='font-size:.85rem;color:var(--primary)'>Collapse Bay Details &#9652;</span>"
             f"</summary>"
@@ -751,7 +774,8 @@ def render_storage_subsystem_section(
         )
 
     storage_section_html = (
-        f"{fc_storage_callout}"
+        namespace_help_html()
+        + f"{fc_storage_callout}"
         f"{storage_topology_alerts}"
         f"{nvme_bay_section}"
         f"{midplane_section}"

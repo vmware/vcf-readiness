@@ -242,7 +242,7 @@ def generate_scan_readme(
         prefix_note = "Sanitized multi-tab" if "OBFUSCATED" in xf else "Multi-tab"
         catalog_entries.append({
             "name": xf,
-            "desc": f"{prefix_note} Microsoft Excel workbook (14 tabs including Decision, vCPU, vMemory, vStorage, vNetwork, vGPU, vHBA, vFirmware, vBIOS, Health_Alarms, Security, Security_Audit, and supporting summaries).",
+            "desc": f"{prefix_note} Microsoft Excel workbook (14 standard tabs including Summary, Decision, vCPU, vMemory, vStorage, vNetwork, vGPU, vHBA, vFirmware, vBIOS, Health_Alarms, Remediation, Security, and Security_Audit; optional Failed_Hosts tab).",
         })
 
     for name in sorted(existing_root_files):

@@ -2,6 +2,7 @@
 from typing import Any, Optional, Union
 
 from vcf_hci.collector.pci_utils import normalize_pcie_errors
+from vcf_hci.drive_counters import nonnegative_io_total
 
 
 def _first_present(*values):
@@ -125,7 +126,7 @@ def parse_drive_telemetry(drive_json: dict, metrics: dict, oem_metrics: dict, de
         or hpe_oem.get("PowerLossProtection")
     )
 
-    tbw_val = oem_metrics.get("tbw_written")
+    tbw_val = nonnegative_io_total(oem_metrics.get("tbw_written"))
     if tbw_val is None:
         raw_tbw = _first_present(
             drive_json.get("DataUnitsWritten"),
@@ -136,7 +137,8 @@ def parse_drive_telemetry(drive_json: dict, metrics: dict, oem_metrics: dict, de
             dell_oem.get("DataUnitsWritten"),
             hpe_oem.get("TotalBytesWritten"),
         )
-        if isinstance(raw_tbw, (int, float)) and raw_tbw >= 0:
+        raw_tbw = nonnegative_io_total(raw_tbw)
+        if raw_tbw is not None:
             if raw_tbw > 1_000_000_000_000:
                 tbw_val = round(raw_tbw / (1024 ** 4), 2)
             elif raw_tbw > 100_000_000:
@@ -144,7 +146,7 @@ def parse_drive_telemetry(drive_json: dict, metrics: dict, oem_metrics: dict, de
             else:
                 tbw_val = round(raw_tbw, 2)
 
-    tbr_val = oem_metrics.get("tbr_read")
+    tbr_val = nonnegative_io_total(oem_metrics.get("tbr_read"))
     if tbr_val is None:
         raw_tbr = _first_present(
             drive_json.get("DataUnitsRead"),
@@ -155,7 +157,8 @@ def parse_drive_telemetry(drive_json: dict, metrics: dict, oem_metrics: dict, de
             dell_oem.get("DataUnitsRead"),
             hpe_oem.get("TotalBytesRead"),
         )
-        if isinstance(raw_tbr, (int, float)) and raw_tbr >= 0:
+        raw_tbr = nonnegative_io_total(raw_tbr)
+        if raw_tbr is not None:
             if raw_tbr > 1_000_000_000_000:
                 tbr_val = round(raw_tbr / (1024 ** 4), 2)
             elif raw_tbr > 100_000_000:

@@ -1,6 +1,86 @@
 """Progressive VDT UI; file data stays out of persistence and query strings."""
 
+import json
+
+from vcf_hci.plugins.mtat.lifecycle import catalog_entry
+from vcf_hci.plugins.vinv.lifecycle import catalog_entry as vinv_catalog_entry
+from vcf_hci.web.mtat_html import MTAT_INTRO
+
 JS_PLUGINS = """
+  function assessmentCatalogGroup() {
+    var parent = document.getElementById('plugins');
+    if (!parent) return null;
+    var group = document.getElementById('assessmentCatalogGroup');
+    if (!group) {
+      group = document.createElement('div'); group.id = 'assessmentCatalogGroup';
+      group.className = 'plugin-card-grid'; group.setAttribute('aria-label', 'Experimental assessments');
+      parent.append(group);
+    }
+    return group;
+  }
+  function renderMtatCatalog(entry) {
+    var parent = assessmentCatalogGroup();
+    if (!parent) return;
+    var card = document.getElementById('mtatCatalogCard');
+    if (!card) {
+      card = document.createElement('div'); card.id = 'mtatCatalogCard'; card.className = 'card';
+      var body = document.createElement('div'); body.className = 'card-body';
+      ['h2', 'p', 'p', 'p', 'p'].forEach(function(tag, index) {
+        var child = document.createElement(tag); child.id = 'mtatCatalogField' + index;
+        if (index === 1) { child.setAttribute('role', 'status'); child.setAttribute('aria-live', 'polite'); }
+        body.append(child);
+      });
+      var intro = document.createElement('div'); intro.className = 'alert alert-info'; intro.innerHTML = __MTAT_INTRO__;
+      body.insertBefore(intro, body.children[1]);
+      var open = document.createElement('a'); open.href = '#mtat-experimental'; open.className = 'btn btn-outline'; open.textContent = 'Open MTAT assessment';
+      var help = document.createElement('a'); help.href = '/docs/mtat_experimental'; help.textContent = 'Read the MTAT assessment guidance';
+      var actions = document.createElement('div'); actions.className = 'flex gap-sm mt-half';
+      actions.style.flexWrap = 'wrap'; actions.style.alignItems = 'center'; actions.style.gap = '1rem';
+      actions.append(open, help); body.append(actions); card.append(body); parent.append(card);
+    }
+    document.getElementById('mtatCatalogField0').textContent = entry.name;
+    document.getElementById('mtatCatalogField1').textContent = entry.enabled
+      ? '' : 'Unavailable.';
+    document.getElementById('mtatCatalogField2').textContent = entry.warning;
+    document.getElementById('mtatCatalogField1').hidden = entry.enabled;
+    document.getElementById('mtatCatalogField3').hidden = true;
+    document.getElementById('mtatCatalogField4').textContent = 'MTAT ' + entry.mtat_contract + ' · ' + entry.sources.map(function(source) {
+      return source.kind + ': ' + source.readiness;
+    }).join(' · ');
+  }
+  renderMtatCatalog(__MTAT_DEFAULT_CATALOG__);
+
+  function renderVinvCatalog(entry) {
+    var parent = assessmentCatalogGroup();
+    if (!parent) return;
+    var card = document.getElementById('vinvCatalogCard');
+    if (!card) {
+      card = document.createElement('div'); card.id = 'vinvCatalogCard'; card.className = 'card';
+      var body = document.createElement('div'); body.className = 'card-body';
+      ['h2', 'p', 'p', 'p', 'p'].forEach(function(tag, index) {
+        var child = document.createElement(tag); child.id = 'vinvCatalogField' + index;
+        if (index === 1) { child.setAttribute('role', 'status'); child.setAttribute('aria-live', 'polite'); }
+        body.append(child);
+      });
+      var open = document.createElement('a'); open.id = 'vinvCatalogOpen'; open.href = '#vinv-experimental'; open.className = 'btn btn-outline'; open.textContent = 'Open vSphere Inventory';
+      var help = document.createElement('a'); help.href = '/docs/vsphere_inventory_experimental'; help.textContent = 'Read the vSphere inventory guidance';
+      var actions = document.createElement('div'); actions.className = 'flex gap-sm mt-half';
+      actions.style.flexWrap = 'wrap'; actions.style.alignItems = 'center'; actions.style.gap = '1rem';
+      actions.append(open, help); body.append(actions); card.append(body); parent.append(card);
+    }
+    document.getElementById('vinvCatalogOpen').hidden = !entry.enabled;
+    document.getElementById('vinvCatalogField0').textContent = entry.name;
+    document.getElementById('vinvCatalogField1').textContent = entry.enabled
+      ? '' : 'Unavailable.';
+    document.getElementById('vinvCatalogField2').textContent = entry.warning;
+    document.getElementById('vinvCatalogField1').hidden = entry.enabled;
+    document.getElementById('vinvCatalogField3').hidden = true;
+    document.getElementById('vinvCatalogField4').textContent = 'Schema ' + entry.schema_version + ' · ' + entry.sources.map(function(source) {
+      return source.kind + ': ' + source.readiness;
+    }).join(' · ');
+  }
+  renderVinvCatalog(__VINV_DEFAULT_CATALOG__);
+
   if (document.getElementById('vdt-plugin')) {
     var vdtBusy = false;
     var vdtRunCount = 0;
@@ -98,6 +178,8 @@ JS_PLUGINS = """
     function refreshVdtCatalog() {
       return get('/api/plugins').then(function(data) {
         renderVdtCatalog(data.vdt);
+        if (data.mtat) renderMtatCatalog(data.mtat);
+        if (data.vinv) renderVinvCatalog(data.vinv);
         document.dispatchEvent(new CustomEvent('vdt-installations-updated', {detail:data}));
         return data;
       });
@@ -136,4 +218,6 @@ JS_PLUGINS = """
     refreshVdtCatalog().catch(function(error) { vdtMessage(error.message); });
     get('/api/plugins/vdt/runs').then(renderVdtRuns).catch(function(error) { vdtMessage(error.message); });
   }
-"""
+""".replace("__MTAT_INTRO__", json.dumps(MTAT_INTRO)).replace(
+    "__MTAT_DEFAULT_CATALOG__", json.dumps(catalog_entry(True))
+).replace("__VINV_DEFAULT_CATALOG__", json.dumps(vinv_catalog_entry(True)))

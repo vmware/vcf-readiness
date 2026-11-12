@@ -63,7 +63,7 @@ def normalize_boot_option(opt_data: dict, b_opt_id: str, target_cand: Optional[s
     return {'id': str(opt_ref), 'name': clean_dname, 'raw_name': str(raw_dname), 'enabled': is_enabled, 'uefi_path': str(uefi_path), 'is_current': is_current}, target_cand
 
 
-def collect_boot_options(self: SystemCollector, data: dict, boot_order: Any) -> tuple:
+def collect_boot_options(self: SystemCollector, data: dict, boot_order: Any, include_partial: bool = False) -> tuple:
     """Preserve inline/linked acquisition, alias indexing and 50/30 endpoint bounds."""
     boot_obj = data.get("Boot") or {}
     boot_order_details = []
@@ -115,8 +115,11 @@ def collect_boot_options(self: SystemCollector, data: dict, boot_order: Any) -> 
                 elif isinstance(m, str) and m:
                     opt_ids_to_fetch.append(m.rstrip("/").split("/")[-1])
 
+        option_cap = 30
+        available_options = len(opt_ids_to_fetch)
+        truncated = available_options > option_cap
         target_cand = None
-        for b_opt_id in opt_ids_to_fetch[:30]:
+        for b_opt_id in opt_ids_to_fetch[:option_cap]:
             opt_data = (
                 boot_opts_by_ref.get(b_opt_id)
                 or boot_opts_by_ref.get(b_opt_id.lower())
@@ -132,7 +135,20 @@ def collect_boot_options(self: SystemCollector, data: dict, boot_order: Any) -> 
 
         if target_cand:
             persistent_boot_target = target_cand
+    else:
+        option_cap = 30
+        available_options = 0
+        truncated = False
 
+    partial = {
+        "partial": truncated,
+        "reason": "boot_option_cap" if truncated else "",
+        "option_cap": option_cap,
+        "options_available": available_options,
+        "options_fetched": min(available_options, option_cap),
+    }
+    if include_partial:
+        return boot_order_details, persistent_boot_target, partial
     return boot_order_details, persistent_boot_target
 
 
@@ -188,8 +204,10 @@ def infer_boot_mode(data: dict, boot_order_details: list, bios_attrs: dict, over
 def collect_system_boot(self: SystemCollector, data: dict) -> dict:
     """Acquire options, resolve targets, then perform only the original conditional BIOS read."""
     seed = parse_boot_override(data)
-    details, persistent = collect_boot_options(self, data, seed["boot_order"])
+    details, persistent, boot_partial = collect_boot_options(self, data, seed["boot_order"], include_partial=True)
     result = normalize_boot_evidence(seed["_boot_object"], seed, details, persistent)
+    if isinstance(boot_partial, dict) and boot_partial.get("partial"):
+        result["boot_inventory_partial"] = boot_partial
     if not result["boot_mode"] or result["boot_mode"].lower() in ("unknown", "none", "n/a"):
         bios_ref = data.get("Bios") or {}
         bios_uri = bios_ref.get("@odata.id") if isinstance(bios_ref, dict) else (f"{self.sys_uri}/Bios" if self.sys_uri else None)

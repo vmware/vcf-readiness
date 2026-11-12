@@ -316,6 +316,7 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
     badge = drift_data.get("badge", "")
     drifts = drift_data.get("drifts", [])
     rules = drift_data.get("rules", [])
+    unverified_rules = [r for r in rules if r.get("status") == "not_verified"]
     guide_info = drift_data.get("tuning_guide") or {}
     vmware_guide_title = drift_data.get("vmware_guide_title") or "VMware vSphere 9.0 Performance Best Practices"
     vmware_guide_url = (
@@ -359,12 +360,18 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
         )
     perf_guide_hdr += "</div>"
 
+    compliance_display = f"{compliance_pct}%"
+    compliance_heading = "Compliance (verified)" if unverified_rules else "Compliance"
+    if not total_rules and unverified_rules:
+        compliance_display = "Not scored"
+        pct_color = "var(--text-muted)"
     stats_html = (
         f"<div style='display:flex;gap:1.5rem;margin-bottom:1rem;flex-wrap:wrap;background:var(--bg-card);padding:.75rem 1rem;border-radius:6px;border:1px solid var(--border)'>"
-        f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Compliance</span><br><strong style='font-size:1.15rem;color:{pct_color}'>{compliance_pct}%</strong></div>"
+        f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>{compliance_heading}</span><br><strong style='font-size:1.15rem;color:{pct_color}'>{compliance_display}</strong></div>"
         f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Rules Evaluated</span><br><strong style='font-size:1.15rem'>{total_rules}</strong></div>"
         f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Compliant</span><br><strong style='font-size:1.15rem;color:var(--success, #16a34a)'>{passed_count}</strong></div>"
         f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Drift Count</span><br><strong style='font-size:1.15rem;color:{drift_color}'>{drift_count}</strong></div>"
+        + (f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:600'>Not verified</span><br><strong style='font-size:1.15rem;color:var(--text-muted)'>{len(unverified_rules)}</strong></div>" if unverified_rules else "")
         + (f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--danger, #dc2626);font-weight:600'>Blockers</span><br><strong style='font-size:1.15rem;color:var(--danger, #dc2626)'>{blocker_count}</strong></div>" if blocker_count > 0 else "")
         + (f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--warning, #ca8a04);font-weight:600'>Warnings</span><br><strong style='font-size:1.15rem;color:var(--warning, #ca8a04)'>{warning_count}</strong></div>" if warning_count > 0 else "")
         + (f"<div><span style='font-size:.75rem;text-transform:uppercase;color:var(--info, #0284c7);font-weight:600'>Info</span><br><strong style='font-size:1.15rem;color:var(--info, #0284c7)'>{info_count}</strong></div>" if info_count > 0 else "")
@@ -429,6 +436,11 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
             f"{''.join(drift_rows)}"
             f"</tbody></table></div>"
         )
+    elif unverified_rules:
+        drift_table_html = (
+            "<div class='alert alert-info'>No configuration drift detected among verified settings. "
+            f"{len(unverified_rules)} setting(s) could not be verified from the available BIOS evidence.</div>"
+        )
     else:
         drift_table_html = (
             "<div style='background:rgba(22,163,74,0.1);border-left:3px solid var(--success,#16a34a);padding:.6rem 1rem;border-radius:4px;margin-bottom:1rem'>"
@@ -489,6 +501,23 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
             f"</tbody></table></div></details>"
         )
 
+    unverified_html = ""
+    if unverified_rules:
+        unknown_rows = ''.join(
+            f"<tr><td>{_h(str(r.get('setting_name', r.get('attribute', ''))))}</td>"
+            f"<td><span class='badge info'>Not verified</span></td>"
+            f"<td>{_h(str(r.get('expected_value', '')))}</td>"
+            f"<td>{_h(str(r.get('rationale', '')))}</td></tr>"
+            for r in unverified_rules
+        )
+        unverified_html = (
+            "<details class='accordion bios-unverified-settings' style='margin-top:.75rem'>"
+            f"<summary>{icon_html('info-standard')} Not verified settings ({len(unverified_rules)})</summary>"
+            "<div class='accordion-body'><p>Excluded from compliance scoring; verify these settings manually.</p>"
+            "<table><thead><tr><th>Setting</th><th>Status</th><th>Expected value</th><th>Reason</th>"
+            f"</tr></thead><tbody>{unknown_rows}</tbody></table></div></details>"
+        )
+
     scorecard_title = "VCF 9.1 BIOS Golden Baseline Scorecard"
     if "cisco" in badge.lower():
         scorecard_title = "Cisco UCS VCF 9.1 Golden Baseline Scorecard"
@@ -535,6 +564,7 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
         f"{drift_table_html}"
         f"{proxy_tuning_tip}"
         f"{compliant_table_html}"
+        f"{unverified_html}"
         f"</div></details>"
     )
 
@@ -793,13 +823,21 @@ def render_boot_order_card(sys_info: Dict[str, Any]) -> str:
     override_preview = f"<div class='report-boot-preview'>{override_badge}</div>" if override_active else ""
     more = len(options) - 1
     hint = f"{more} more boot " + ("device" if more == 1 else "devices") if more else "Device details"
+    partial = sys_info.get("boot_inventory_partial") or {}
+    partial_note = ""
+    if isinstance(partial, dict) and partial.get("partial"):
+        partial_note = (
+            "<p class='alert alert-warning'>Boot option inventory is partial: "
+            f"{_h(str(partial.get('options_fetched')))} of {_h(str(partial.get('options_available')))} "
+            "ordered options were read. A later enabled PXE option may be absent from this list.</p>"
+        )
     return (
         '<details class="accordion report-boot-order">'
         '<summary><div class="report-boot-summary">'
         f'<div>{icon_html("hard-disk")} Boot Configuration &amp; Device Order</div>'
         f'<div class="report-boot-preview">{preview}</div>{current_note}{override_preview}'
         f'</div><span class="report-boot-more">{hint}</span></summary>'
-        f'<div class="accordion-body"><div class="report-boot-status">{mode_badge} {override_badge}</div>'
+        f'<div class="accordion-body">{partial_note}<div class="report-boot-status">{mode_badge} {override_badge}</div>'
         '<table><thead><tr><th>#</th><th>Boot Option ID</th><th>Device / Boot Target</th>'
         '<th>State</th><th>UEFI Device Path</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div></details>'

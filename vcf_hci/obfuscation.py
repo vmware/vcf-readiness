@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from vcf_hci.constants import TOOL_VERSION
 from vcf_hci.fc_inventory import fc_adapter_key, normalize_fc_ports
+from vcf_hci.security.identity_scrub import scrub_identity_references
 from vcf_hci.security.redaction import (
     obfuscate_security_data,
     redact_security_findings,
@@ -139,12 +140,43 @@ _IQN_RE = re.compile(r"\biqn\.\d{4}-\d{2}\.[a-zA-Z0-9.\-_:]+\b", re.IGNORECASE)
 _EUI_RE = re.compile(r"\beui\.[0-9a-fA-F]{16}\b", re.IGNORECASE)
 
 
+def obfuscate_identity_references(
+    data: dict, host_alias: str, salt: str,
+    identity_source: Optional[dict] = None, key: Optional[ObfuscationKey] = None,
+) -> dict:
+    """Scrub embedded references, optionally using original captured identity evidence."""
+    source = identity_source if identity_source is not None else data
+    def identity_token(kind: str, value: str) -> str:
+        if kind == "mac":
+            token = _obf_mac(salt, value)
+        elif kind == "domain":
+            token = "rainpole.net"
+        elif kind == "hostname":
+            token = host_alias if value.lower() == str((source.get("system") or {}).get("hostname") or "").lower() else _obf_label(salt, "HOST", value)
+        elif kind == "storage_id":
+            digest = _obf_hash(salt, value, 16)
+            token = ":".join(digest[i:i+2] for i in range(0, 16, 2)) if ":" in value else digest
+        elif kind == "uuid":
+            digest = _obf_hash(salt, value, 32).lower()
+            token = f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
+        elif kind == "account":
+            token = _obf_label(salt, "USER", value)
+        else:
+            token = _obf_label(salt, "SN" if kind == "serial" else "ASSET", value)
+        if key is not None and token not in key.mapping:
+            key.record(kind, value, token)
+        return token
+
+    return scrub_identity_references(source, data, identity_token)
+
+
 def obfuscate_host_data(
     data: dict,
     host_alias: str,
     salt: str,
     key: Optional[ObfuscationKey] = None,
     strip_raw: bool = False,
+    identity_source: Optional[dict] = None,
 ) -> dict:
     """Return a deep copy of *data* with all customer-identifying fields replaced.
 
@@ -686,6 +718,7 @@ def obfuscate_host_data(
         ]
     if d.get("server_group_host_id"):
         d["server_group_host_id"] = "asset_" + _obf_hash(salt, str(d["server_group_host_id"]), 32)
+    d = obfuscate_identity_references(d, host_alias, salt, identity_source=identity_source if identity_source is not None else data, key=key)
     d["obfuscated"] = True
     return d
 

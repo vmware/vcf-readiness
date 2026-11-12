@@ -76,6 +76,14 @@ def evaluate_evidence(
     vendor = str(evidence.get("vendor") or "generic")
     support = resolve_oem_support(vendor)
     raw_findings = evaluate_security_controls(evidence)
+    if "lenovo" in vendor.lower():
+        from vcf_hci.security.lenovo import lenovo_support_for_evidence
+        observed = lenovo_support_for_evidence(evidence)
+        support = {
+            "oem_support": observed["oem_support"],
+            "oem_support_reason": observed["oem_support_reason"],
+            "vendor": vendor or "unknown",
+        }
     prof = normalize_audit_profile(profile, control_ids)
     filtered = filter_findings_by_profile(
         raw_findings,

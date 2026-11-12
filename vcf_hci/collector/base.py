@@ -1415,6 +1415,9 @@ class BaseRedfishCollector(
                 "pcie_switches":       list(p2_data.get("pcie_switches") or []),
                 "pcie_devices":        list(pcie_cache or []),
             }
+            _pcie_partial = getattr(self, "_pcie_inventory_partial", None)
+            if isinstance(_pcie_partial, dict) and _pcie_partial.get("partial"):
+                res["pcie_inventory_partial"] = dict(_pcie_partial)
             res["memory_topology"] = {}
             if capture_raw or crawl_endpoints:
                 raw_capture = {}
@@ -1903,6 +1906,12 @@ class BaseRedfishCollector(
                 if res is not None:
                     if isinstance(res, (list, dict)):
                         merged[key] = res
+                        if key == "pcie_devices":
+                            _pcie_partial = getattr(self, "_pcie_inventory_partial", None)
+                            if isinstance(_pcie_partial, dict) and _pcie_partial.get("partial"):
+                                merged["pcie_inventory_partial"] = dict(_pcie_partial)
+                            else:
+                                merged.pop("pcie_inventory_partial", None)
                         resolved_sections.add(sec)
                         logger.info("[%s] Targeted rescan resolved section: %s", self.host, sec)
             except Exception as err:

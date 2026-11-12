@@ -24,7 +24,7 @@ MAX_ARCHIVE_BYTES = 23 * 1024 * 1024  # Fits base64 + JSON in the existing 32 Mi
 MAX_DATA_BYTES = 96 * 1024 * 1024
 MAX_METADATA_BYTES = 256 * 1024
 MAX_MEMBERS = 128
-DATA_MEMBERS = ("all.json", "vsan_drives.csv", "io_nics.json")
+DATA_MEMBERS = ("all.json", "vsan_drives.csv", "io_nics.json", "memory_tiering.json")
 
 
 class HclExportError(ValueError):
@@ -69,6 +69,12 @@ def _json_dataset(raw: bytes, name: str) -> bytes:
                        for item in entries.get(key, []) if isinstance(item, dict)]
         if not isinstance(entries, list) or not any(isinstance(item, dict) and item for item in entries):
             raise HclExportError("The active vSAN HCL dataset is empty or unsupported. Refresh or import HCL data first.")
+    elif name == 'memory_tiering.json':
+        from vcf_hci.hcl.memory_tiering_data import validate_catalog
+        try:
+            validate_catalog(data)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HclExportError('The active Memory Tiering catalog is invalid.') from exc
     elif not any(isinstance(data.get(key), dict) and data[key] for key in ("quads", "pairs", "models")):
         raise HclExportError("The active network I/O HCL dataset is empty or unsupported.")
     return raw
@@ -169,6 +175,13 @@ def export_active_hcl_bundle(custom_bundle_path: Optional[str] = None) -> bytes:
             default_timestamp = next(iter(snapshots.values()))[3] / 1e9
         if "all.json" not in files:
             raise HclExportError("The active HCL bundle has no vSAN dataset. Import a complete HCL bundle first.")
+        if 'memory_tiering.json' not in files:
+            from vcf_hci.hcl.memory_tiering_data import MEMBER, packaged_catalog
+            memory_path = os.path.join(bundle_manager.get_hcl_dir(), MEMBER)
+            if not bundle_path and os.path.isfile(memory_path):
+                files[MEMBER] = _json_dataset(_read_file(memory_path, snapshots), MEMBER)
+            else:
+                files[MEMBER] = json.dumps(packaged_catalog()).encode('utf-8')
         if "io_nics.json" not in files:
             # Same fallback as import_hcl_bundle when a legacy ZIP has no NIC catalog.
             candidates = [os.path.join(bundle_manager.get_hcl_dir(), "io_nics.json"),
@@ -202,6 +215,10 @@ def export_active_hcl_bundle(custom_bundle_path: Optional[str] = None) -> bytes:
             "files": sorted(list(files) + ["bundle_metadata.json"]),
             "sha256": {name: hashlib.sha256(raw).hexdigest() for name, raw in files.items()},
         }
+        try:
+            metadata['memory_tiering_fetched_at'] = json.loads(files['memory_tiering.json'])['fetched_at']
+        except json.JSONDecodeError as exc:
+            raise HclExportError('The active Memory Tiering catalog is invalid.') from exc
         if bundle_path:
             metadata["source_bundle_sha256"] = hashlib.sha256(_read_file(bundle_path, snapshots)).hexdigest()
         output = io.BytesIO()

@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "VCF / vSphere 9.1 Readiness Assessment Tool — Redfish-based hardware compatibility scanner"
 readme = "README.md"
 license = "LicenseRef-CA-Inc"
-license-files = ["LICENSE.md", "NOTICE", "THIRD_PARTY_LICENSES.md"]
+license-files = ["LICENSE.md", "NOTICE", "THIRD_PARTY_LICENSES.md", "licenses/pyvmomi/*"]
 requires-python = ">=3.9"
 dependencies = []  # Zero external dependencies — stdlib only
 
@@ -136,6 +136,7 @@ include-package-data = false
 version = { attr = "vcf_hci.constants.TOOL_VERSION" }
 
 [tool.setuptools.package-data]
+"vcf_hci._vendor" = ["pyvmomi-9.0.0.0-py3-none-any.whl"]
 "vcf_hci.hcl" = ["io_nics.json"]
 
 [tool.setuptools.packages.find]
@@ -163,8 +164,8 @@ markers = [
 
 [tool.pyinstaller]
 # Build targets — run via build-web.sh or build-web.bat
-# macOS:   pyinstaller --onefile --collect-all vcf_hci vcfr_web.py
-# Windows: pyinstaller --onefile --collect-all vcf_hci vcfr_web.py
+# macOS:   pyinstaller --onefile --collect-all vcf_hci --hidden-import http.cookies --hidden-import xml.dom --hidden-import xml.etree.ElementTree --hidden-import xml.parsers.expat vcfr_web.py
+# Windows: pyinstaller --onefile --collect-all vcf_hci --hidden-import http.cookies --hidden-import xml.dom --hidden-import xml.etree.ElementTree --hidden-import xml.parsers.expat vcfr_web.py
 
 [tool.coverage.run]
 source = ["vcf_hci"]

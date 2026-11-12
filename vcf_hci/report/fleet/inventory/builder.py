@@ -39,6 +39,7 @@ from vcf_hci.report.fleet.inventory.subtables import (
     _build_security_table,
 )
 from vcf_hci.report.fleet.inventory.view import INVENTORY_VIEW_CSS, INVENTORY_VIEW_JS
+from vcf_hci.report.formatting import fleet_tpm_badge
 from vcf_hci.report.inventory_tables import (
     build_compact_fleet_inventory,
     clean_model_code,
@@ -187,6 +188,8 @@ def build_detailed_inventory_html(
     for r in render_rows:
         idx = int(r.get("host_idx") or 0)
         host_tab = idx + host_tab_offset
+        tpm_system = (all_results[idx].get("system") or {}) if 0 <= idx < len(all_results) else {}
+        tpm_cell = fleet_tpm_badge(tpm_system) if tpm_system else _dot_bool(r.get("tpm_ok"), "TPM OK", "TPM issue")
         hostname = r.get("hostname") or r.get("ip") or f"Host {idx+1}"
         ip = r.get("ip") or ""
         if obfuscated:
@@ -267,17 +270,17 @@ def build_detailed_inventory_html(
             f"<td data-column-key='server_groups'>{group_cell}</td>"
             f"<td data-column-key='model' title='{_xe(full_model)}'><strong>{_xe(clean_m)}</strong></td>"
             f"<td data-column-key='cpu_model'><a href='#' class='btn-link tab-jump' data-tab='{host_tab}' data-subtab='tab-cpu' style='color:inherit;text-decoration:none;display:inline-block'>{_cpu_dot(r.get('cpu_tier') or '', r.get('cpu_model') or '', r.get('cpu_verdict') or '')}</a></td>"
-            f"<td data-column-key='host_os'>{os_td}</td>"
             f"<td data-column-key='esa_disks'>{_xe(esa.get('display') or _DASH)}<br>{_storage_qualification_chip(r)}</td>"
             f"<td data-column-key='esa_tier'>{_esa_profile_chip(esa_profile_data)}</td>"
             f"<td data-column-key='nic_summary' title='{nic_tip}'>{nic_html}</td>"
             f"{fc_cell}"
             f"<td data-column-key='ram_gb'>{_xe(ram)} GB"
             f"<div style='font-size:var(--inv-secondary-size,12px);color:var(--text-muted,#64748b)'>{dimm_info}</div></td>"
-            f"<td data-column-key='tpm' style='text-align:center'>{_dot_bool(r.get('tpm_ok'), 'TPM OK', 'TPM issue')}</td>"
-            f"<td data-column-key='bmc_security' style='text-align:center' title='{_xe(sec_tip)}'>{sec_jump}</td>"
+            f"<td data-column-key='tpm' style='text-align:center'>{tpm_cell}</td>"
             f"<td data-column-key='vmd' style='text-align:center'>{_vmd_cell(r.get('vmd_on'))}</td>"
             f"<td data-column-key='gpu_count' style='text-align:center'>{_xe(gpu_td)}</td>"
+            f"<td data-column-key='bmc_security' style='text-align:center' title='{_xe(sec_tip)}'>{sec_jump}</td>"
+            f"<td data-column-key='host_os'>{os_td}</td>"
             f"</tr>"
         )
     colspan = 14 if has_fc_hbas else 13
@@ -301,7 +304,8 @@ def build_detailed_inventory_html(
 
     fc_th = '<th data-column-key="fc_hba" title="Fibre Channel Host Bus Adapters detected in system">FC HBA</th>' if has_fc_hbas else ""
 
-    return f"""
+    from vcf_hci.report.memory_tiering import namespace_help_html
+    return namespace_help_html() + f"""
 <style>
 .inv-wrap{{padding:0.6rem 0.85rem 1rem;font-family:ui-sans-serif,system-ui,Segoe UI,sans-serif;color:var(--text,#e2e8f0)}}
 .inv-toolbar{{display:flex;flex-wrap:wrap;gap:0.45rem 0.75rem;align-items:center;margin-bottom:0.45rem}}
@@ -474,16 +478,16 @@ def build_detailed_inventory_html(
           <th data-column-key="server_groups" title="Named server group membership">Groups</th>
           <th data-column-key="model" title="Server hardware manufacturer and chassis model">Model</th>
           <th data-column-key="cpu_model" title="Processor model and VCF 9.1 CPU architecture compatibility tier">CPU</th>
-          <th data-column-key="host_os" data-default-visible="false" title="Installed operating system or hypervisor release and lifecycle support status">Host OS</th>
           <th data-column-key="esa_disks" title="Direct-attached NVMe storage capacity and hardware pass-through qualification">ESA disks</th>
           <th data-column-key="esa_tier" title="vSAN ESA ReadyNode profile qualification (ESA-L Large, ESA-M Medium, ESA-S Small) based on NVMe storage, RAM, CPU cores, and 25 GbE+ networking">ESA Tier</th>
           <th data-column-key="nic_summary" title="Network interface adapters and 25 GbE+ baseline compliance (Down ports highlighted in Red)">NICs</th>
           {fc_th}
           <th data-column-key="ram_gb" title="Total system RAM capacity, DIMM slot population count, and memory channel interleaving">RAM</th>
           <th data-column-key="tpm" title="Trusted Platform Module 2.0 presence and activation status">TPM</th>
-          <th data-column-key="bmc_security" title="Out-of-band management security posture baseline compliance (Click host for detailed audit)">BMC Sec</th>
           <th data-column-key="vmd" title="Intel Volume Management Device status (must be Disabled for native NVMe passthrough)">VMD</th>
           <th data-column-key="gpu_count" data-default-visible="false" title="PCIe GPU accelerators detected in system">GPU</th>
+          <th data-column-key="bmc_security" title="Out-of-band management security posture baseline compliance (Click host for detailed audit)">BMC Sec</th>
+          <th data-column-key="host_os" data-default-visible="false" title="Installed operating system or hypervisor release and lifecycle support status">Host OS</th>
         </tr></thead>
         <tbody>
 {tbody}

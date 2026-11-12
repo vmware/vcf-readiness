@@ -87,10 +87,13 @@ class TestPublicSmoke(unittest.TestCase):
                 "NOTICE", "THIRD_PARTY_LICENSES.md", "README.md", "pyproject.toml",
                 "vcfr_collector.py", "vcfr_web.py", "redfish_collector.py", "redfish_web.py",
                 ".gitignore",
+                "licenses/pyvmomi/LICENSE.txt",
                 "docs/INSTALL.md", "docs/OEM_REFERENCE.md", "docs/REDFISH_MONITORING_GUIDE.md", "docs/adding-oem-support.md",
                 "docs/SECURITY_ARCHITECTURE.md", "docs/CREDENTIAL_VAULT.md",
                 "docs/INVENTORY_REFERENCE.md", "docs/USER_GUIDE_REFERENCE.md",
-                "docs/EXECUTIVE_REPORT.md", "docs/SCANNER_GROUPS_AND_DISPLAY.md",
+                "docs/EXECUTIVE_REPORT.md", "docs/MEMORY_TIERING.md", "docs/SCANNER_GROUPS_AND_DISPLAY.md",
+                "docs/NVME_NAMESPACE_PREVIEW.md", "docs/MTAT_WORKLOAD_ASSESSMENT_EXPERIMENTAL.md",
+                "docs/VSPHERE_INVENTORY_EXPERIMENTAL.md",
                 "docs/REMOTE_JUMP_HOST_GUIDE.md", "docs/CUSTOMER_DELIVERABLE_SBOM.md",
             }
             compiled_blacklists = [

@@ -16,6 +16,7 @@ from vcf_hci.plugins.vcenter_probe import probe_vcenter, select_vdt
 from vcf_hci.remote.executor import RemoteExecError, _redact, probe_jump_host_key
 from vcf_hci.web.desktop import _is_safe_desktop_folder
 from vcf_hci.web.export_api import _ApiMixinBase
+from vcf_hci.web.plugin_credentials import resolve_plugin_credentials
 
 _TERMINAL = ('completed', 'failed', 'cancelled', 'needs_credentials')
 _MESSAGES = {
@@ -252,6 +253,8 @@ class RemoteVdtApiMixin(_ApiMixinBase):
                 return
             if action not in ('preflight', 'run'):
                 self._send_json({'error': 'Unknown VDT remote action.'}, 404)
+                return
+            if not resolve_plugin_credentials(self, data, "vcenter", "vdt"):
                 return
             payload = _selected_payload(server, data.get('folder'), data.get('product'))
             target = data.get('target', data)

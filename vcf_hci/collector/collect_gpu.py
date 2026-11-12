@@ -9,6 +9,38 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence, Tuple
 
 from ..logging_utils import get_nested
 
+PCIE_MEMBER_CAP = 64
+PCIE_FETCH_DEADLINE_S = 15.0
+
+
+def note_pcie_inventory_partial(collector: Any, available: int, fetched: int, capped: bool, deadline: bool) -> None:
+    """Remember a cap or deadline without raising either limit."""
+    if not capped and not deadline:
+        return
+    current = getattr(collector, "_pcie_inventory_partial", None)
+    if not isinstance(current, dict):
+        current = {
+            "partial": True,
+            "member_cap": PCIE_MEMBER_CAP,
+            "deadline_seconds": PCIE_FETCH_DEADLINE_S,
+            "members_available": 0,
+            "members_fetched": 0,
+            "capped": False,
+            "deadline": False,
+        }
+    current["partial"] = True
+    current["members_available"] = int(current.get("members_available") or 0) + int(available)
+    current["members_fetched"] = int(current.get("members_fetched") or 0) + int(fetched)
+    current["capped"] = bool(current.get("capped") or capped)
+    current["deadline"] = bool(current.get("deadline") or deadline)
+    reasons = []
+    if current["capped"]:
+        reasons.append("member_cap")
+    if current["deadline"]:
+        reasons.append("deadline")
+    current["reason"] = "+".join(reasons)
+    collector._pcie_inventory_partial = current
+
 if TYPE_CHECKING:
     class _CollectorBase:
         sys_uri: Optional[str]
@@ -205,6 +237,7 @@ class _GPUMixin(_CollectorBase):
     """Collection methods: PCIe devices, PCIe slots, GPU accelerators."""
 
     def collect_pcie_devices(self) -> list:
+        self._pcie_inventory_partial = None
         pcie_list = []
         seen_ids: set = set()
 
@@ -351,30 +384,37 @@ class _GPUMixin(_CollectorBase):
 
             member_uris.sort(key=_uri_priority_key)
 
-            if len(member_uris) > 64:
-                logger.debug("[%s] Capping PCIe device members from %d to 64 sorted items", getattr(self, "host", "unknown"), len(member_uris))
-                member_uris = member_uris[:64]
+            available = len(member_uris)
+            capped = available > PCIE_MEMBER_CAP
+            if capped:
+                logger.debug("[%s] Capping PCIe device members from %d to %d sorted items", getattr(self, "host", "unknown"), available, PCIE_MEMBER_CAP)
+                member_uris = member_uris[:PCIE_MEMBER_CAP]
 
             start_time = time.time()
-            max_duration = 15.0
             chunk_size = 10
+            deadline_hit = False
+            fetched = 0
 
             for i in range(0, len(member_uris), chunk_size):
                 if callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped():
                     break
                 elapsed = time.time() - start_time
-                remaining = max_duration - elapsed
+                remaining = PCIE_FETCH_DEADLINE_S - elapsed
                 if remaining <= 0:
+                    deadline_hit = True
                     logger.debug("[%s] PCIe device collection reached 15s deadline; stopping chunk fetches", getattr(self, "host", "unknown"))
                     break
 
                 chunk = member_uris[i:i + chunk_size]
+                fetched += len(chunk)
                 max_w = min(getattr(self, "_get_phase_worker_count", lambda d: d)(3), max(1, len(chunk)))
                 _wrap_task = getattr(self, "_wrap_phase_task", lambda fn: fn)
                 pool = ThreadPoolExecutor(max_workers=max_w)
                 try:
                     futures = [pool.submit(_wrap_task(self._get), uri) for uri in chunk]
-                    wait(futures, timeout=remaining)
+                    _done, pending = wait(futures, timeout=remaining)
+                    if pending:
+                        deadline_hit = True
                     for f in futures:
                         if callable(getattr(self, "_is_cancelled_or_skipped", None)) and self._is_cancelled_or_skipped():
                             break
@@ -388,6 +428,7 @@ class _GPUMixin(_CollectorBase):
                 finally:
                     pool.shutdown(wait=False, cancel_futures=True)
 
+            note_pcie_inventory_partial(self, available, fetched, capped, deadline_hit)
             return results
 
         # DMTF standard path: /Chassis/{id}/PCIeDevices (Dell, Lenovo, Cisco)

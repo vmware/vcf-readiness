@@ -587,6 +587,7 @@ JS_VAULT = """
   }
 
   function renderVaultState() {
+    document.dispatchEvent(new Event("vault-state-change"));
     var s = _vaultState;
     var badge = $v('vaultStateBadge');
     if (s.remote_disabled) {
@@ -604,7 +605,7 @@ JS_VAULT = """
       setVaultEntriesAccordion(false);
     } else {
       badge.className = 'badge badge-success'; badge.textContent = 'unlocked';
-      $v('vaultStatusText').textContent = s.entry_count + ' entr' + (s.entry_count === 1 ? 'y' : 'ies') + ' · auto-locks after 60 min idle';
+      $v('vaultStatusText').textContent = s.entry_count + ' BMC entr' + (s.entry_count === 1 ? 'y' : 'ies') + ' · ' + (s.service_count || 0) + ' service instance(s) · auto-locks after 60 min idle';
       hide($v('vaultCreateBlock')); hide($v('vaultUnlockBlock')); show($v('vaultOpenBlock')); show($v('vaultLockBtn'));
     }
     var cipherBadge = $v('vaultCipherBadge');

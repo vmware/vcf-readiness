@@ -13,9 +13,9 @@ The Detailed Inventory is divided into six subpanes:
 1. **Hosts:** SE Decision Matrix summarizing host compute, storage qualification, network readiness, memory interleaving, and platform security.
 2. **Drives:** Granular storage drive inventory with controller topology, endurance life percentage, protocol classification, and certified firmware tracking.
 3. **NICs:** Network interface controller port inventory with speed capabilities, link connection states, MAC addresses, and certified firmware levels.
-4. **BIOS Settings:** System firmware configurations including CPU power profiles, memory RAS modes, Intel VMD settings, boot modes, and Spectre/CVE microcode tiers.
+4. **BIOS Settings:** System firmware configurations including CPU power profiles, memory RAS modes, Intel VMD settings, boot modes, and historical BIOS date estimates.
 5. **Health Alarms:** Active hardware alarms aggregated from System Event Logs (SEL), drive S.M.A.R.T. telemetry, power supply redundancy, thermal sensors, and memory ECC counters.
-6. **Security:** Out-of-band management and host platform hardening including TPM 2.0, Secure Boot, BMC firmware baselines, CVE microcode tiers, Hyperthreading posture, NTP/time drift, DNS configuration, and BMC hardening.
+6. **Security:** Out-of-band management and host platform hardening including TPM 2.0, Secure Boot, BMC firmware baselines, historical BIOS date estimates, Hyperthreading posture, NTP/time drift, DNS configuration, and BMC hardening.
 
 ---
 
@@ -44,6 +44,16 @@ The Hosts tab provides the core decision matrix used by Solution Architects to d
 
 The Drives tab details every physical storage drive detected across all storage controllers.
 
+### NVMe Tiering drive detection
+
+The report presents Memory Tiering evidence separately from vSAN ESA/OSA qualification. A **Mem Tier** badge means the drive matched the active Memory Tiering BCG catalog by exact model name, a complete SKU token, or an exact local HCL alias. Capacity-bearing catalog entries are checked against observed capacity, and explicit OEM branding is used to avoid selecting a different vendor's variant. Family-only or ambiguous matches are not tagged. The badge links to the matched BCG entry; its tooltip shows the catalog release list and snapshot date. Confirm the exact model, capacity, firmware, ESXi release, and deployment requirements in BCG.
+
+The host Memory tab and fleet **Memory Tier Drives** columns/counts summarize identified drives. The count is an availability signal, not a compatibility verdict or deployment recommendation. Drives are not counted when they are absent, boot devices, unsupported NVMe, VMD-attached, behind RAID/Tri-Mode/software RAID, or identified as non-NVMe. A drive may be available for Memory Tiering or used as a vSAN capacity device; it cannot serve both roles at once.
+
+An additional **Mem Tier — TLC RI 1 DWPD** candidate badge is available only when the Web UI is launched with `python3 vcfr_web.py --nvme-namespace-preview` (off by default). It requires a vSAN ESA eligible capacity drive and explicit TLC plus rated 1 DWPD evidence, or an exact model/SKU covered by the reviewed product evidence list. QLC, cyber-recovery, boot, RAID/VMD, unknown NAND, and unknown or non-1-DWPD evidence do not qualify. The preview does not imply a Memory Tiering BCG listing, support approval, or certification. Its Help article explains the namespace-sizing research and test procedure: [NVMe namespace preview](NVME_NAMESPACE_PREVIEW.md).
+
+Memory Tiering badges do not alter ESA/OSA results, drive health, or firmware evaluations. For BCG refresh and offline bundle behavior, see [HCL Memory Tiering drive listings](../vcf_hci/hcl/README.md#memory-tiering-drive-listings).
+
 | Column Header | Description & Evaluation Logic | VCF 9.1 / vSAN Significance |
 |---|---|---|
 | **Host** | Host server hostname and BMC IP address. | Links drive to physical node. |
@@ -54,7 +64,7 @@ The Drives tab details every physical storage drive detected across all storage 
 | **Protocol** | Bus transport protocol: `NVMe`, `SAS`, `SATA`. | NVMe required for ESA. |
 | **Category** | Classification: `vSAN ESA/OSA NVMe`, `vSAN OSA Compatible (HBA)`, `Unsupported NVMe RAID`, `Unsupported NVMe Tri-Mode`. | Directly impacts vSAN storage qualification. |
 | **Health** | Hardware diagnostic health and S.M.A.R.T. operational state (`OK`, `Warning`, `Critical`, `Degraded`). | Failing or degraded drives must be replaced before deployment. |
-| **Life%** | Remaining silicon flash endurance percentage (wear gauge). Reported directly from BMC OEM storage telemetry and NVMe log pages. | Drives with &lt;20% remaining life trigger critical replacement warnings. |
+| **Life%** | Remaining silicon flash endurance percentage (wear gauge), when reported by BMC OEM telemetry or NVMe log pages. | Fleet Health Alarms show a warning below 50% remaining and critical below 20%. Missing data is unknown. Host reports separately show an Aging / Wear Alert for 30,000+ power-on hours, below 50% endurance, or recognized firmware issues. |
 | **Firmware** | Installed drive firmware version compared against certified Broadcom HCL baselines.<br>• **✓ (Green):** Certified and current.<br>• **▲ (Amber):** Certified update available or outdated. | Drive firmware must match VMware certified HCL releases to prevent I/O lockups. |
 
 ---

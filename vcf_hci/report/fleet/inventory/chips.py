@@ -238,9 +238,13 @@ def _drive_model_link(d: dict, json_hcl: Optional[dict] = None) -> str:
         model, pn, vid, did, svid, ssid, media_type=media
     )
 
+    from vcf_hci.hcl import evaluate_drive_hcl_tier
+    from vcf_hci.report.memory_tiering import drive_memory_tiering_badges
+    mem_tier = drive_memory_tiering_badges(d, evaluate_drive_hcl_tier(d, json_hcl=json_hcl), json_hcl)
+
     if bcg_url:
-        return f"<a href='{_xe(bcg_url)}' target='_blank' class='btn-link' style='color:var(--primary,#3b82f6);text-decoration:none;font-weight:600' title='Open in Broadcom Compatibility Guide'>{_xe(model)} ↗</a>"
-    return f"<strong>{_xe(model)}</strong>"
+        return f"<a href='{_xe(bcg_url)}' target='_blank' class='btn-link' style='color:var(--primary,#3b82f6);text-decoration:none;font-weight:600' title='Open in Broadcom Compatibility Guide'>{_xe(model)} ↗</a>" + mem_tier
+    return f"<strong>{_xe(model)}</strong>" + mem_tier
 
 
 def _nic_fw_cell(n: dict, json_hcl: Optional[dict] = None) -> str:

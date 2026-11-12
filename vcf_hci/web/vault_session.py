@@ -6,8 +6,8 @@ Web UI.  OFF unless the user explicitly creates / unlocks a vault from the UI.
 
 * Guarded by a ``threading.Lock`` (the HTTP server is multi-threaded).
 * Auto-locks after ``IDLE_LOCK_SECONDS`` of inactivity.
-* Never returns passwords to callers other than :func:`get` (whose result is
-  fed straight into ``scan_hosts``).
+* Secrets are available only to server-side scan consumers through :func:`get`
+  and explicit typed plugin resolution through :func:`service_action`.
 """
 
 import os
@@ -51,6 +51,7 @@ def status() -> Dict[str, Any]:
         _expire_if_idle_locked()
         unlocked = _vault is not None
         count = _vault.entry_count if _vault is not None else 0
+        service_count = len(_vault.list_service_credentials()) if _vault is not None else 0
         if _vault is not None:
             cipher = _vault.cipher
             cipher_disp = _vault.cipher_display
@@ -66,6 +67,7 @@ def status() -> Dict[str, Any]:
         "exists": exists,
         "unlocked": unlocked,
         "entry_count": count,
+        "service_count": service_count,
         "idle_lock_seconds": IDLE_LOCK_SECONDS,
         "cipher": cipher,
         "cipher_display": cipher_disp,
@@ -111,3 +113,33 @@ def get() -> Optional[CredentialVault]:
         if _vault is not None:
             _last_used = time.time()
         return _vault
+
+
+def service_action(action: str, data: Optional[Dict[str, Any]] = None) -> Any:
+    """Atomically resolve or update a service entry while the vault stays unlocked."""
+    from vcf_hci.vault.store import VaultError
+
+    global _last_used
+    body = data or {}
+    with _lock:
+        _expire_if_idle_locked()
+        if _vault is None:
+            raise VaultError("Vault is locked. Unlock it in Credential Vault.")
+        _last_used = time.time()
+        if action == "list":
+            return _vault.list_service_credentials()
+        if action == "resolve":
+            return _vault.get_service_credential(body.get("id"), body.get("kind"))
+        previous = dict(_vault._service_credentials)
+        try:
+            if action == "save":
+                result = _vault.set_service_credential(body)
+            elif action == "remove":
+                result = _vault.remove_service_credential(body.get("id"))
+            else:
+                raise ValueError("Unknown service credential action.")
+            _vault.save()
+        except Exception:
+            _vault._service_credentials = previous
+            raise
+        return result

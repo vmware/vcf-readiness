@@ -846,4 +846,326 @@ APP_CSS += SUMMARY_CSS
 
 APP_CSS += CLARITY_UI_CSS + SCANNER_CLARITY_CSS + WORKFLOW_CSS
 
+APP_CSS += """
+/* ── MTAT Phased Wizard & Qualification Reporting ────────────────── */
+.mtat-workflow { min-width: 0; }
+.mtat-stepper {
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  background: var(--vcf-bg-secondary);
+  padding: 0;
+  margin-bottom: .5rem;
+}
+.mtat-stepper ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mtat-stepper li {
+  min-width: 0;
+  border-right: 1px solid var(--vcf-border);
+}
+.mtat-stepper li:last-child { border-right: 0; }
+.mtat-stepper button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: .75rem 1rem;
+  text-align: center;
+  border: 0;
+  border-top: 3px solid transparent;
+  border-left: 0;
+  background: transparent;
+  color: var(--vcf-muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.mtat-stepper button[aria-current="step"] {
+  background: var(--vcf-card);
+  color: var(--vcf-text);
+  border-top-color: var(--vcf-primary);
+  border-left-color: transparent;
+  font-weight: 600;
+}
+.mtat-stepper button.step-complete {
+  color: var(--vcf-text);
+}
+.mtat-step-status {
+  margin: .25rem 0 .75rem;
+  font-size: .82rem;
+}
+.mtat-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem .75rem;
+  margin-bottom: .75rem;
+}
+.mtat-section-header h2,
+.mtat-section-header h3 {
+  margin: 0;
+}
+.mtat-checklist-heading {
+  font-size: .85rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.mtat-inline-control {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.mtat-inline-control .clr-select {
+  width: auto;
+  min-width: 180px;
+  max-width: 100%;
+}
+.mtat-workbook-section {
+  padding: .75rem;
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  background: var(--vcf-bg-subtle);
+}
+.mtat-workbook-section h3 {
+  margin: 0 0 .25rem;
+  font-size: .95rem;
+}
+.mtat-scope-grid {
+  align-items: start;
+}
+.mtat-scope-left,
+.mtat-scope-right {
+  min-width: 0;
+}
+.mtat-range-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .25rem;
+}
+.mtat-range-box {
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  background: var(--vcf-input-bg);
+  padding: .5rem .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.mtat-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+}
+.mtat-analyze-btn {
+  flex: 1 1 240px;
+  justify-content: center;
+  font-weight: 600;
+}
+.mtat-checklist-panel {
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  background: var(--vcf-bg-subtle);
+  padding: .75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.mtat-checklist-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  padding: .25rem 0;
+  border-bottom: 1px solid var(--vcf-border);
+}
+.mtat-checklist-row:last-child { border-bottom: 0; }
+.mtat-checklist-metric {
+  font-weight: 600;
+  min-width: 140px;
+}
+.mtat-checklist-target {
+  color: var(--vcf-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 120px;
+}
+.mtat-checklist-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 64px;
+}
+.mtat-checklist-note {
+  color: var(--vcf-primary);
+  font-weight: 600;
+  font-size: .82rem;
+  overflow-wrap: anywhere;
+}
+.mtat-matrix-table .mtat-cluster-cell {
+  color: var(--vcf-primary);
+  font-weight: 600;
+  vertical-align: middle;
+}
+.mtat-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: .75rem;
+}
+.mtat-kpi-card {
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  background: var(--vcf-bg-subtle);
+  padding: .75rem 1rem;
+  min-width: 0;
+}
+.mtat-kpi-card h4 {
+  margin: 0 0 .35rem;
+  font-size: .82rem;
+  color: var(--vcf-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.mtat-kpi-primary {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: .25rem;
+}
+.mtat-kpi-sub {
+  font-size: .82rem;
+  color: var(--vcf-muted);
+  line-height: 1.45;
+}
+.mtat-tco {
+  border-top: 1px solid var(--vcf-border);
+  padding-top: 1rem;
+}
+.mtat-tco-range-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+.mtat-tco-range-row input[type=range] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--vcf-primary);
+}
+.mtat-tco-range-row output {
+  min-width: 3.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.mtat-tco-price-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .3rem;
+}
+.mtat-tco-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(40rem, 100%), 1fr));
+  gap: .75rem;
+}
+.mtat-tco-figure {
+  margin: 0;
+  min-width: 0;
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  background: var(--vcf-bg-subtle);
+  padding: .75rem;
+}
+.mtat-tco-figure figcaption {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--vcf-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: .4rem;
+}
+.mtat-tco-chart-scroll { overflow-x: auto; }
+.mtat-tco-chart-wrap { position: relative; min-width: 30rem; }
+.mtat-tco-chart { display: block; width: 100%; height: auto; }
+.mtat-tco-chart text { font-family: inherit; }
+.mtat-tco-axis { font-size: 13px; fill: var(--vcf-muted); }
+.mtat-tco-axis.mtat-tco-good { fill: var(--vcf-success); font-weight: 600; }
+.mtat-tco-axis-title { font-size: 13px; fill: var(--vcf-muted); font-weight: 600; }
+.mtat-tco-value { font-size: 14px; fill: var(--vcf-text); font-weight: 700; }
+.mtat-tco-grid { stroke: var(--vcf-border); stroke-width: 1; stroke-dasharray: 3 3; }
+.mtat-tco-marker { stroke: var(--vcf-text); stroke-width: 1.5; stroke-dasharray: 4 3; opacity: .6; }
+.mtat-tco-hover { stroke: var(--vcf-muted); stroke-width: 1; }
+.mtat-tco-overlay { fill: transparent; cursor: crosshair; }
+.mtat-tco-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.mtat-tco-line-selected { stroke-width: 3.5; }
+.mtat-tco-dot { stroke: var(--vcf-card); stroke-width: 1.5; }
+.mtat-tco-line.mtat-tco-r0 { stroke: var(--vcf-muted); }
+.mtat-tco-line.mtat-tco-r25 { stroke: var(--vcf-success); }
+.mtat-tco-line.mtat-tco-r50 { stroke: var(--vcf-primary); }
+.mtat-tco-line.mtat-tco-r100 { stroke: var(--vcf-warning); }
+.mtat-tco-dot.mtat-tco-r0, .mtat-tco-swatch.mtat-tco-r0 { fill: var(--vcf-muted); background: var(--vcf-muted); }
+.mtat-tco-dot.mtat-tco-r25, .mtat-tco-swatch.mtat-tco-r25 { fill: var(--vcf-success); background: var(--vcf-success); }
+.mtat-tco-dot.mtat-tco-r50, .mtat-tco-swatch.mtat-tco-r50 { fill: var(--vcf-primary); background: var(--vcf-primary); }
+.mtat-tco-dot.mtat-tco-r100, .mtat-tco-swatch.mtat-tco-r100 { fill: var(--vcf-warning); background: var(--vcf-warning); }
+rect.mtat-tco-dram { fill: var(--vcf-primary); }
+rect.mtat-tco-nvme { fill: var(--vcf-success); }
+.mtat-tco-swatch.mtat-tco-dram { background: var(--vcf-primary); }
+.mtat-tco-swatch.mtat-tco-nvme { background: var(--vcf-success); }
+.mtat-tco-bar[role="button"] { cursor: pointer; }
+.mtat-tco-bar[role="button"]:focus { outline: none; }
+.mtat-tco-bar[role="button"]:focus-visible rect,
+.mtat-tco-bar.mtat-tco-selected rect { stroke: var(--vcf-text); stroke-width: 2; }
+.mtat-tco-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem 1rem;
+  list-style: none;
+  margin: .4rem 0 0;
+  padding: 0;
+  font-size: .8rem;
+  color: var(--vcf-muted);
+}
+.mtat-tco-swatch {
+  display: inline-block;
+  width: .75rem;
+  height: .75rem;
+  border-radius: 2px;
+  margin-right: .35rem;
+  vertical-align: -1px;
+}
+.mtat-tco-tooltip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  padding: .45rem .6rem;
+  font-size: .78rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--vcf-text);
+  background: var(--vcf-card);
+  border: 1px solid var(--vcf-border);
+  border-radius: var(--vcf-radius);
+  box-shadow: var(--vcf-shadow);
+  font-variant-numeric: tabular-nums;
+}
+#mtatTcoTable .mtat-tco-row-selected td { background: var(--vcf-bg-secondary); font-weight: 600; }
+@media (max-width: 700px) {
+  .mtat-stepper ol { grid-template-columns: minmax(0, 1fr); }
+  .mtat-stepper li { border-right: 0; border-bottom: 1px solid var(--vcf-border); }
+  .mtat-stepper li:last-child { border-bottom: 0; }
+  .mtat-stepper button { justify-content: flex-start; text-align: left; border-top: 0; border-left: 3px solid transparent; }
+  .mtat-stepper button[aria-current="step"] { border-top-color: transparent; border-left-color: var(--vcf-primary); }
+  .mtat-analyze-btn { flex-basis: 100%; }
+}
+"""
+
 APP_CSS += GROUP_CSS

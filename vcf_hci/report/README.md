@@ -44,21 +44,24 @@ overview.py    cpu.py      storage.py   health.py ... (Sections)
 
 - **`host_report.py`**: `generate_host_html_report()` creating standalone HTML reports per server.
 - **`firmware_identity.py`**: Conservative NIC firmware association from exact network resources or meaningful component identity; retain original firmware component names and leave ambiguous hardware matches unassigned.
+- **`firmware_readiness.py`**: Workbook-only 9.1 firmware assessments. Summary replaces the speed-based NIC verdict with All NICs Ready and adds upgrade rollups. vFirmware covers BIOS, BMC, NIC, NVMe and HBA/RAID; Remediation separates link review from firmware support. Only release-specific evidence establishes support; missing evidence is Incomplete. BIOS currency alone does not establish 9.1 support, and BMC age over 365 days at capture is a yellow advisory, never a certification verdict. Storage controllers require vSAN OSA evidence; FC HBAs use ESXi evidence. The shared CSV schema is unchanged.
+- **`memory_tiering.py`**: Renders the Mem Tier catalog badge. When the web `--nvme-namespace-preview` flag is on, it also renders the TLC RI 1 DWPD tag and the namespace-sizing Help block. Match rules stay in `vcf_hci/hcl/memory_tiering.py`.
 - **`pcie_inventory.py`**: Collected PCIe device records independently of physical slots. Preserve repeated adapters by resource identity, label simulated/partial BMC evidence, and separate negotiated links from reported maximum capabilities.
 - **`fleet_report.py`**: Backward-compatibility re-export facade for `generate_summary_html()`, `build_fleet_tiles_html()`, etc.
-- **`inventory_tables.py`**: `build_host_decision_rows()`, `summarize_esa_disks()`, `summarize_nics()`, and `build_inventory_sheets()` producing dense SE decision records and granular component rows (`Decision`, `vCPU`, `vMemory`, `vStorage`, `vNetwork`, `vGPU`, `vFirmware`, `vHBA`).
+- **`inventory_tables.py`**: `build_host_decision_rows()`, `summarize_esa_disks()`, `summarize_nics()`, and `build_inventory_sheets()` producing dense SE decision records and granular component rows (`Decision`, `vCPU`, `vMemory`, `vStorage`, `vNetwork`, `vGPU`, `vFirmware`, `vHBA`, `vBIOS`, `Health_Alarms`).
 - **`fleet/`**: Subpackage containing modular domain generators for multi-host fleet reporting:
   - **`summary.py`**: `generate_summary_html()` creating the executive overview HTML dashboard (`fleet_summary.html`).
   - **`tiles.py`**: `build_fleet_tiles_html()` rendering the 13-tile fleet health dashboard.
   - **`switch_matrix.py`**: `build_fleet_switch_matrix_html()` rendering ToR switch fabric and topology matrix.
+  - **`fc_matrix.py`**: `build_fleet_fc_matrix_html()` rendering the fleet Fibre Channel matrix used by the summary and combined reports.
   - **`inventory_panel.py`**: `build_detailed_inventory_html()` rendering the Detailed Inventory & SE Decision Matrix tab panel with live client-side facet filtering and drive/NIC subpanes.
   - **`combined.py`**: `_generate_combined_html()` rendering multi-host tabbed fleet reports (`fleet_combined.html`) with Detailed Inventory at Tab 1.
   - **`vendor.py`**: `normalize_oem_vendor()` OEM vendor string normalization helper.
   - **`escape.py`**: `_xe()` XML/HTML-escape helper.
 - **`excel_export.py`**: `export_to_excel()`, `build_inventory_xlsx_bytes()`, and `build_obfuscated_inventory_zip()` exporting host inventory and compatibility assessments into multi-sheet Excel workbooks (summary, decision, component inventory, security posture, audit findings, and optional failed hosts) and private obfuscation key ZIP bundles.
 - **`csv_export.py`**: `export_all_csvs()`, `generate_fleet_summary_csv()`, `generate_drives_csv()`, `generate_nics_csv()`, `generate_gpus_csv()`, and `generate_failed_hosts_csv()` producing standardized tabular CSV exports.
-- **`schema_registry.py`**: Extensible Schema Registry (Schema v2.0) defining 40+ typed hardware fields across 11 architectural domains (`ExportField`, `FLEET_SUMMARY_FIELDS`). Provides stable column definitions, text sanitization (`strip_html`), and deterministic verdict color mapping (`color_for_verdict`) used by both Excel and CSV export engines.
-- **`sel_links.py`**: Multi-Vendor SEL / IML Guide Links & Event Resolvers (`VENDOR_SEL_GUIDES`, `get_sel_link`, `format_sel_badge`). Maps raw hardware alarms, event IDs, and hex codes directly to official vendor error documentation across Dell PowerEdge (EEMS 12G–17G), HPE ProLiant (IML Gen10–12), Cisco UCS (IMC Faults Guide), Lenovo ThinkSystem (XCC Events Guide), and Supermicro BMC (IPMI Spec).
+- **`schema_registry.py`**: Extensible Schema Registry (Schema v2.0). `FLEET_SUMMARY_FIELDS` is a list of `ExportField` rows across 12 groups: Host, Verdicts, Compute, Memory, Storage, Network, Security, Power, GPU, OS, Diagnostics, and Groups. Provides stable column definitions, text sanitization (`strip_html`), and deterministic verdict color mapping (`color_for_verdict`) used by both Excel and CSV export engines.
+- **`sel_links.py`**: Multi-Vendor SEL / IML Guide Links & Event Resolvers (`VENDOR_SEL_GUIDES`, `get_vendor_sel_guide`, `resolve_sel_event_url`, `render_sel_message_id_cell`). Maps raw hardware alarms, event IDs, and hex codes directly to official vendor error documentation across Dell PowerEdge (EEMS 12G–17G), HPE ProLiant (IML Gen10–12), Cisco UCS (IMC Faults Guide), Lenovo ThinkSystem (XCC Events Guide), and Supermicro BMC (IPMI Spec).
 - **`components.py`**: Reusable HTML component builders (badges, status cards, data tables, collapsible `<details>` sections, gauge bars).
 - **`styles.py`**: Explicit host/fleet CSS composition; combined reports select source constants independently of host HTML and ordering.
 - **`presentation.py`**: Shared Clarity-inspired tokens, semantic light/dark pairs, tab/dialog/resize behavior, evidence navigation and print support. Static Python constants keep distribution packaging and offline behavior consistent.
@@ -72,7 +75,8 @@ overview.py    cpu.py      storage.py   health.py ... (Sections)
   - **`cpu.py`**: CPU specifications, socket layout, core counts, and Broadcom HCL links.
   - **`memory.py`**: Memory DIMM layout, capacity, channel interleaving, and NUMA topology.
   - **`storage.py`**: Disk controllers, drive endurance/wear %, vSAN ESA drive compatibility, and SMART metrics.
-  - **`network.py`**: Network interface adapters, port speed, ESA NIC qualification, and FC HBAs with WWPNs.
+  - **`network.py`**: Network interface adapters, port speed, ESA NIC qualification, and a summary FC HBA card. Detailed WWPN/WWNN addressing is rendered by `hba.py`.
+  - **`hba.py`**: Host Fibre Channel tab (`render_hba_tab`), including WWPN/WWNN addressing.
   - **`pcie_gpu.py`**: NVIDIA/AMD/Intel GPU accelerators and PCIe expansion topology.
   - **`bios_security.py`**: BIOS version evaluation, TPM 2.0 state, Intel VMD settings, and Secure Boot.
   - **`firmware_os.py`**: BMC firmware versions, ESXi build targets, and management IP information.
@@ -114,6 +118,13 @@ overview.py    cpu.py      storage.py   health.py ... (Sections)
 
 ## Retained component evidence
 
+Excel vFirmware links installed/supported versions to retained BCG catalog
+listings, falling back to labeled PCI/model searches. vBIOS links BIOS versions
+to the server listing/search, where platform BIOS requirements can be reviewed.
+Remediation retains the same references. These are native XLSX hyperlinks, with
+blue underlined version/reference cells; they do not change readiness verdicts.
+BMC age advisories and unreported components have no BCG link.
+
 The host Health tab includes expandable service parts, sensors, PCIe CPU locality,
 firmware provenance, power sizing and per-metric availability. Assembly records
 merge with component inventory by serial or part plus location; sensor detail
@@ -141,7 +152,7 @@ FC inventory uses the shared `vcf_hci/fc_inventory.py` reconciliation helpers be
 
 `executive.py` builds an evidence-based brief, printable HTML, and a stdlib-only PDF with pagination. Fleet summary generation writes both executive artifacts; `/api/export-executive` produces current or obfuscated downloads. Priority groups use existing decision rows and canonical BMC control titles. Unknowns and failed targets stay separate from successful readiness counts.
 
-`formatting.py` applies the shared, always-on Clarity SVG renderer to HTML. Historical presentation flags are ignored. `ui_clarity.py` preserves inputs, code, paths, PII spans and evidence cells, and adds selected icons to interface labels; observed drive protocol/media determine the one icon beside each media label. CSV/Excel values remain plain data. Text-only executive output uses a separate sanitizer. Shared presentation tokens use neutral labels with narrow semantic color accents.
+`formatting.py` applies the shared, always-on Clarity SVG renderer to HTML. Historical presentation flags are ignored. `vcf_hci/ui_clarity.py` preserves inputs, code, paths, PII spans and evidence cells, and adds selected icons to interface labels; observed drive protocol/media determine the one icon beside each media label. CSV/Excel values remain plain data. Text-only executive output uses a separate sanitizer. Shared presentation tokens use neutral labels with narrow semantic color accents.
 
 See [the executive report guide](../../docs/EXECUTIVE_REPORT.md) for scope, priority rules, and PDF font behavior.
 

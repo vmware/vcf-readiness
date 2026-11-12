@@ -1,6 +1,7 @@
 """Fleet health dashboard tiles generator."""
 import logging
 import re
+from typing import Optional
 
 from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.constants import (
@@ -23,7 +24,7 @@ from vcf_hci.ui_clarity import icon_html
 logger = logging.getLogger("vcf_assess")
 
 
-def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan_report_", page_salt: str = "") -> str:
+def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan_report_", page_salt: str = "", json_hcl: Optional[dict] = None) -> str:
     """Return a self-contained HTML snippet (style + tile grid + script) for the
     13-tile fleet health dashboard.  Callers embed the returned string wherever
     they need the tiles — both the standalone fleet_summary.html and the GUI's
@@ -31,7 +32,8 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
     """
     host_count = len(all_results)
 
-    json_hcl = load_vsan_hcl_json()
+    if json_hcl is None:
+        json_hcl = load_vsan_hcl_json()
     csv_db = load_optional_vsan_csv()
     for data in all_results:
         normalize_storage_capacities(data.get("storage_subsystem"))
@@ -138,7 +140,7 @@ def build_fleet_tiles_html(all_results: list, report_prefix: str = "vsphere_vsan
                 _gpu_other[_model_key] = _gpu_other.get(_model_key, 0) + 1
 
     # ── Tile 4: VCF Support Tier ──────────────────────────────────────────────
-    overview_groups = fleet_overview_groups(all_results)
+    overview_groups = fleet_overview_groups(all_results, json_hcl=json_hcl)
     # ── Tile 5: TPM Compliance ────────────────────────────────────────────────
     tpm_ok = sum(1 for data in all_results
                  if "success" in (data.get("system") or {}).get("tpm_status_badge", ""))

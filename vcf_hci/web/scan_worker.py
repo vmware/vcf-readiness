@@ -247,6 +247,11 @@ def _regenerate_fleet_artifacts(
     _obf_sum = ""
     obf_results = None
 
+    from vcf_hci.hcl import load_vsan_hcl_json
+    with _state_lock:
+        selected_bundle = _state.get("custom_hcl_bundle_path")
+    json_hcl = import_hcl_bundle(selected_bundle)[0] if selected_bundle else load_vsan_hcl_json()
+
     report_paths = []
     for r in results:
         ip = ((r.get("system") or {}).get("ip") or r.get("host") or "").strip()
@@ -254,7 +259,7 @@ def _regenerate_fleet_artifacts(
             rp = os.path.join(reports_dir, f"vsphere_vsan_report_{sanitize_filename(ip)}.html")
             if os.path.isfile(rp):
                 if r.get("server_groups") is not None:
-                    generate_host_html_report(r, rp)
+                    generate_host_html_report(r, rp, json_hcl=json_hcl)
                 report_paths.append(rp)
 
     if n >= 1 or len(failed_hosts) >= 1:
@@ -262,7 +267,7 @@ def _regenerate_fleet_artifacts(
             if n > COMBINED_HTML_MAX_HOSTS:
                 _log(f"[!] Note: Combined report host count ({n}) exceeds soft limit of {COMBINED_HTML_MAX_HOSTS}.")
             try:
-                fleet_path = _generate_combined_html(results, report_paths, outdir)
+                fleet_path = _generate_combined_html(results, report_paths, outdir, json_hcl=json_hcl)
                 if fleet_path:
                     _log(f"[✓] Combined report  →  {os.path.basename(fleet_path)}")
             except Exception as exc:
@@ -270,7 +275,7 @@ def _regenerate_fleet_artifacts(
 
         try:
             summary_path = os.path.join(outdir, "00_fleet_summary.html")
-            generate_summary_html(results, summary_path, hcl_bundle_metadata=custom_hcl_metadata, failed_hosts=failed_hosts)
+            generate_summary_html(results, summary_path, hcl_bundle_metadata=custom_hcl_metadata, failed_hosts=failed_hosts, json_hcl=json_hcl)
             _log("[✓] Fleet summary    →  00_fleet_summary.html")
         except Exception as exc:
             _log(f"[!] Fleet summary failed: {exc}")
@@ -287,6 +292,7 @@ def _regenerate_fleet_artifacts(
                         _obf_sum,
                         hcl_bundle_metadata=custom_hcl_metadata,
                         obfuscated=True,
+                        json_hcl=json_hcl,
                     )
                     _log("[🔒] Obfuscated fleet summary  →  00_OBFUSCATED_fleet_summary.html")
                 except Exception as exc:
@@ -303,6 +309,7 @@ def _regenerate_fleet_artifacts(
                         obf_path,
                         hcl_bundle_metadata=custom_hcl_metadata,
                         obfuscated=True,
+                        json_hcl=json_hcl,
                     )
                     return obf_path
                 except Exception as exc:
@@ -324,6 +331,7 @@ def _regenerate_fleet_artifacts(
                         obf_report_paths,
                         outdir,
                         obfuscated=True,
+                        json_hcl=json_hcl,
                     )
                     if _obf_fleet_path:
                         _log(f"[🔒] Obfuscated combined report →  {os.path.basename(_obf_fleet_path)}")

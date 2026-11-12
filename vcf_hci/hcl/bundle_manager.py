@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import ssl
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -202,18 +203,31 @@ def create_hcl_bundle(output_zip_path: Optional[str] = None) -> str:
     }
     if io_nics_content:
         metadata["files"].append("io_nics.json")
+    from vcf_hci.hcl.memory_tiering_data import MEMBER, load_memory_tiering_catalog
+    memory_tiering = load_memory_tiering_catalog(refresh_live=True)
+    metadata['files'].append(MEMBER)
+    metadata['memory_tiering_fetched_at'] = memory_tiering['fetched_at']
 
     try:
         compression = zipfile.ZIP_DEFLATED
     except Exception:
         compression = zipfile.ZIP_STORED
 
-    with zipfile.ZipFile(output_zip_path, "w", compression=compression) as z:
-        z.writestr("all.json", raw_json)
-        z.writestr("vsan_drives.csv", csv_content)
-        if io_nics_content:
-            z.writestr("io_nics.json", io_nics_content)
-        z.writestr("bundle_metadata.json", json.dumps(metadata, indent=2))
+    with tempfile.NamedTemporaryFile(dir=os.path.dirname(os.path.abspath(output_zip_path)),
+                                     prefix='hcl-bundle-', suffix='.tmp', delete=False) as temporary:
+        temporary_path = temporary.name
+    try:
+        with zipfile.ZipFile(temporary_path, "w", compression=compression) as z:
+            z.writestr("all.json", raw_json)
+            z.writestr("vsan_drives.csv", csv_content)
+            if io_nics_content:
+                z.writestr("io_nics.json", io_nics_content)
+            z.writestr(MEMBER, json.dumps(memory_tiering))
+            z.writestr("bundle_metadata.json", json.dumps(metadata, indent=2))
+        os.replace(temporary_path, output_zip_path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
     logger.info(f"Successfully created dark-site HCL bundle archive: {output_zip_path}")
     return output_zip_path
@@ -369,6 +383,21 @@ def import_hcl_bundle(bundle_zip_path: str) -> tuple:
                     logger.warning(f"Error parsing io_nics.json from bundle: {e}")
             else:
                 _apply_io_nics_catalog(json_hcl)
+
+            from vcf_hci.hcl.memory_tiering_data import MEMBER, packaged_catalog, validate_catalog
+            memory_tiering = packaged_catalog()
+            if MEMBER in z.namelist():
+                try:
+                    info = z.getinfo(MEMBER)
+                    if info.file_size > 8 * 1024 * 1024:
+                        raise ValueError('Oversized Memory Tiering dataset')
+                    memory_tiering = validate_catalog(json.loads(z.read(MEMBER).decode('utf-8')))
+                except (json.JSONDecodeError, UnicodeError, ValueError, KeyError, TypeError) as exc:
+                    logger.error('Invalid Memory Tiering dataset in HCL bundle: %s', exc)
+                    return {}, {}, {}
+            json_hcl['_memory_tiering'] = memory_tiering
+            metadata['memory_tiering_fetched_at'] = memory_tiering['fetched_at']
+            metadata['memory_tiering_source'] = 'bundle' if MEMBER in z.namelist() else 'packaged'
 
             _apply_hcl_supplements(json_hcl)
 

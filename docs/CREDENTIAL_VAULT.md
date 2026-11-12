@@ -1,6 +1,6 @@
 # Encrypted Credential Vault Guide (optional)
 
-> **Off by default.** Nothing in this guide happens unless you explicitly create a vault and ask a scan to use it. If you only ever scan with one username/password, you do not need this feature.
+> **Off by default.** Nothing in this guide happens unless you explicitly create a vault and ask a scan or plugin to use it. If you only ever scan with one username/password, you do not need this feature.
 
 ## 1. When to use it
 
@@ -8,7 +8,7 @@
 - You want to stop keeping a **plaintext credentials CSV** on your laptop or jump box.
 - You run **scripted / non-interactive** scans and need per-host credentials without putting them on the command line.
 
-The vault stores entries of three kinds and picks the most specific one for each target:
+For BMC scans, the vault stores entries of three kinds and picks the most specific one for each target:
 
 | Kind | Example target | Matches |
 |---|---|---|
@@ -33,7 +33,7 @@ Precedence: **exact → longest CIDR → default**. IPv4 ranges such as `198.51.
 
 ### Forgotten passphrase: reset the local vault
 
-There is no passphrase recovery or password reset that preserves access to the encrypted contents. To start over, remove the vault file from its configured location and create a new vault. Resetting removes access to the stored credential entries and jump-host profiles, including saved jump-host credentials and SSH host-key pins.
+There is no passphrase recovery or password reset that preserves access to the encrypted contents. To start over, remove the vault file from its configured location and create a new vault. Resetting removes access to the stored credential entries and jump-host profiles, including saved service accounts, jump-host credentials and SSH host-key pins.
 
 1. In **Credential Vault → Forgot the vault passphrase?**, note the displayed vault-file location. The default is `~/.vcf-readiness/credentials.vault` on macOS/Linux, or `%USERPROFILE%\.vcf-readiness\credentials.vault` on Windows. The `~` refers to the home directory of the account running the tool. For a CLI vault opened with `--vault PATH`, use that custom file instead.
 2. Stop any active scan and **quit the application/web server completely**. Closing the browser tab is not enough. An unlocked vault remains in server memory and a later save could recreate the old file.
@@ -131,6 +131,17 @@ Without `--vault` the CLI behaves exactly as before.
 6. Optionally type a username/password in the normal fields: with the vault enabled they act only as a **fallback for unmatched hosts**. Leave the password empty to skip unmatched hosts instead.
 7. Click **Run Assessment**. Credentials are resolved on the local server process; the browser never receives them. Auto-retry passes reuse the same resolved credentials.
 8. Click **Lock** when you are done, or just quit — the vault locks on shutdown and after 60 minutes idle.
+
+### Saved vCenter and VCF Operations instances
+
+1. Create or unlock **Credential Vault**. Under **vCenter & VCF Operations**, choose the service, enter an instance name, HTTPS hostname or URL, username and password, then select **Save instance**. For Operations, an authentication source can be saved when required by the account.
+2. In a plugin's connection form, select **Use saved credentials**, then select the saved instance. The selector replaces the manual hostname, username and password fields. The link beside it opens Credential Vault to unlock or add the relevant service, with a return link to the plugin. Refresh the saved instances after editing an entry.
+3. vCenter entries work with **VDT**, **MTAT Workload Assessment**, and **vSphere Inventory Export**. Operations entries are available only for MTAT's **Operations REST** source. Workbook imports do not use saved accounts.
+4. Review the plugin's normal TLS settings, acknowledgement and collection options. A saved entry does not bypass certificate review, SSH fingerprint verification, source permissions or plugin execution requirements.
+
+These are separate service entries: BMC defaults/subnets and external BMC providers never supply plugin credentials. Appliance SSH remains a separate account for VDT; a saved SSO password is never reused as an SSH password. Editing an instance requires entering its password again; the UI never displays stored passwords. Removing or locking an entry prevents new connections through that selection. Already-started collections keep the credentials handed to them for their run.
+
+Instance labels, endpoints and usernames are shown in the selector. Passwords are resolved on the server from the unlocked encrypted vault and never returned to the browser. Instance selections are not saved in browser preferences. The vault remains unavailable under `--allow-remote`. Existing vaults open without service entries and retain their BMC/jump-host data; use the current application when editing a vault containing service entries.
 
 ## 6. Troubleshooting
 

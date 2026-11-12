@@ -33,6 +33,7 @@ JS_VDT_REMOTE = """
         el('Host').value = value;
         return value;
       }
+      function savedPayload(body) { return typeof pluginCredentials === 'undefined' ? body : pluginCredentials.payload('vdt',body); }
       function target() {
         return {host:normalizeApplianceHost(), port:Number(el('Port').value),
           username:el('Username').value.trim(), auth_type:'password',
@@ -77,7 +78,7 @@ JS_VDT_REMOTE = """
       function accessError() {
         if (!hostKey || !el('Trust').checked) return 'Read and verify the appliance SSH fingerprint, then confirm trust for this run.';
         if (!el('Username').value.trim() || !el('Password').value) return 'Enter the appliance SSH username and password.';
-        if (!el('SsoUsername').value.trim() || !el('SsoPassword').value) return 'Enter the separate vCenter SSO username and password.';
+        if (!(typeof pluginCredentials !== 'undefined' && pluginCredentials.ready('vdt')) && (!el('SsoUsername').value.trim() || !el('SsoPassword').value)) return 'Enter the separate vCenter SSO username and password.';
         return '';
       }
       function review() {
@@ -102,7 +103,7 @@ JS_VDT_REMOTE = """
         });
         el('StepStatus').textContent = 'Step ' + (step + 1) + ' of 4';
         ['Folder','Product','Host','Port','ApiPort','Username','Password','SsoUsername','SsoPassword','Output'].forEach(function(id) {
-          el(id).disabled = busy || !!active() || !available;
+          el(id).disabled = busy || !!active() || !available || (typeof pluginCredentials !== 'undefined' && pluginCredentials.active('vdt') && ['Host','ApiPort','SsoUsername','SsoPassword'].indexOf(id) >= 0);
         });
         el('Trust').disabled = busy || !!active() || !hostKey || !available;
         el('Effects').disabled = busy || !!active() || !available;
@@ -254,8 +255,8 @@ JS_VDT_REMOTE = """
         var error = applianceError() || accessError(); if (error) { message(error, true); return; }
         busy = true; verified = false; message('', false); render(false);
         try {
-          var body = target(); body.https_port = Number(el('ApiPort').value); body.folder = el('Folder').value; body.product = el('Product').value;
-          var data = await post('/api/plugins/vdt/remote/preflight', body);
+          var body = {target:target(), https_port:Number(el('ApiPort').value), folder:el('Folder').value, product:el('Product').value};
+          var data = await post('/api/plugins/vdt/remote/preflight', savedPayload(body));
           if (data.supported_products && data.supported_products.indexOf(el('Product').value) < 0) throw new Error('This product is not supported for reviewed remote collection. Use manual export and import.');
           if (!data.ok) throw new Error(data.error || 'Appliance prerequisites were not met.');
           if (data.vcenter && data.selection) discovery = {vcenter:data.vcenter, selection:data.selection};
@@ -271,9 +272,9 @@ JS_VDT_REMOTE = """
         if (error || !verified || !el('Effects').checked || !el('Output').value.trim()) { message(error || 'Complete preflight, choose the output folder, and review collection effects.', true); return; }
         busy = true; message('', false); render(false);
         try {
-          var response = await post('/api/plugins/vdt/remote/run', {target:target(), folder:el('Folder').value,
+          var response = await post('/api/plugins/vdt/remote/run', savedPayload({target:target(), folder:el('Folder').value,
             product:el('Product').value, https_port:Number(el('ApiPort').value), sso_username:el('SsoUsername').value.trim(), sso_password:el('SsoPassword').value,
-            output_dir:el('Output').value.trim()});
+            output_dir:el('Output').value.trim()}));
           if (!response.job || !response.job.id) throw new Error('The collection did not return a job identifier. Check local server status before retrying.');
           clearPasswords(); verified = false; el('Trust').checked = false; el('Effects').checked = false;
           step = 3; reached = 3; showJob(response.job); poll();

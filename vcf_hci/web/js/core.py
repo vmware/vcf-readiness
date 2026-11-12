@@ -61,7 +61,7 @@ JS_CORE = """
       panel.hidden = panel !== section;
     });
     document.querySelectorAll('[data-section-link]').forEach(function(link) {
-      if (link.dataset.sectionLink === name) link.setAttribute('aria-current', 'page');
+      if (link.dataset.sectionLink === name || (link.dataset.sectionLink === 'plugins' && (name === 'mtat-experimental' || name === 'vinv-experimental' || name === 'vdt-plugin'))) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
     if (name === 'credential-vault' && typeof _vaultState !== 'undefined') refreshVaultStatus();

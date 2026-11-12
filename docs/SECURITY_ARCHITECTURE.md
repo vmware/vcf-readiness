@@ -9,15 +9,15 @@
 
 The **VCF / vSphere 9.1 HCI Readiness Assessment Tool** is a non-intrusive, read-only hardware auditor designed to evaluate enterprise server compatibility against VMware Cloud Foundation (VCF) 9.1 and vSAN Express Storage Architecture (ESA) standards.
 
-Security review must distinguish native BMC collection from optional plugin workflows. Native Redfish collection is read-only with respect to managed hardware configuration and data; it still creates local reports and normal authentication/session records. Managed VDT appliance collection requires SSH/root access, separate SSO credentials, uploaded executable code and temporary appliance writes. It must not be described as having the native scanner's no-deployment/no-host-access boundary. The [workflow requirements and limits](#35-optional-vdt-plugin-security-boundary) below apply even though upstream VDT is not bundled.
+Security review must distinguish native BMC collection from optional plugin workflows. Native Redfish collection is read-only with respect to managed hardware configuration and data; it still creates local reports and normal authentication/session records. Managed VDT appliance collection requires SSH/root access, separate SSO credentials, uploaded executable code and temporary appliance writes. It must not be described as having the native scanner's no-deployment/no-host-access boundary. Experimental MTAT workload assessment is a separate workstation-side read of vCenter or Operations: it requires acknowledgement, does not deploy code, and does not change those systems. The [VDT limits](#35-optional-vdt-plugin-security-boundary) and [MTAT boundary](#36-optional-experimental-mtat-workload-assessment) apply to those optional workflows. Upstream VDT is not bundled.
 
 The native scanner uses these boundaries:
 
 1. **Zero Hypervisor / OS Footprint:** Requires **no** host agents, kernel modules, OS daemons, or in-band credentials. It operates entirely out-of-band (OOB).
 2. **Principle of Least Privilege:** Connects via **read-only** Baseboard Management Controller (BMC) accounts. The usual path is HTTPS on port 443. HTTP on port 80 is accepted only with a warning because credentials are unencrypted. Zero write, reboot, firmware flashing, or configuration mutation actions are performed.
-3. **No Required Third-Party Runtime Packages:** Native scanning runs on Python 3.9+ standard-library modules. The optional vault uses installed `pycryptodomex` or `pycryptodome` for AES when available, with a stdlib fallback. Python, OpenSSL, bundled assets, optional packages and build tools still require normal vulnerability and provenance review.
+3. **No Required Third-Party Runtime Packages:** Native scanning runs on Python 3.9+ standard-library modules and has no required third-party runtime packages. The optional vault uses installed `pycryptodomex` or `pycryptodome` for AES when available, with a stdlib fallback. The hash-pinned pyVmomi wheel loads only when the experimental MTAT vCenter adapter opens a session; Operations collection, workbook import, and native BMC scanning do not load it. Python, OpenSSL, bundled assets, optional packages and build tools still require normal vulnerability and provenance review.
 4. **Complete Source Auditability (No Opaque Binaries Required):** The tracked and supported launch path is plain-text Python source (`python3 vcfr_web.py` or `python3 -m vcf_hci`). This repository does not require or promise a prebuilt executable.
-5. **Local Assessment and Disclosed Egress:** There are no analytics, crash telemetry, or license check-ins. The browser server checks public GitHub release metadata once per launch by default; set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable that request. Broadcom HCL refresh/bundle creation, Dell warranty enrichment, and external credential providers require explicit operator action.
+5. **Local Assessment and Disclosed Egress:** There are no analytics, crash telemetry, or license check-ins. The browser server checks public GitHub release metadata once per launch by default; set `VCF_READINESS_CHECK_UPDATES=0` before launch to disable that request. Web UI launch also starts a background public vSAN/Memory Tiering HCL refresh and local bundle rebuild; use `--no-hcl-auto-refresh` to suppress it, or preload `--import-hcl` for offline HCL startup. A failed refresh keeps the last valid local cache, and Memory Tiering falls back to that cache or the packaged catalog. Dell warranty enrichment and external credential providers require explicit operator action.
 6. **Air-Gap / Dark-Site Support:** Operates seamlessly in isolated air-gapped networks. Public Broadcom Hardware Compatibility List (HCL) datasets can be packaged offline (`--bundle-hcl`) and imported (`--import-hcl`), eliminating any need for dual-homed management workstations.
 7. **Deterministic Data Obfuscation:** Built-in cryptographic PII sanitization hashes IPs, MACs, serial numbers, hostnames, and WWNs with a random salt while preserving essential hardware and topology relationships for external review.
 8. **Hardened Local Web UI:** The Web UI binds to `127.0.0.1` by default, validates a one-time launch token and then a session cookie, enforces Host/Origin checks to prevent DNS rebinding, and blocks SSRF access to cloud metadata endpoints. A non-loopback listener requires an explicit allow flag and TLS material, and it disables the vault and jump-host features.
@@ -137,6 +137,8 @@ In both modes, the canonical JSON header (format, version, KDF parameters, ciphe
 
 ---
 
+**Plugin service credentials.** The encrypted payload also holds separately typed vCenter and VCF Operations instances. Authenticated local vault APIs list only labels, endpoints, usernames and opaque IDs, never stored passwords. All four plugin connection handlers resolve the selected ID server-side, enforce source type, and use the stored endpoint authoritatively rather than attaching its secret to a caller-supplied hostname. Operations authentication-source metadata is preserved. Same-origin/local-listener restrictions, idle locking, encryption and passphrase rotation remain unchanged. BMC exact/subnet/default matching and external BMC providers cannot supply plugin accounts. VDT SSO remains separate from appliance SSH, whose credentials and host-key trust stay explicit. A locked/deleted/wrong-type selection fails before new collection; an already-started job can finish with the credential handed to it.
+
 ## 3.4 Ephemeral remote execution and jump hosts (Experimental)
 
 > **Preview / Experimental Status:** Ephemeral remote execution via jump hosts is an experimental capability provided for preview testing in isolated or network-segmented environments.
@@ -172,6 +174,20 @@ The VDT integration has distinct modes. Installing a ZIP or importing an export 
 
 Security review should identify which of these modes is in scope and review the actual upstream payload, its notices/dependencies, appliance privileges, network paths, temporary storage, retained evidence and cleanup outcome. The [customer SBOM guide](CUSTOMER_DELIVERABLE_SBOM.md#optional-vdt-runtime-and-review-scope) distinguishes scanner shipment contents from operator/appliance runtime requirements. The scanner's bundled **Help → Optional VDT Collection** provides operator instructions.
 
+## 3.6 Optional experimental MTAT workload assessment
+
+Experimental MTAT workload assessment (`vcf_hci/plugins/mtat/`) is its own access and write boundary, separate from native BMC collection, jump-host scratch, and managed VDT. `experimental_enabled()` returns true with no startup flag, and the running UI mounts the workflow. `build_app_html()` inserts `MTAT_PANEL`, `AppHandler` includes `MtatApiMixin`, and `/api/plugins/mtat` is dispatched. Collection still requires acknowledgement. It does not use BMC credential matching, jump-host SSH, or managed VDT's appliance root context. It can use explicitly selected typed vCenter or Operations entries in the local encrypted vault; the server resolves them for the run. The controls below describe that module path. Operator detail is in [MTAT Workload Assessment (Experimental)](MTAT_WORKLOAD_ASSESSMENT_EXPERIMENTAL.md).
+
+**Acknowledgement.** Live collection and workbook import require a per-run acknowledgement. `VcenterAdapter._open`, `OperationsRestAdapter._open`, and `OperationsXlsxAdapter._start` raise `PermissionError` unless `CollectionRequest.acknowledged` is set. `MtatApiMixin` rejects a preflight or job body whose `acknowledged` field is not `true`. Those mixin methods are not dispatched by the current `AppHandler`.
+
+**Credentials.** vCenter and Operations REST take a username and password on the collection request. The vCenter target must be an HTTPS host or URL without embedded credentials (`_connection_target`); a browser URL such as `https://vc-01.rainpole.net/ui/` is reduced to that host, and an explicit port is kept. Operations REST requires an HTTPS endpoint with no userinfo, query, or fragment. The password is cleared after it is handed to the session (`request.password._value = ""`). Run-supplied passwords are not persisted. Explicitly saved service credentials use the encrypted Credential Vault and are resolved only on the server; jobs, browser storage, command arguments and exports do not contain passwords. A local Operations workbook does not use a live password: the API substitutes a non-secret placeholder and deletes the temporary workbook. Failure logs record the operation, stage, error code, and exception type (`failure_payload` in `vcf_hci/web/mtat_api.py`).
+
+**TLS verification versus certificate pin.** Verify TLS is the default (`verify_tls` defaults to true) and uses `ssl.create_default_context`, with `ca_file` when the operator supplies one. Clearing it uses `ssl._create_unverified_context()` and the result records that certificate verification is disabled. For vCenter only, **Review certificate / TOFU** calls the existing credential-free certificate inspection (`GET /api/inspect-cert`) and, after the operator accepts the displayed SHA-256 fingerprint, sends `certificate_pin`. `PinnedContext` in `vcf_hci/plugins/mtat/tls.py` compares that fingerprint with `hmac.compare_digest` before the wrapped socket is returned, so API credentials are not sent when the pin does not match. A pin replaces CA-chain verification for that vCenter connection. The pin stays in the current page for that endpoint and is not stored in the vault. Removing it restores the Verify TLS choice. The review control accepts a DNS name or IPv4 address; an IPv6 literal stays on system CA verification. An Operations or Redfish connection does not inherit a vCenter pin.
+
+**Pinned pyVmomi wheel.** Native scanning still has no required third-party packages. The wheel loads for MTAT or vSphere Inventory vCenter collection: `VcenterAdapter._open` calls `load_pyvmomi()` in `vcf_hci/plugins/mtat/vendor.py`. That loader reads `vcf_hci/_vendor/pyvmomi-9.0.0.0-py3-none-any.whl` and refuses a missing file, a different filename, a SHA-256 other than `PYVMOMI_SHA256`, or a wheel `Version` other than `PYVMOMI_VERSION` (`9.0.0.0`) from `vcf_hci/plugins/mtat/constants.py`. The recorded SHA-256 is `7812642a62b6ce2b439d7e4856d27101ad102734bce41daf77bedfb3e2d9cbf2`. Importing the MTAT package does not import pyVmomi, and a failed import removes the wheel from `sys.path`. Operations REST and workbook import do not load it.
+
+**Writes.** The adapters do not change vCenter inventory, host or VM configuration, power state, statistics settings, or Operations resources. vCenter collection logs in, reads properties and performance, creates a temporary ContainerView for the query, destroys that view, and logs out (`CreateContainerView`, `RetrievePropertiesEx`, `QueryPerf`, `QueryOptions`, `Destroy`, `Disconnect`). Operations REST acquires and releases an authentication token and POSTs `/resources/stats/query`; inventory and stat-key calls are GET. Those session and query calls are not configuration writes. Results are local CSV and ZIP downloads. The export manifest rejects secret field names (`SECRET_FRAGMENTS` in `manifest.py`). Native-report obfuscation does not sanitize these downloads.
+
 ## 4. Source Code and Runtime Auditability
 
 Security teams often restrict pre-compiled binaries due to opacity and potential code injection risks. The tool addresses this directly:
@@ -191,7 +207,7 @@ python3 vcfr_collector.py --targets 192.0.2.10-20 --username readonly_audit --ou
 ```
 
 ### Core and optional runtime dependencies
-The core scanner has no required third-party runtime packages. Its normal runtime uses Python standard-library modules; the opt-in vault can dynamically load installed AES support:
+The core scanner has no required third-party runtime packages (`pyproject.toml` declares an empty `dependencies` list). Its normal runtime uses Python standard-library modules; the opt-in vault can dynamically load installed AES support. The hash-pinned pyVmomi wheel described in [section 3.6](#36-optional-experimental-mtat-workload-assessment) loads only when the MTAT vCenter adapter opens a session. Native scanning, Operations collection, and workbook import do not load it. The native runtime imports are:
 
 ```python
 # Permitted Runtime Imports (Enforced via static analysis & CI lint gates)
@@ -202,7 +218,9 @@ import sys, threading, time, urllib.parse, urllib.request, zipfile
 
 **Banned Packages:** `requests`, `urllib3`, `aiohttp`, `pandas`, `jinja2`, `beautifulsoup4`, `lxml`, `cryptography`, `paramiko`.
 
-*Security scope:* A small required dependency set reduces supply-chain exposure. It does not eliminate vulnerabilities in Python, native runtime libraries, bundled assets, optional crypto packages, or build tooling.
+The list above is the native runtime policy. pyVmomi is outside that policy and is loaded only by `load_pyvmomi()` for an MTAT or vSphere Inventory vCenter session, after the filename, SHA-256, and version checks in `constants.py`.
+
+*Security scope:* A small required dependency set reduces supply-chain exposure. It does not eliminate vulnerabilities in Python, native runtime libraries, bundled assets, the optional MTAT wheel, optional crypto packages, or build tooling.
 
 ---
 
@@ -211,28 +229,38 @@ import sys, threading, time, urllib.parse, urllib.request, zipfile
 ### Public-network behavior
 
 - **No Scan Telemetry:** The scanner does not transmit scan results, analytics, usage metrics, or license status to the project. Ordinary HCL loads use local data.
-- **Default-On UI Release Notice:** At browser-server launch, `vcf_hci/web/update_check.py` sends one bounded HTTPS request to GitHub’s public releases API, including the tool version in its User-Agent. It checks release metadata without downloading or installing software. Set `VCF_READINESS_CHECK_UPDATES=0` before launch for no public startup request. CLI collection does not start this checker.
-- **Explicit Opt-In Egress Only:** `--refresh-hcl`, `--bundle-hcl`, and the Web UI HCL refresh action may download the public Broadcom HCL. Dell TechDirect warranty enrichment and HashiCorp Vault / SDDC Manager credential providers make outbound requests only after the operator supplies credentials and explicitly enables or constructs those features.
+- **Default-On UI Release Notice:** At browser-server launch, `vcf_hci/web/update_check.py` sends one bounded HTTPS request to GitHub’s public releases API, including the tool version in its User-Agent. It checks release metadata without downloading or installing software. Set `VCF_READINESS_CHECK_UPDATES=0` before launch to suppress the release request. Also use `--no-hcl-auto-refresh` to suppress public HCL startup requests. CLI collection does not start this checker.
+- **Public HCL Refresh and Explicit Service Requests:** Web UI launch refreshes public vSAN and Memory Tiering BCG data in a background task unless `--no-hcl-auto-refresh` or `--import-hcl` is supplied. `--import-hcl` preloads an existing bundle and skips that refresh; `--no-hcl-auto-refresh` skips it without importing a bundle. `--refresh-hcl`, `--bundle-hcl`, and the Web UI HCL refresh action also permit public Broadcom downloads. A failed or partial download keeps the last valid local cache: `load_vsan_hcl_json` writes `all.json` only after a successful download, and `load_memory_tiering_catalog` keeps the existing `memory_tiering.json` or the packaged catalog. `start_hcl_refresh` logs the failure and leaves offline data in place. Dell TechDirect warranty enrichment and HashiCorp Vault / SDDC Manager credential providers make outbound requests only after the operator supplies credentials and explicitly enables or constructs those features.
 - **Self-Contained Evaluation:** All compatibility rules (CPU generation matrices, vSAN ESA certification logic, BIOS security benchmarks) are embedded directly in the local source code (`vcf_hci/compat/` and `vcf_hci/constants.py`).
 - **No Unsolicited Remote Execution:** Reports are generated as self-contained static HTML files with inline CSS and client-side JavaScript. No external CDNs, fonts, or tracking pixels are referenced. Experimental jump-host execution is a separate, explicit Web UI action that deploys an ephemeral stdlib zipapp over pinned-host-key SSH.
 
 ### Air-Gapped / Dark-Site Operation (Isolated OOB Networks)
 
 Disable the UI release notice before launch with `VCF_READINESS_CHECK_UPDATES=0`; see [platform-specific commands](INSTALL.md#offline-and-air-gapped-operation). No internet connection is required for local scanning or report generation. Imported HCL data is a dated snapshot, and a match does not alone certify an entire configuration.
-To prevent security concerns where an operator device would require simultaneous access to the public internet and an isolated OOB BMC network (dual-homing), the tool provides an offline database bundling workflow:
+To prevent security concerns where an operator device would require simultaneous access to the public internet and an isolated OOB BMC network (dual-homing), the tool provides an offline database bundling workflow. CLI `--bundle-hcl` and browser export package the active datasets. Their data members are `all.json`, `vsan_drives.csv`, `io_nics.json`, and `memory_tiering.json` (`DATA_MEMBERS` in `vcf_hci/hcl/export_bundle.py`), with `bundle_metadata.json` alongside them. `--bundle-hcl` always writes `all.json`, `vsan_drives.csv`, and `memory_tiering.json`, and it writes `io_nics.json` when a Network I/O catalog file is present. A failed or partial public download keeps the last valid local cache. Memory Tiering then uses that cache or the packaged catalog, and vSAN `all.json` is replaced only after a successful download. When neither a download nor a local `all.json` exists, `--bundle-hcl` places a small `baseline_offline` stub in the new ZIP rather than a full Broadcom dataset. `--import-hcl` loads the ZIP for an offline scan and, on Web UI launch, preloads an existing file and skips the background public refresh. `--no-hcl-auto-refresh` skips that refresh when no bundle is preloaded. Import uses the ZIP's `memory_tiering.json`, including its retrieval date, ahead of local data. A ZIP that omits that member uses the packaged snapshot. An invalid Memory Tiering member fails the import.
 
 ```
 [ Step 1: Internet-Connected Workstation ]
 $ python3 -m vcf_hci --bundle-hcl
-  └─► Explicitly downloads the public Broadcom vSAN HCL dataset (all.json)
-  └─► Packages it into standalone 'vcf_hcl_bundle_YYYYMMDD.zip'
+  └─► Downloads the public Broadcom vSAN dataset and Memory Tiering catalog
+  └─► Packages vcf_hcl_bundle_YYYYMMDD.zip
+  └─► Data members: all.json, vsan_drives.csv, io_nics.json, memory_tiering.json
+  └─► Also writes bundle_metadata.json
+  └─► A failed download keeps the last valid local cache; Memory Tiering uses that cache or the packaged catalog
 
 [ Step 2: Transfer via Approved Secure File Ingestion (USB / Bastion) ]
 
 [ Step 3: Air-Gapped Bastion Workstation on OOB Network ]
 $ python3 -m vcf_hci --targets 192.0.2.10-20 --import-hcl vcf_hcl_bundle_YYYYMMDD.zip
-  └─► Offline correlation against the imported dataset and its recorded scope
+  └─► Offline correlation against the imported datasets and their recorded scope
+  └─► A ZIP without memory_tiering.json uses the packaged Memory Tiering snapshot
   └─► Zero internet connectivity required
+
+$ VCF_READINESS_CHECK_UPDATES=0 python3 vcfr_web.py --import-hcl vcf_hcl_bundle_YYYYMMDD.zip
+  └─► Preloads the bundle and skips the background public HCL refresh
+
+$ VCF_READINESS_CHECK_UPDATES=0 python3 vcfr_web.py --no-hcl-auto-refresh
+  └─► Keeps startup HCL data offline when no bundle is preloaded
 ```
 
 ---
@@ -344,12 +372,12 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 
 | Security Question | Architecture Finding | Evidence / Reference |
 |---|---|---|
-| **Does the tool deploy code to managed systems?** | Native BMC scanning installs no host agent. Optional jump-host mode deploys its temporary collector; managed VDT uploads and executes code on the appliance, without installing a persistent daemon. | [Sections 3.4](#34-ephemeral-remote-execution-and-jump-hosts-experimental) and [3.5](#35-optional-vdt-plugin-security-boundary) |
-| **Are administrator privileges or remote writes required?** | Native BMC scans use read-only credentials. Managed VDT requires appliance root, separate SSO credentials and writable temporary storage; configuration/remediation actions remain excluded. | [Section 3](#3-principle-of-least-privilege-credentials--access), [VDT boundary](#35-optional-vdt-plugin-security-boundary) |
-| **What code and runtimes need review?** | Scanner source is inspectable. Standalone builds include Python/native libraries and a bootloader. Operator-supplied VDT and appliance dependencies require separate review; they are not covered by inspecting the core scanner alone. | [Customer SBOM](CUSTOMER_DELIVERABLE_SBOM.md), `LICENSE.md` |
-| **Does the tool introduce external supply-chain dependencies?** | Core scanning has no required pip packages. Optional AES, bundled assets and build runtimes have notices. Managed VDT additionally depends on the separately supplied payload and existing appliance libraries. | `pyproject.toml`, [VDT review scope](#35-optional-vdt-plugin-security-boundary) |
-| **Does the tool transmit customer data outside the company?** | **No scan telemetry.** A default-on UI GitHub release check sends version metadata; disable it before launch. HCL, warranty and credential-provider requests are explicit. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
-| **Can the tool function in an air-gapped network?** | **Yes.** Supports offline dark-site HCL zip bundles. | `vcf_hci/hcl/bundle_manager.py` |
+| **Does the tool deploy code to managed systems?** | Native BMC scanning installs no host agent. Optional jump-host mode deploys its temporary collector; managed VDT uploads and executes code on the appliance, without installing a persistent daemon. Experimental MTAT does not deploy code to vCenter or Operations. | [Sections 3.4](#34-ephemeral-remote-execution-and-jump-hosts-experimental), [3.5](#35-optional-vdt-plugin-security-boundary), and [3.6](#36-optional-experimental-mtat-workload-assessment) |
+| **Are administrator privileges or remote writes required?** | Native BMC scans use read-only credentials. Managed VDT requires appliance root, separate SSO credentials and writable temporary storage; configuration/remediation actions remain excluded. Experimental MTAT uses separate vCenter or Operations credentials, or a local Operations workbook, and does not change those systems. | [Section 3](#3-principle-of-least-privilege-credentials--access), [VDT boundary](#35-optional-vdt-plugin-security-boundary), [MTAT boundary](#36-optional-experimental-mtat-workload-assessment) |
+| **What code and runtimes need review?** | Scanner source is inspectable. Standalone builds include Python/native libraries and a bootloader. Operator-supplied VDT and appliance dependencies require separate review; they are not covered by inspecting the core scanner alone. Experimental MTAT vCenter collection additionally loads the hash-pinned pyVmomi wheel; native scanning does not. | [Customer SBOM](CUSTOMER_DELIVERABLE_SBOM.md), `LICENSE.md`, [section 3.6](#36-optional-experimental-mtat-workload-assessment) |
+| **Does the tool introduce external supply-chain dependencies?** | Core scanning has no required pip packages. Optional AES, bundled assets and build runtimes have notices. The experimental MTAT vCenter path loads one hash-pinned pyVmomi wheel and does not load it for native scanning. Managed VDT additionally depends on the separately supplied payload and existing appliance libraries. | `pyproject.toml`, [VDT review scope](#35-optional-vdt-plugin-security-boundary), [MTAT wheel](#36-optional-experimental-mtat-workload-assessment) |
+| **Does the tool transmit customer data outside the company?** | **No scan telemetry.** A default-on UI GitHub release check sends version metadata; disable it before launch. Web startup also refreshes public HCL data unless disabled or an offline bundle is preloaded. Warranty and credential-provider requests are explicit. | [Section 5](#5-network-egress-telemetry--air-gapped-operation) |
+| **Can the tool function in an air-gapped network?** | **Yes.** Offline bundles include `all.json`, `vsan_drives.csv`, `io_nics.json`, and `memory_tiering.json`. A failed refresh keeps the last valid cache or the packaged Memory Tiering fallback. | `vcf_hci/hcl/export_bundle.py`, `vcf_hci/hcl/bundle_manager.py` |
 | **Can sensitive identifiers be redacted before sharing reports?** | Native obfuscated exports mask selected identifiers. VDT/hybrid exports require separate review and are not automatically sanitized by native obfuscation. | `vcf_hci/obfuscation.py`, [VDT data boundary](#35-optional-vdt-plugin-security-boundary) |
 | **Is the local web UI protected against CSRF and DNS rebinding?** | **Yes.** Loopback by default, one-time launch token exchanged for an `HttpOnly` / `SameSite=Strict` session cookie (`Secure` on HTTPS), strict host headers. Exposed listeners require TLS. | `vcf_hci/web/server.py` |
 | **Can enterprise CA certificates and TLS pinning be enforced?** | **Yes.** `--verify-ssl`, `--ca-bundle`, and TOFU thumbprint pinning. | `vcf_hci/tls_utils.py` |
@@ -361,7 +389,7 @@ This checklist is provided for InfoSec risk assessors completing internal archit
 
 ## 11. Recommended Execution Procedure for Security Teams
 
-The procedure below is for native BMC assessment. Approving that procedure does not authorize managed VDT execution; use the distinct prerequisites and write/cleanup boundaries in [section 3.5](#35-optional-vdt-plugin-security-boundary) for that optional workflow.
+The procedure below is for native BMC assessment. Approving that procedure does not authorize managed VDT execution or experimental MTAT collection. Use the distinct prerequisites and write boundaries in [section 3.5](#35-optional-vdt-plugin-security-boundary) and [section 3.6](#36-optional-experimental-mtat-workload-assessment) for those optional workflows.
 
 1. **Create Read-Only Credentials:** Provision temporary `ReadOnly` accounts on target BMCs with no configuration or reboot permissions.
 2. **Inspect the Python Source:** (Optional) Run `git clone`, inspect the codebase, and verify runtime dependencies using your internal SAST/LLM tools.

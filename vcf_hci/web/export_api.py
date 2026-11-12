@@ -117,7 +117,13 @@ class ExportApiMixin(_ApiMixinBase):
 
             build_sheets_fn = _get_dispatch("_build_excel_sheets", _build_excel_sheets)
             write_xlsx_fn = _get_dispatch("_write_xlsx", _write_xlsx)
-            sheets = build_sheets_fn(export_results, failed_hosts=failed_hosts, obfuscated=is_obf)
+            vinv_kwargs = {}
+            from vcf_hci.web.vinv_api import attached_snapshot
+
+            vinv_snapshot = attached_snapshot(self.server)
+            if vinv_snapshot is not None and results:
+                vinv_kwargs = {"vinv_snapshot": vinv_snapshot, "vinv_source_results": results}
+            sheets = build_sheets_fn(export_results, failed_hosts=failed_hosts, obfuscated=is_obf, **vinv_kwargs)
             xlsx = write_xlsx_fn(sheets)
             self.send_response(200)
             self.send_header("Content-Type",

@@ -5,6 +5,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from vcf_hci.drive_counters import nonnegative_io_total
+from vcf_hci.report.drive_alerts import drive_aging_wear_reasons
 from vcf_hci.report.helpers import _h
 from vcf_hci.storage_pcie import drive_link_description, drive_pcie_view
 from vcf_hci.ui_clarity import icon_html
@@ -203,15 +205,14 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         if _err_desc:
             _drive_col += f"<br><span class='badge warning' style='font-size:.7rem;' title='Hardware Error Description'>⚠️ {_err_desc}</span>"
 
-        _poh_chk = _d.get("power_on_hours") or (_d.get("oem_metrics") or {}).get("power_on_hours")
-        _us_chk = _d.get("unsafe_shutdowns")
-        if (isinstance(_poh_chk, (int, float)) and _poh_chk >= 30000) or (isinstance(_us_chk, (int, float)) and _us_chk >= 50):
-            _aging_reasons = []
-            if isinstance(_poh_chk, (int, float)) and _poh_chk >= 30000:
-                _aging_reasons.append(f"{int(_poh_chk):,}h POH")
-            if isinstance(_us_chk, (int, float)) and _us_chk >= 50:
-                _aging_reasons.append(f"{int(_us_chk)} shutdowns")
-            _drive_col += f"<br><span class='badge warning' style='font-size:.7rem;' title='Aging / Wear Alert'>🟡 Aging / Wear Alert ({', '.join(_aging_reasons)})</span>"
+        _aging_reasons = drive_aging_wear_reasons(_d)
+        if _aging_reasons:
+            _aging_reason_text = _h("; ".join(_aging_reasons))
+            _drive_col += (
+                f"<br><span class='badge warning' style='font-size:.7rem;' "
+                f"title='Aging / Wear Alert: {_aging_reason_text}'>"
+                f"🟡 Aging / Wear Alert ({_aging_reason_text})</span>"
+            )
 
         _proto = _h(str(_d.get("protocol", "NVMe")))
         _role  = _h(str(_d.get("usage_role", "Data Drive")))
@@ -399,8 +400,8 @@ def render_nvme_smart_health_section(all_drives: List[Dict[str, Any]]) -> str:
         _pcie_html = "".join(_pcie_parts) if _pcie_parts else "<span style='color:var(--text-muted)'>N/A</span>"
 
         _poh    = _d.get("power_on_hours") or (_d.get("oem_metrics") or {}).get("power_on_hours")
-        _tbw    = _d.get("tbw_written")
-        _tbr    = _d.get("tbr_read")
+        _tbw    = nonnegative_io_total(_d.get("tbw_written"))
+        _tbr    = nonnegative_io_total(_d.get("tbr_read"))
         _cycles = _d.get("power_cycles")
         _duty   = _d.get("controller_duty_cycle_pct")
         _life_parts = []

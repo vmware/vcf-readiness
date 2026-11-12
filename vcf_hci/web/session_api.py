@@ -868,6 +868,10 @@ class SessionApiMixin(_ApiMixinBase):
         vault_session.lock()
         self._send_json({"ok": True, **vault_session.status()})
 
+    def _api_vault_services(self, action: str) -> None:
+        from vcf_hci.web.plugin_credentials import service_credentials_api
+        service_credentials_api(self, action)
+
     def _api_vault_entries(self) -> None:
         if not self._vault_guard():
             return

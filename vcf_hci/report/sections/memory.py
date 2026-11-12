@@ -285,6 +285,7 @@ def render_memory_combined_card(
     mem_topo: Dict[str, Any],
     sys_info: Dict[str, Any],
     bios_info: Dict[str, Any],
+    memory_tiering_html: str = '',
 ) -> str:
     """Render Merged Memory card (channel interleaving + RAS sub-line)."""
     mem_ras_modes = bios_info.get("memory_ras", []) if bios_info else []
@@ -320,7 +321,7 @@ def render_memory_combined_card(
         f"<h3 style='margin:0'>Memory</h3>"
         f"<a href='#tab-memory' data-jump-tab='tab-memory' class='btn-link tab-jump-link' style='font-size:.8rem;text-decoration:none' title='Jump to Memory section'>Details &rarr;</a>"
         f"</div>"
-        f"<div style='margin-bottom:.35rem'>{mem_topo.get('status_badge')}</div>"
+        f"<div style='margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem;flex-wrap:wrap'>{mem_topo.get('status_badge')}{memory_tiering_html}</div>"
         f"<p style='font-size:.85rem;color:var(--text-muted);margin:0 0 .35rem'>"
         f"Efficiency: <b>{mem_topo.get('interleaving_score_pct')}%</b> &nbsp;|&nbsp; "
         f"Speed: <b>{mem_topo.get('operating_speed_str', 'N/A')}</b> "

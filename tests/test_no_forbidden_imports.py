@@ -53,6 +53,8 @@ def test_only_stdlib_imports(py_file):
     if sys.version_info < (3, 10):
         pytest.skip("sys.stdlib_module_names requires Python 3.10+")
     allowed = set(sys.stdlib_module_names) | {"vcf_hci"} | OPTIONAL_ALLOWED
+    if py_file.name == "vendor.py":
+        allowed.add("pyVmomi")
     roots = set(_imported_roots(py_file.read_text(encoding="utf-8"), str(py_file)))
     unknown = roots - allowed
     assert not unknown, f"{py_file} imports outside stdlib/vcf_hci: {sorted(unknown)}"

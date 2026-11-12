@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from vcf_hci.compat.bios_boot import bios_date_estimate_fields
 from vcf_hci.compat.firmware import evaluate_bmc_fw_version
 from vcf_hci.constants import prefer_storage_ctrl_display_name
+from vcf_hci.drive_counters import nonnegative_io_total
 from vcf_hci.report.fleet.escape import _xe
 from vcf_hci.report.fleet.inventory.chips import (
     _DASH,
@@ -147,8 +148,8 @@ def _build_drives_table(
                 else:
                     health_cell = f"<span class='badge success'>🟢 {dh}</span>"
 
-                tbw = d.get("tbw_written")
-                tbr = d.get("tbr_read")
+                tbw = nonnegative_io_total(d.get("tbw_written"))
+                tbr = nonnegative_io_total(d.get("tbr_read"))
                 duty = d.get("controller_duty_cycle_pct")
                 poh = d.get("power_on_hours")
                 life_title_parts = []

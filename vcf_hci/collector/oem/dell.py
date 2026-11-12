@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ...drive_counters import nonnegative_io_total
 from ...logging_utils import get_nested
 from ..base import ExpandableCollectionsMap
 from ..collect_system import _parse_iso_datetime
@@ -661,12 +662,9 @@ class DellCollector(GenericCollector):
                 except (TypeError, ValueError):
                     pass
 
-            du_w = smart.get("DataUnitsWrittenMB")
+            du_w = nonnegative_io_total(smart.get("DataUnitsWrittenMB"))
             if du_w is not None:
-                try:
-                    res["tbw_written"] = round(float(du_w) / 1_000_000, 2)
-                except (TypeError, ValueError):
-                    pass
+                res["tbw_written"] = round(du_w / 1_000_000, 2)
 
             temp_k = smart.get("CompositeTemperatureKelvin")
             if temp_k is not None:
@@ -676,14 +674,9 @@ class DellCollector(GenericCollector):
                 except (TypeError, ValueError):
                     pass
 
-            du_r = smart.get("DataUnitsReadMB")
+            du_r = nonnegative_io_total(smart.get("DataUnitsReadMB"))
             if du_r is not None:
-                try:
-                    val_r = float(du_r)
-                    if val_r >= 0:
-                        res["tbr_read"] = round(val_r / 1_000_000, 2)
-                except (TypeError, ValueError):
-                    pass
+                res["tbr_read"] = round(du_r / 1_000_000, 2)
 
             crit_warn = smart.get("CriticalWarningsCount") or smart.get("CriticalWarning")
             if crit_warn is not None:
