@@ -999,6 +999,8 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             self._api_vinv_cancel(path)
         elif path == "/api/plugins/vinv/import":
             self._api_vinv_import()
+        elif path.startswith("/api/plugins/vinv/saved/"):
+            self._api_vinv_saved_post(path)
         elif path == "/api/plugins/vinv/detach" or path.startswith("/api/plugins/vinv/library/"):
             self._api_vinv_library_post(path)
 

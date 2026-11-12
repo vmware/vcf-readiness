@@ -44,7 +44,8 @@ var pluginCredentials = (function () {
     if (entries.some(function(e) { return e.id === previous && e.kind === kind(w); })) w.select.value = previous;
     el(w.prefix+'SavedStatus').textContent = error || (w.select.options.length > 1 ? 'Select an instance. Its password stays in the vault.' : 'No saved ' + (kind(w) === 'operations' ? 'VCF Operations' : 'vCenter') + ' instances. Add one in Credential Vault.');
     var manage=w.root.querySelector('[data-credential-manage]');
-    if(manage) manage.textContent=error ? 'Unlock Credential Vault' : (w.select.options.length>1 ? 'Manage saved instances' : 'Add an instance in Credential Vault');
+    if(manage) manage.textContent=error ? 'Unlock Credential Vault in a new tab' : (w.select.options.length>1 ? 'Manage saved instances in a new tab' : 'Add an instance in a new tab');
+    if(manage) manage.href='/?credential_kind='+encodeURIComponent(kind(w))+'#credential-vault';
     w.root.hidden = !!workbook(w);
     if (workbook(w)) w.toggle.checked = false;
     sync(w);
@@ -93,10 +94,7 @@ var pluginCredentials = (function () {
     var manage=event.target.closest('[data-credential-manage]');
     if(manage) {
       var w=widgets[manage.dataset.credentialManage]; if(!w) return;
-      resetEditor();
-      var back=el('vaultServiceReturn'); if(back) { back.href='#'+w.root.dataset.section; back.dataset.sectionLink=w.root.dataset.section; back.textContent='Return to '+({vinv:'vSphere Inventory',mtat:'MTAT',vdt:'VDT'}[w.prefix] || 'plugin'); }
-      if(el('vaultServiceKind')) { el('vaultServiceKind').value=kind(w); el('vaultServiceKind').dispatchEvent(new Event('change')); }
-      if(el('vaultServiceSection')) el('vaultServiceSection').scrollIntoView({block:'nearest'});
+      manage.href='/?credential_kind='+encodeURIComponent(kind(w))+'#credential-vault';
     }
     var action=event.target.closest('[data-service-action]'); if(!action) return;
     var record=entries.find(function(e) { return e.id===action.dataset.serviceId; }); if(!record) return;
@@ -122,6 +120,15 @@ var pluginCredentials = (function () {
     finally { data.password=''; button.disabled=false; }
   });
   document.addEventListener('vault-state-change',function() { refresh(); });
+  if(location.hash==='#credential-vault') {
+    var requestedKind=new URLSearchParams(location.search).get('credential_kind');
+    if((requestedKind==='vcenter' || requestedKind==='operations') && el('vaultServiceKind')) {
+      el('vaultServiceKind').value=requestedKind;
+      el('vaultServiceKind').dispatchEvent(new Event('change'));
+      var back=el('vaultServiceReturn'); if(back) { back.textContent='Close this tab to return to your plugin'; back.href='#credential-vault'; back.removeAttribute('data-section-link'); back.addEventListener('click',function(event) { event.preventDefault(); window.close(); }); }
+    }
+  }
+  window.addEventListener('focus',function() { if(Object.keys(widgets).some(function(k) { return widgets[k].toggle.checked; })) refresh(); });
   window.addEventListener('hashchange',function() { if(location.hash==='#credential-vault' || Object.keys(widgets).some(function(k) { return widgets[k].toggle.checked; })) refresh(); });
   window.addEventListener('pagehide',function() { var password=el('vaultServicePassword'); if(password) password.value=''; });
   function active(prefix) { var w=widgets[prefix]; return !!(w && w.toggle.checked && !workbook(w)); }
