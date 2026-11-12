@@ -10,7 +10,7 @@ def service_picker(
   <div id="{prefix}SavedFields" hidden>
     <div class="clr-form-group"><label class="clr-control-label" for="{prefix}SavedInstance">Saved instance</label><select class="clr-select" id="{prefix}SavedInstance" aria-describedby="{prefix}SavedStatus" disabled><option value="">Select an instance</option></select></div>
     <p id="{prefix}SavedStatus" class="clr-hint" role="status" aria-live="polite">Unlock the Credential Vault to select an instance.</p>
-    <div class="flex gap-sm" style="align-items:center;flex-wrap:wrap"><a href="#credential-vault" data-section-link="credential-vault" data-credential-manage="{prefix}">Unlock vault or add an instance</a><button type="button" class="btn btn-flat btn-sm" data-credential-refresh="{prefix}">Refresh saved instances</button></div>
+    <div class="flex gap-sm" style="align-items:center;flex-wrap:wrap"><a href="/?credential_kind=vcenter#credential-vault" target="_blank" rel="noopener noreferrer" data-credential-manage="{prefix}">Open Credential Vault in a new tab</a><button type="button" class="btn btn-flat btn-sm" data-credential-refresh="{prefix}">Refresh saved instances</button></div>
   </div>
 </div>
 '''

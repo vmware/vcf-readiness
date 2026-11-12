@@ -5,6 +5,7 @@ JS_VINV = r"""
   var panel = document.getElementById("vinv-experimental");
   if (!panel) return;
   var activeJob = null;
+  var connected = false;
   var scanLibraryBusy = false;
   var enabled = false;
   var progress = document.getElementById("vinvProgress");
@@ -12,7 +13,7 @@ JS_VINV = r"""
   var clusterSelect = document.getElementById("vinvCluster");
   var certificatePin = "", reviewedCertificate = null, certificateVersion = 0, discoveryVersion = 0;
   var diagnosticLines = [];
-  function say(text) { progress.textContent = text; }
+  function say(text) { progress.textContent = text; el("vinvFlowStatus").textContent = text; }
   function failure(error) {
     var timedOut = error && error.name === "AbortError";
     say(timedOut ? "The request timed out. Check network access to vCenter from the machine running VCF-R." :
@@ -40,9 +41,10 @@ JS_VINV = r"""
     el("vinvPinStatus").textContent = "No certificate pinned. Verify TLS uses the system trust store.";
   }
   function resetClusters() {
+    connected = false;
     discoveryVersion += 1;
     clusterSelect.replaceChildren(new Option("All clusters", ""));
-    el("vinvDiscoveryStatus").textContent = "Discover clusters to limit collection to one cluster, or collect all clusters.";
+    el("vinvDiscoveryStatus").textContent = "Connect to discover clusters automatically. Use Discover clusters to refresh the list.";
   }
   function populateClusters(data) {
     if (!Array.isArray(data.clusters)) return;
@@ -57,6 +59,25 @@ JS_VINV = r"""
   el("vinvEndpoint").addEventListener("input", function () { clearCertificate(); resetClusters(); });
   el("vinvEndpoint").addEventListener("change", function () { clearCertificate(); resetClusters(); });
   el("vinvUsername").addEventListener("change", resetClusters);
+  el("vinvPassword").addEventListener("input", resetClusters);
+  el("vinvVerifyTls").addEventListener("change", function () {
+    resetClusters();
+    say(this.checked ? "System CA verification selected. Review the certificate if you need a SHA-256 pin, then Connect." :
+      "TLS verification is off. Review and pin the certificate before connecting, or turn verification back on.");
+  });
+  el("vinvAck").addEventListener("change", function () {
+    resetClusters();
+    say(this.checked ? "Experimental collection acknowledged. Review TLS and click Connect." : "Acknowledge the experimental collection before connecting.");
+  });
+
+  function connectionIssue() {
+    if (typeof pluginCredentials !== "undefined" && pluginCredentials.active("vinv") && !pluginCredentials.ready("vinv")) return "Select a saved vCenter instance first.";
+    if (!el("vinvEndpoint").value.trim()) return "Enter or select a vCenter before connecting.";
+    if (!el("vinvUsername").value.trim() || (!password.value && !(typeof pluginCredentials !== "undefined" && pluginCredentials.ready("vinv")))) return "Enter the vCenter username and password before connecting.";
+    if (!el("vinvAck").checked) return "Check the experimental acknowledgement before connecting.";
+    if (!el("vinvVerifyTls").checked && !certificatePin) return "TLS verification is off. Review and trust the certificate fingerprint, or enable Verify TLS before connecting.";
+    return "";
+  }
 
   function certificateTarget() {
     var raw = el("vinvEndpoint").value.trim(), target;
@@ -165,6 +186,24 @@ JS_VINV = r"""
     });
   }
 
+  function renderSavedLibrary(entries) {
+    var body = el("vinvSavedLibrary").querySelector("tbody");
+    body.replaceChildren();
+    (entries || []).forEach(function (entry) {
+      var row = document.createElement("tr");
+      cell(row, entry.vcenter_server); cell(row, entry.generated_utc);
+      cell(row, entry.hosts); cell(row, entry.vms);
+      var actions = cell(row, "");
+      actions.append(actionButton("Load", "vinv-saved-load", entry.id), " ",
+                     actionButton("Delete", "vinv-saved-delete", entry.id));
+      body.append(row);
+    });
+    if (!entries || !entries.length) {
+      var row = document.createElement("tr"), td = cell(row, "No saved vSphere inventory exports yet.");
+      td.colSpan = 5; body.append(row);
+    }
+  }
+
   function refresh() {
     return fetch("/api/plugins/vinv", {credentials: "same-origin"})
       .then(function (response) { return response.json(); })
@@ -173,6 +212,7 @@ JS_VINV = r"""
         el("vinvEnablement").hidden = true;
         enabled = !!data.enabled;
         renderLibrary(data.library);
+        renderSavedLibrary(data.saved_library);
         buttons();
       }).catch(failure);
   }
@@ -279,10 +319,12 @@ JS_VINV = r"""
       el("vinvPinStatus").textContent = "SHA-256 pin enforced for this endpoint. A different certificate will block the connection before credentials are sent.";
       el("vinvClearPin").hidden = false;
       el("vinvCertReview").hidden = true;
+      resetClusters(); say("Certificate fingerprint trusted for this endpoint. Acknowledge the experiment, then Connect.");
       recordDiagnostic("Certificate pin accepted.");
     },
-    "vinv-clear-pin": function () { clearCertificate(); recordDiagnostic("Certificate pin cleared."); },
+    "vinv-clear-pin": function () { clearCertificate(); resetClusters(); say("Certificate pin cleared. Review TLS, then Connect again."); recordDiagnostic("Certificate pin cleared."); },
     "vinv-discover": function () {
+      if (!connected) { say("Connect to vCenter first, then discover clusters."); return; }
       var version = ++discoveryVersion;
       say("Discovering vCenter clusters…");
       recordDiagnostic("Discovery requested.");
@@ -294,17 +336,22 @@ JS_VINV = r"""
       }).catch(failure);
     },
     "vinv-preflight": function () {
+      var issue = connectionIssue(); if (issue) { say(issue); return; }
+      resetClusters();
       var version = discoveryVersion;
-      say("Connecting to vCenter…");
+      say(certificatePin ? "Connecting with the reviewed certificate pin…" : "Connecting with system CA verification…");
       recordDiagnostic("Connection requested.");
       post("/api/plugins/vinv/preflight", payload()).then(function (result) {
         if (version !== discoveryVersion) return;
-        populateClusters(result.data);
-        say(message(result.data, result.data.ready ? "Connected. Select a cluster or keep All clusters." : "Connection blocked"));
+        connected = !!result.data.ready;
+        if (connected) populateClusters(result.data);
+        say(message(result.data, result.data.ready ? "Connected and clusters discovered. Select a cluster or keep All clusters, then review collection options." : "Connection blocked"));
         renderPreflight(result.data);
       }).catch(failure);
     },
     "vinv-run": function () {
+      var issue = connectionIssue(); if (issue) { say(issue); return; }
+      if (!connected) { say("Connect to vCenter before collecting inventory."); return; }
       recordDiagnostic("Collection requested.");
       post("/api/plugins/vinv/jobs", payload()).then(function (result) {
         if (!result.data.id) { say(message(result.data, "Job rejected")); return; }
@@ -339,10 +386,48 @@ JS_VINV = r"""
     "vinv-delete": function (button) {
       post("/api/plugins/vinv/library/" + button.getAttribute("data-entry") + "/delete", {})
         .then(function (result) { if (result.data.error) say(result.data.error); renderLibrary(result.data.entries); }).catch(failure);
+    },
+    "vinv-saved-load": function (button) {
+      post("/api/plugins/vinv/saved/" + button.dataset.entry + "/load", {}).then(function (result) {
+        if (!result.ok) { say(result.data.error || "Could not load saved inventory."); return; }
+        renderLibrary(result.data.entries);
+        say("Saved inventory loaded and attached for reconciled reports.");
+      }).catch(failure);
+    },
+    "vinv-saved-delete": function (button) {
+      if (!window.confirm("Delete this saved vSphere inventory export?")) return;
+      post("/api/plugins/vinv/saved/" + button.dataset.entry + "/delete", {}).then(function (result) {
+        if (!result.ok) { say(result.data.error || "Could not delete saved inventory."); return; }
+        renderSavedLibrary(result.data.saved_library);
+      }).catch(failure);
     }
   };
 
   panel.addEventListener("click", function (event) {
+    var report = event.target.closest("#vinvFleetReport, #vinvFleetReportObf");
+    if (report) {
+      event.preventDefault();
+      if (!panel.querySelector("#vinvLibrary tbody tr") || !panel.querySelector("#vinvLibrary tbody tr td:nth-child(7)") ||
+          !Array.from(panel.querySelectorAll("#vinvLibrary tbody tr")).some(function (row) { return row.children[6] && row.children[6].textContent === "Yes"; })) {
+        say("Attach a vSphere inventory in Inventory library before downloading the reconciled report.");
+        progress.scrollIntoView({block:"nearest"}); return;
+      }
+      say("Preparing reconciled fleet report…");
+      fetch(report.href, {credentials:"same-origin"}).then(async function (response) {
+        if (!response.ok) {
+          var problem = await response.json().catch(function () { return {}; });
+          throw new Error(problem.error === "vinv_not_attached" ? "Attach a vSphere inventory in Inventory library first." :
+            (problem.error || "The reconciled report is unavailable. Check that a Redfish assessment is loaded."));
+        }
+        var blob = await response.blob(), url = URL.createObjectURL(blob);
+        var link = document.createElement("a"); link.href = url;
+        link.download = report.id === "vinvFleetReportObf" ? "00_OBFUSCATED_vinv_fleet_combined.html" : "vinv_fleet_combined.html";
+        document.body.append(link); link.click(); link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        say("Reconciled fleet report downloaded.");
+      }).catch(function (error) { say(error.message || "The reconciled report could not be prepared."); progress.scrollIntoView({block:"nearest"}); });
+      return;
+    }
     var button = event.target.closest("[data-action]");
     if (!button || !panel.contains(button)) return;
     var handler = handlers[button.getAttribute("data-action")];

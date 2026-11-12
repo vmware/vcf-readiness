@@ -1466,9 +1466,11 @@ python3 vcfr_collector.py --targets 192.0.2.0/24 --vault
 
 #### Saved Plugin Credentials
 
-Under **Credential Vault → vCenter & VCF Operations**, save a named HTTPS instance and its service account. Select **Use saved credentials** in a plugin to replace manual connection fields with a saved-instance selector. The selector links to the vault to unlock or add an instance, with a return link to the plugin. Editing an instance requires re-entering its password.
+Under **Credential Vault → vCenter & VCF Operations**, save a named HTTPS instance and its service account. Select **Use saved credentials** in a plugin to replace manual connection fields with a saved-instance selector. The selector opens the vault in a separate tab; return to the plugin tab to continue. Its list refreshes on focus, and you can refresh it manually. Editing an instance requires re-entering its password.
 
 vCenter entries are shared by VDT, MTAT Workload Assessment and vSphere Inventory Export. Operations entries apply to MTAT Operations REST only. BMC credentials and appliance SSH accounts stay separate. Normal TLS review, acknowledgements and SSH fingerprint checks still apply; saved passwords are resolved only on the server. See the [Credential Vault Guide](CREDENTIAL_VAULT.md#saved-vcenter-and-vcf-operations-instances).
+
+For vSphere Inventory Export, select the vCenter account, review TLS or an optional certificate pin, acknowledge the experimental collection, and click **Connect**. Connect discovers clusters automatically; choose one or keep **All clusters**. Use **Discover clusters** only to refresh the list. Review the collection options and click **Collect**. If a prerequisite is missing, the page explains it beside the connection steps.
 
 #### Forgotten Vault Passphrase
 

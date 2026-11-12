@@ -12,6 +12,7 @@ import uuid
 import zipfile
 from collections import OrderedDict
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from vcf_hci.constants import TOOL_VERSION
@@ -35,6 +36,63 @@ MAX_LIBRARY_PER_SESSION = 8
 MAX_LIBRARY_TOTAL = 32
 UPLOAD_BODY_LIMIT = 4 * ((MAX_UPLOAD_BYTES + 2) // 3) + 65536
 _EXPECTED_CODES = {"authentication", "certificate_pin_invalid", "cluster_not_found", "endpoint_invalid", "cancelled"}
+INVENTORY_SCAN_DIR = Path.home() / "Desktop" / "VCF-Scans" / "vSphere-Inventory"
+
+
+def _saved_path(entry_id: str, suffix: str) -> Path:
+    if len(entry_id) != 32 or any(c not in "0123456789abcdef" for c in entry_id):
+        raise ValueError("Invalid saved inventory ID")
+    return INVENTORY_SCAN_DIR / sanitize_filename(entry_id + suffix)
+
+
+def _stage_inventory(snapshot: VinvSnapshot) -> str:
+    from vcf_hci.plugins.vinv.xlsx_io import snapshot_to_json
+    entry_id = uuid.uuid4().hex
+    INVENTORY_SCAN_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    payload = snapshot_to_json(snapshot).encode("utf-8")
+    if len(payload) > MAX_RESULT_BYTES:
+        raise ValueError("Inventory exceeds the saved result limit")
+    meta = snapshot_summary(snapshot)
+    meta["id"] = entry_id
+    from vcf_hci.vault.store import _harden_file
+    created = []
+    try:
+        for suffix, content in ((".json", payload), (".meta.json", json.dumps(meta, sort_keys=True).encode("utf-8"))):
+            target = _saved_path(entry_id, suffix)
+            temporary = target.with_name(target.name + ".tmp")
+            fd = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, "wb") as output:
+                    if not _harden_file(str(temporary)):
+                        raise OSError("Could not restrict saved inventory file permissions")
+                    output.write(content)
+                os.replace(str(temporary), str(target))
+                created.append(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+    except Exception:
+        for target in created:
+            target.unlink(missing_ok=True)
+        raise
+    return entry_id
+
+
+def _saved_inventories() -> List[dict]:
+    if not INVENTORY_SCAN_DIR.is_dir():
+        return []
+    records = []
+    for path in sorted(INVENTORY_SCAN_DIR.glob("*.meta.json"), reverse=True)[:200]:
+        try:
+            entry_id = path.name.removesuffix(".meta.json")
+            source = _saved_path(entry_id, ".json")
+            if path.is_symlink() or path.stat().st_size > 16384 or source.is_symlink() or not source.is_file():
+                continue
+            meta = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(meta, dict) and meta.get("id") == entry_id:
+                records.append({k: meta.get(k) for k in ("id", "vcenter_server", "generated_utc", "hosts", "vms")})
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return records
 
 
 class Cancelled(Exception):
@@ -349,6 +407,7 @@ class VinvApiMixin(_ApiMixinBase):
             session = self._current_session() or ""
             _, library = server_state(self.server)
             body["library"] = library.list(session) if session else []
+            body["saved_library"] = _saved_inventories()
         self._send_json(body, extra_headers=_NO_STORE)
 
     def _api_vinv_preflight(self) -> None:
@@ -448,8 +507,12 @@ class VinvApiMixin(_ApiMixinBase):
             if job.get("cancel"):
                 outcome = "cancelled"
             else:
+                saved_id = _stage_inventory(snapshot)
                 _, library = server_state(self.server)
                 entry = library.add(job["session"], snapshot, "vcenter", label)
+                library.attach(job["session"], entry["id"])
+                entry["attached"] = True
+                job["saved_id"] = saved_id
                 job["entry_id"] = entry["id"]
                 job["summary"] = entry
                 outcome = "done"
@@ -620,6 +683,36 @@ class VinvApiMixin(_ApiMixinBase):
             self._send_json({"error": "Not found"}, 404, extra_headers=_NO_STORE)
             return
         self._send_json({"entries": library.list(session)}, extra_headers=_NO_STORE)
+
+    def _api_vinv_saved_post(self, path: str) -> None:
+        session = self._vinv_guard()
+        if session is None:
+            return
+        entry_id, suffix = _token_after(path, _PREFIX + "/saved/")
+        if not entry_id or suffix not in ("/load", "/delete"):
+            self._send_json({"error": "Not found"}, 404, extra_headers=_NO_STORE)
+            return
+        try:
+            source = _saved_path(entry_id, ".json")
+            meta = _saved_path(entry_id, ".meta.json")
+            if not source.is_file() or source.is_symlink() or meta.is_symlink():
+                raise ValueError("Saved inventory is unavailable.")
+            if suffix == "/delete":
+                source.unlink()
+                meta.unlink(missing_ok=True)
+                self._send_json({"saved_library": _saved_inventories()}, extra_headers=_NO_STORE)
+                return
+            if source.stat().st_size > MAX_RESULT_BYTES:
+                raise ValueError("Saved inventory exceeds the size limit.")
+            from vcf_hci.plugins.vinv.xlsx_io import snapshot_from_json
+            snapshot = snapshot_from_json(source.read_text(encoding="utf-8"))
+            _, library = server_state(self.server)
+            entry = library.add(session, snapshot, "saved-vcenter", snapshot.vcenter_server)
+            library.attach(session, entry["id"])
+            entry["attached"] = True
+            self._send_json({"entry": entry, "entries": library.list(session)}, extra_headers=_NO_STORE)
+        except (ValueError, OSError, UnicodeError, json.JSONDecodeError):
+            self._send_json({"error": "Saved inventory is unavailable or invalid."}, 400, extra_headers=_NO_STORE)
 
     # ── Phase 2: reconciled reports ──────────────────────────────────────
 

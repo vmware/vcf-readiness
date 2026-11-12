@@ -211,3 +211,7 @@ python tools/bundle_docs.py --check
 6. Credentials and raw inventory are sensitive. Plugin service credentials are manual or explicitly resolved from typed local-vault entries for that run, separate from BMC credentials.
 7. Readiness labels remain evidence-limited; the profile-fit, date-based, Memory Tiering badge, and namespace-preview limits above require explicit review.
 8. Generated files are reproducible from tracked inputs.
+
+## vSphere Inventory local library
+
+Completed live Inventory collections retain original JSON snapshots and summary metadata in `~/Desktop/VCF-Scans/vSphere-Inventory` and attach them to the session for reconciliation. Authenticated local sessions can load or delete these workstation-owned files after restart. Imports remain session-only. Saved files are unencrypted and account-restricted; obfuscated downloads do not alter saved originals. See [Inventory retention and security](docs/SECURITY_ARCHITECTURE.md#37-vsphere-inventory-local-retention).

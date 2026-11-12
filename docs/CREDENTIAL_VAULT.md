@@ -135,7 +135,7 @@ Without `--vault` the CLI behaves exactly as before.
 ### Saved vCenter and VCF Operations instances
 
 1. Create or unlock **Credential Vault**. Under **vCenter & VCF Operations**, choose the service, enter an instance name, HTTPS hostname or URL, username and password, then select **Save instance**. For Operations, an authentication source can be saved when required by the account.
-2. In a plugin's connection form, select **Use saved credentials**, then select the saved instance. The selector replaces the manual hostname, username and password fields. The link beside it opens Credential Vault to unlock or add the relevant service, with a return link to the plugin. Refresh the saved instances after editing an entry.
+2. In a plugin's connection form, select **Use saved credentials**, then select the saved instance. The selector replaces the manual hostname, username and password fields. Its vault link opens a new tab so the plugin form remains in place. Unlock or add the relevant service there, then return to the plugin tab; its list refreshes when focused. You can also use **Refresh saved instances**.
 3. vCenter entries work with **VDT**, **MTAT Workload Assessment**, and **vSphere Inventory Export**. Operations entries are available only for MTAT's **Operations REST** source. Workbook imports do not use saved accounts.
 4. Review the plugin's normal TLS settings, acknowledgement and collection options. A saved entry does not bypass certificate review, SSH fingerprint verification, source permissions or plugin execution requirements.
 
@@ -210,4 +210,3 @@ The web UI Jump hosts table allows full management without recreation:
 - **Multi-Subnet Input**: The Subnets input field supports multiple CIDRs separated by commas (e.g. `192.0.2.0/24, 192.0.3.0/24, 10.0.0.0/16`).
 
 The web UI Jump hosts section uses the same records. Test connection checks Python 3.9+, a writable `/tmp`, and free space. It does not print key material.
-	
