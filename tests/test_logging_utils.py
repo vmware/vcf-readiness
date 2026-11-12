@@ -190,6 +190,10 @@ class TestScanOutputAndAliases(unittest.TestCase):
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write("<html>Summary</html>")
             for metadata in (".DS_Store", "Icon\r", "._summary.html"):
+                # Finder can create this POSIX filename; Windows rejects its
+                # carriage return before the archive code can be exercised.
+                if os.name == "nt" and metadata == "Icon\r":
+                    continue
                 with open(os.path.join(scan_dir, metadata), "w", encoding="utf-8") as f:
                     f.write("Private Finder metadata")
             os.makedirs(os.path.join(scan_dir, "__MACOSX"))
