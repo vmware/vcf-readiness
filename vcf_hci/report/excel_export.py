@@ -427,7 +427,10 @@ def _write_xlsx(sheets: list) -> bytes:
                         if style == 0:
                             style = 5
                     val_str = _clean_xml_text(val) if val is not None else ""
-                    sx += f'<c r="{ref}" t="inlineStr" s="{style}"><is><t>{val_str}</t></is></c>'
+                    if isinstance(cell, tuple) and cell[1] == "number" and re.fullmatch(r"-?(?:0|[1-9]\d*)(?:\.\d+)?", val_str):
+                        sx += f'<c r="{ref}" s="{style}"><v>{val_str}</v></c>'
+                    else:
+                        sx += f'<c r="{ref}" t="inlineStr" s="{style}"><is><t>{val_str}</t></is></c>'
                 sx += '</row>'
             sx += '</sheetData>'
             if hyperlinks:

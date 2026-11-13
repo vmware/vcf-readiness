@@ -5,8 +5,9 @@ standard columns, followed by VCF-R extensions and discovered custom attributes.
 Schema 1.1 accepts legacy VCF-R headers as aliases without emitting duplicate
 columns. Internal dictionary consumers retain those aliases. Imports retain additional
 columns through XLSX and JSON round trips. Merged Redfish workbooks retain their
-existing sheet collision renames. All values use the existing text-cell export
-contract; boolean values are `True`/`False`, dates are UTC, and a blank means
+existing sheet collision renames. Measurement columns use numeric Excel cells
+for RVTools-compatible calculations; identifiers, versions, booleans and dates
+remain text. Boolean values are `True`/`False`, dates are UTC, and a blank means
 unavailable, not zero or false.
 
 Collection uses read-only inventory properties, cached compliance results,
