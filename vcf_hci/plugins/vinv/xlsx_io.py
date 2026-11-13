@@ -30,6 +30,55 @@ _PKG_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 _CELL_REF_RE = re.compile(r"^([A-Z]+)(\d+)$")
 _REVERSE_UNIFIED_MAP = {v: k for k, v in UNIFIED_TAB_NAME_MAP.items()}
 
+# Reference workbooks write measurement cells as Excel numbers. Keep identifiers, dates,
+# versions, custom attributes and missing evidence as text.
+_NUMERIC_HEADERS = {
+    "vInfo": frozenset({"CPUs", "Memory", "Active Memory", "NICs", "Disks"}) | frozenset({
+        "Total disk capacity MiB", "Provisioned MiB", "In Use MiB", "Unshared MiB",
+        "FT Bandwidth", "FT Sec. Latency", "Num Monitors", "Video Ram KiB",
+        "Boot delay", "Boot retry delay", "Op Notification Timeout",
+    }),
+    "vCPU": frozenset({"CPUs", "Sockets", "Cores p/s", "Max", "Overall", "Shares", "Reservation",
+                         "Entitlement", "DRS Entitlement", "Limit"}),
+    "vMemory": frozenset({"Size MiB", "Overhead", "Max", "Consumed", "Consumed Overhead", "Private",
+                            "Shared", "Swapped", "Ballooned", "Active", "Entitlement", "DRS Entitlement",
+                            "Shares", "Reservation", "Limit"}),
+    "vDisk": frozenset({"Capacity MiB", "Shares", "Reservation", "Limit", "SCSI Unit #", "Unit #"}),
+    "vPartition": frozenset({"Capacity MiB", "Consumed MiB", "Free MiB", "Free %"}),
+    "vSnapshot": frozenset({"Size MiB (vmsn)", "Size MiB (total)"}),
+    "vRP": frozenset({"# VMs total", "# VMs", "# vCPUs"}) | frozenset({
+        "CPU limit", "CPU overheadLimit", "CPU reservation", "CPU shares",
+        "CPU maxUsage", "CPU overallUsage", "CPU reservationUsed",
+        "CPU reservationUsedForVm", "CPU unreservedForPool", "CPU unreservedForVm",
+        "Mem Configured", "Mem limit", "Mem overheadLimit", "Mem reservation",
+        "Mem shares", "Mem maxUsage", "Mem overallUsage", "Mem reservationUsed",
+        "Mem reservationUsedForVm", "Mem unreservedForPool", "Mem unreservedForVm",
+        "QS overallCpuDemand", "QS overallCpuUsage", "QS staticCpuEntitlement",
+        "QS distributedCpuEntitlement", "QS balloonedMemory", "QS compressedMemory",
+        "QS consumedOverheadMemory", "QS distributedMemoryEntitlement",
+        "QS guestMemoryUsage", "QS hostMemoryUsage", "QS overheadMemory",
+        "QS privateMemory", "QS sharedMemory", "QS staticMemoryEntitlement",
+        "QS swappedMemory",
+    }),
+    "vCluster": frozenset({"NumHosts", "numEffectiveHosts", "TotalCpu", "NumCpuCores", "NumCpuThreads",
+                             "Effective Cpu", "TotalMemory", "Effective Memory", "Num VMotions", "Failover Level",
+                             "Max Failures", "Max Failure Window", "Failure Interval", "Min Up Time",
+                             "DRS vmotion rate", "DPM Host Power Action Rate"}),
+    "vHost": frozenset({"Speed", "# CPU", "Cores per CPU", "# Cores", "CPU usage %", "# Memory",
+                          "Memory usage %", "# NICs", "# HBAs", "# VMs total", "# VMs", "VMs per Core",
+                          "# vCPUs", "vCPUs per Core", "vRAM", "VM Used memory", "VM Memory Swapped",
+                          "VM Memory Ballooned"}),
+    "vNIC": frozenset({"Speed"}),
+    "dvSwitch": frozenset({"Max Ports", "# Ports", "# VMs", "In Avg", "In Peak", "In Burst",
+                             "Out Avg", "Out Peak", "Out Burst", "Max MTU"}),
+    "dvPort": frozenset({"# Ports", "VLAN", "Speed", "In Avg", "In Peak", "In Burst", "Out Avg",
+                           "Out Peak", "Out Burst", "Percentage"}),
+    "vSC_VMK": frozenset({"MTU"}),
+    "vDatastore": frozenset({"# VMs total", "# VMs", "Capacity MiB", "Provisioned MiB", "In Use MiB",
+                               "Free MiB", "Free %", "SIOC Threshold", "# Hosts", "Block size", "Max Blocks",
+                               "# Extents", "Major Version"}),
+}
+
 
 def _col_index(letters: str) -> int:
     idx = 0
@@ -59,6 +108,20 @@ def _check_safe_xml(raw_bytes: bytes) -> None:
 def render_vinv_xlsx(snapshot: VinvSnapshot) -> bytes:
     """Render a standalone 26-tab (or 27-tab) vSphere Inventory .xlsx workbook."""
     sheets = snapshot_to_excel_sheet_dicts(snapshot, unified_mode=False)
+    for sheet in sheets:
+        numeric_headers = _NUMERIC_HEADERS.get(sheet["name"], frozenset())
+        if not numeric_headers:
+            continue
+        rows = sheet["rows"]
+        numeric_indexes = [
+            index for index, header in enumerate(rows[0])
+            if header[0] in numeric_headers
+        ]
+        for row in rows[1:]:
+            for index in numeric_indexes:
+                value = row[index]
+                if value != "" and re.fullmatch(r"-?(?:0|[1-9]\d*)(?:\.\d+)?", str(value)):
+                    row[index] = (value, "number")
     return _write_xlsx(sheets)
 
 
