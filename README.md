@@ -197,87 +197,63 @@ python3 vcfr_collector.py --from-summary ./VCF-Scans/Scan_example
 
 ## 📊 Visual Report Showcase
 
-Every assessment run generates rich, standalone HTML deliverables (an aggregated **Fleet Summary** and individual **Host Reports**) with zero runtime external asset dependencies.
+Current report and workflow screenshots. Click any image to view it at full resolution. Screenshots may show beta UI; feature availability depends on your release.
 
-> 🎥 **Video Tour:** Watch the [**Report Overview Video (8:20) →**](https://www.youtube.com/watch?v=tQkxyRHZu4M) for a guided walkthrough of the fleet summary, status badges, BIOS drift scorecard, and per-host sub-reports.
+### Fleet capacity and readiness
 
-### 1. Fleet Dashboard & Resource Headroom
-Start with Server Readiness, storage readiness and BMC security beside fleet raw-resource totals and sizing caveats. Server Readiness combines existing chassis qualification with CPU support and keeps vendor-support qualifications distinct from unsupported assessments. Click a count to inspect matching hosts, including unassessed results.
+[![Fleet capacity and readiness](docs/assets/screenshots/fleetview.png)](docs/assets/screenshots/fleetview.png)
 
-![Fleet Health and Management Headroom Tiles](docs/images/01-fleet-health-tiles.png)
+### Fleet security, power and health
 
-Fleet-wide power redundancy tracking, chassis power cap warnings, vSAN readiness distribution, and aggregate kilowatt telemetry:
+[![Fleet security, power and health](docs/assets/screenshots/fleet-tiles.png)](docs/assets/screenshots/fleet-tiles.png)
 
-![Fleet Power, vSAN Distribution, and Alarms](docs/images/02-fleet-power-sel-tor.png)
+### Host readiness scorecards
 
-- **Detailed Telemetry:** [Fleet Metric Health Tiles](docs/assets/screenshots/fleet-metric-tiles.png)
+[![Host readiness scorecards](docs/assets/screenshots/host-tiles.png)](docs/assets/screenshots/host-tiles.png)
 
----
+### CPU detection and architecture
 
-### 2. Interactive Per-Host Assessment Matrix
-Sort, search, and filter servers by OEM vendor, CPU support tier, TPM 2.0 status, and vSAN ESA readiness with direct links into individual host sub-reports. Detailed Inventory offers Comfortable and Compact density, a Columns chooser and Reset view. Layout choices retain complete export data. Keyboard navigation and focus management support report tabs and reference help.
+[![CPU detection and architecture](docs/assets/screenshots/cpu-detection.png)](docs/assets/screenshots/cpu-detection.png)
 
-![Per-Host Assessment Table](docs/images/03-per-host-table.png)
+### Memory performance review
 
-- **Detailed Telemetry:** [Multi-Host Fleet Status Grid](docs/assets/screenshots/fleet-multi-host-capture.png)
+[![Memory performance review](docs/assets/screenshots/memory-performance-review.png)](docs/assets/screenshots/memory-performance-review.png)
 
----
+### DIMM channels and topology
 
-### 3. Executive Hardware Scorecards & Subsystem Audits
-Color-coded executive summary scorecards highlighting CPU compatibility, BIOS currency, TPM 2.0 status, and vSAN driver/firmware alignment against the Broadcom Compatibility Guide (BCG).
+[![DIMM channels and topology](docs/assets/screenshots/memory-channel-topology.png)](docs/assets/screenshots/memory-channel-topology.png)
 
-![Executive Host Summary Scorecards](docs/images/08-host-scorecards.png)
+### Storage compatibility and firmware
 
-- **Detailed Telemetry:** [Single-Host Assessment Tiles](docs/assets/screenshots/single-host-server-tiles.png) • [Sub-Category Health Breakdown](docs/assets/screenshots/sub-category-system-overview.png)
+[![Storage compatibility and firmware](docs/assets/screenshots/vsan-drive-hcl-check.png)](docs/assets/screenshots/vsan-drive-hcl-check.png)
 
----
+### NVMe SMART health
 
-### 4. Physical Motherboard DIMM Slot & Channel Layout
-Visualizer mapping installed DIMM modules to physical CPU sockets and memory channels, detecting unbalanced memory interleaving, unpopulated channels, and memory operating below peak rated speeds.
+[![NVMe SMART health](docs/assets/screenshots/nvme-drive-smart-checks.png)](docs/assets/screenshots/nvme-drive-smart-checks.png)
 
-![Motherboard DIMM Slot and Channel Visualizer](docs/images/04-dimm-slot-visualizer.png)
+### Network fabric discovery
 
-- **Detailed Telemetry:** [Motherboard Channel Topology](docs/assets/screenshots/memory-channel-topology.png)
+[![Network fabric discovery](docs/assets/screenshots/network-switch-detection.png)](docs/assets/screenshots/network-switch-detection.png)
 
----
+### Fibre Channel discovery
 
-### 5. Storage Subsystem & vSAN ESA Qualification
-Evaluates storage controllers, RAID pass-through modes, and NVMe SSDs. Performs exact PCI Quad matching (`VID:DID:SVID:SSID`) against the Broadcom vSAN HCL dataset, calculates SMART drive wear/endurance remaining %, and generates one-click BCG search links.
+[![Fibre Channel discovery](docs/assets/screenshots/fibrechannel-discovery.png)](docs/assets/screenshots/fibrechannel-discovery.png)
 
-![Storage Subsystem and vSAN ESA Qualification](docs/images/05-storage-vsan-esa.png)
+### BIOS performance guidance
 
-- **Detailed Telemetry:** [vSAN ESA Drive Compliance](docs/assets/screenshots/vsan-esa-drive-compliance.png) • [Drive SMART Telemetry](docs/assets/screenshots/nvme-smart-health-telemetry.png) • [PCIe Lane Inventory](docs/assets/screenshots/pcie-lane-inventory.png)
+[![BIOS performance guidance](docs/assets/screenshots/performance-guide-audit.png)](docs/assets/screenshots/performance-guide-audit.png)
 
----
+### BMC hardening audit
 
-### 6. Network Interfaces & Top-of-Rack (ToR) Switch Fabric
-Identifies network adapters and port speeds (10 GbE for the tool’s Small/Edge readiness baseline; 25 GbE for Medium/Large profiles), queries LLDP and Cisco CDP neighbor data to discover connected Top-of-Rack switches, and correlates leaf switch pairs to highlight single-homed hosts and cabling miswires.
+[![BMC hardening audit](docs/assets/screenshots/hardening-audit-security.png)](docs/assets/screenshots/hardening-audit-security.png)
 
-![NIC Inventory and Dedicated BMC Management Port](docs/images/06-nic-tor-mapping.png)
+### Security diagnostics
 
-![Top-of-Rack Switch Fabric and Topology Matrix](docs/images/10-tor-switch-fabric.png)
+[![Security diagnostics](docs/assets/screenshots/security-review.png)](docs/assets/screenshots/security-review.png)
 
-- **Detailed Telemetry:** [NIC Optics & LLDP Detection](docs/assets/screenshots/nic-optics-lldp-detection.png) • [LLDP / CDP Switch Neighbors](docs/assets/screenshots/lldp-cdp-switch-neighbors.png)
+### HCL updates and dark-site support
 
----
-
-### 7. System Event Log (SEL / IML) & Diagnostic Decoders
-Extracts the latest Warning and Critical hardware alarms from the server's event log, integrating direct links to Dell EEMS diagnostic guides and HPE IML documentation.
-
-![System Assessment Summary and Event Log](docs/images/09-system-assessment-sel.png)
-
-- **Detailed Telemetry:** [System Event Log Monitoring](docs/assets/screenshots/system-event-log-monitoring.png)
-
----
-
-### 8. 84-Control BMC Hardware Security Audit & Golden BIOS Baseline
-Out-of-band security compliance audit evaluating 84 canonical controls aligned with the **CISA & NSA Joint BMC Hardening Guide**, **VMware Cloud Foundation Security Configuration Guide (SCG 9.1)**, and **NIST SP 800-193**. Evaluates BIOS performance drift against Broadcom VCF 9.1 Golden Baselines.
-
-![BMC Hardware Security Audit Findings](docs/images/07-bmc-security-audit.png)
-
-- **Detailed Telemetry:** [BMC Hardware Security Audit](docs/assets/screenshots/bmc-hardware-security-audit.png) • [Hardware Security Baseline](docs/assets/screenshots/hardware-security-baseline.png) • [BIOS Golden Baseline Drift](docs/assets/screenshots/bios-golden-baseline-drift.png) • [BIOS Performance Settings](docs/assets/screenshots/bios-performance-settings.png)
-
-> 📖 **Comprehensive Reference Guide:** For an exhaustive tab-by-tab and field-by-field reference explaining every metric, evaluation rule, official VMware KB, and the 84-control BMC security audit, see the [**User Guide & Reference Manual (docs/USER_GUIDE_REFERENCE.md)**](docs/USER_GUIDE_REFERENCE.md).
+[![HCL updates and dark-site support](docs/assets/screenshots/hcl-update-updating-darksite-support.png)](docs/assets/screenshots/hcl-update-updating-darksite-support.png)
 
 ---
 
