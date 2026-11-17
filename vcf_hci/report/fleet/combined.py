@@ -39,6 +39,7 @@ def _generate_combined_html(
     embed_mode: Optional[str] = None,
     json_hcl: Optional[dict] = None,
     vinv_report: Optional[Any] = None,
+    mtat_html: Optional[str] = None,
 ) -> str:
     """Generate a single combined tabbed HTML report containing all host reports.
 
@@ -79,6 +80,12 @@ def _generate_combined_html(
     readme_tab = build_combined_help(DOCS_DATA)
     tab_btns = build_host_navigation(all_results, mode, obfuscated, _page_salt)
     panels = build_host_panels(all_results, report_paths, outdir, mode, obfuscated, host_html_list)
+    if mtat_html and not obfuscated:
+        button = '<button class="tab-btn" data-action="report-tab" data-tab-target="tab--1">MTAT</button>'
+        marker = '</button>'
+        position = tab_btns.index(marker, tab_btns.index('data-tab-target="tab-1"')) + len(marker)
+        tab_btns = tab_btns[:position] + button + tab_btns[position:]
+        panels += '<div id="tab--1" class="tab-content" hidden>' + mtat_html + '</div>'
     timestamp = time.strftime("%Y-%m-%d %H:%M")
     page_title = f"VCF Readiness{' (Obfuscated)' if obfuscated else ''} — {n_hosts} Host(s)"
     combined_template = render_combined_document(page_title, tab_btns, panels, timestamp)

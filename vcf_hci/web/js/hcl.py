@@ -311,7 +311,7 @@ JS_HCL = """
     var thInp = document.getElementById('threadsInput');
     var gentleThreads = targetIps.length <= 4 ? 2 : 4;
     if (thInp) {
-      thInp.value = gentleThreads;
+      setScanConcurrency(gentleThreads, 'retry');
     }
 
     // 2. Extend host timeout to 10 minutes (600s)

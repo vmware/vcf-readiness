@@ -9,7 +9,7 @@ from vcf_hci.web import vault_session
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
-def resolve_plugin_credentials(handler: Any, data: dict, kind: str, plugin: str = "") -> bool:
+def resolve_plugin_credentials(handler: Any, data: dict, kind: str, plugin: str = "", required_role: str = "") -> bool:
     if "vault_credential_id" not in data:
         return True
     if handler._is_remote_server() or not handler._require_same_origin():
@@ -33,6 +33,16 @@ def resolve_plugin_credentials(handler: Any, data: dict, kind: str, plugin: str 
             extra_headers=_NO_STORE,
         )
         return False
+    needs_admin = required_role == "administrator" or plugin == "vdt"
+    if needs_admin and kind == "vcenter" and record.get("role") != "administrator":
+        handler._send_json(
+            {
+                "error": "This saved vCenter account is not marked Administrator. Choose an Administrator instance, or type the administrator password for this run.",
+            },
+            400,
+            extra_headers=_NO_STORE,
+        )
+        return False
     if plugin == "vdt":
         url = urlsplit(record["endpoint"])
         target = data.get("target")
@@ -44,6 +54,8 @@ def resolve_plugin_credentials(handler: Any, data: dict, kind: str, plugin: str 
     else:
         endpoint_key = "endpoint"
         data.update({endpoint_key: record["endpoint"], "username": record["username"], "password": record["password"]})
+        if kind == "vcenter" and record.get("certificate_pin"):
+            data["certificate_pin"] = record["certificate_pin"]
         if kind == "operations":
             data["auth_source"] = record["auth_source"]
     return True

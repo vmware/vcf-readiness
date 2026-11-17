@@ -35,6 +35,8 @@ def generate_summary_html(
     obfuscated: bool = False,
     failed_hosts: Optional[list] = None,
     json_hcl: Optional[dict] = None,
+    vinv_report=None,
+    mtat_html: Optional[str] = None,
 ):
     """One-page fleet health dashboard with 13 check tiles, per-host assessment table, and failed host roster."""
     all_results = [storage_pcie_view(host) for host in all_results]
@@ -681,10 +683,18 @@ def generate_summary_html(
     executive_html_path, executive_pdf_path = write_executive_reports(all_results, os.path.dirname(os.path.abspath(output_filepath)), failed_hosts, obfuscated)
     executive_links = (
         '<nav aria-label="Executive reports" class="executive-report-links" style="padding:12px 24px">'
-        f'<a href="{_h(os.path.basename(executive_html_path))}">Executive summary</a> · '
-        f'<a href="{_h(os.path.basename(executive_pdf_path))}" download>Download executive PDF</a></nav>'
+        f'<a href="{_h(os.path.relpath(executive_html_path, os.path.dirname(os.path.abspath(output_filepath))).replace(os.sep, "/"))}">Executive summary</a> · '
+        f'<a href="{_h(os.path.relpath(executive_pdf_path, os.path.dirname(os.path.abspath(output_filepath))).replace(os.sep, "/"))}" download>Download executive PDF</a></nav>'
     )
     html_content = html_content.replace('<body>', '<body>' + executive_links, 1)
+    if not obfuscated:
+        extra = ''
+        if vinv_report is not None:
+            from vcf_hci.report.fleet.vsphere_reconciliation import render_fleet_reconciliation_html
+            extra += render_fleet_reconciliation_html(vinv_report)
+        if mtat_html:
+            extra += mtat_html
+        html_content = html_content.replace('</body>', extra + '</body>')
     html_safe = html_content.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
     with open(output_filepath, "w", encoding="utf-8", errors="replace") as f:
         f.write(format_report_html(html_safe))

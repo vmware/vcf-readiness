@@ -217,6 +217,8 @@ def _regenerate_fleet_artifacts(
     site: Optional[str] = None,
     collector_id: Optional[str] = None,
     scan_profile: Optional[str] = None,
+    vinv_snapshot=None,
+    mtat_html: Optional[str] = None,
 ) -> tuple:
     """Regenerate consolidated fleet summary, combined HTML report, and zip archive across merged results.
 
@@ -252,13 +254,17 @@ def _regenerate_fleet_artifacts(
         selected_bundle = _state.get("custom_hcl_bundle_path")
     json_hcl = import_hcl_bundle(selected_bundle)[0] if selected_bundle else load_vsan_hcl_json()
 
+    vinv_report = None
+    if vinv_snapshot is not None:
+        from vcf_hci.plugins.vinv.reconcile import enrich_redfish_results_with_vinv
+        vinv_report = enrich_redfish_results_with_vinv(results, vinv_snapshot)
     report_paths = []
     for r in results:
         ip = ((r.get("system") or {}).get("ip") or r.get("host") or "").strip()
         if ip:
             rp = os.path.join(reports_dir, f"vsphere_vsan_report_{sanitize_filename(ip)}.html")
             if os.path.isfile(rp):
-                if r.get("server_groups") is not None:
+                if r.get("server_groups") is not None or vinv_snapshot is not None:
                     generate_host_html_report(r, rp, json_hcl=json_hcl)
                 report_paths.append(rp)
 
@@ -267,7 +273,7 @@ def _regenerate_fleet_artifacts(
             if n > COMBINED_HTML_MAX_HOSTS:
                 _log(f"[!] Note: Combined report host count ({n}) exceeds soft limit of {COMBINED_HTML_MAX_HOSTS}.")
             try:
-                fleet_path = _generate_combined_html(results, report_paths, outdir, json_hcl=json_hcl)
+                fleet_path = _generate_combined_html(results, report_paths, outdir, json_hcl=json_hcl, **({"vinv_report": vinv_report, "mtat_html": mtat_html} if vinv_report is not None or mtat_html else {}))
                 if fleet_path:
                     _log(f"[✓] Combined report  →  {os.path.basename(fleet_path)}")
             except Exception as exc:
@@ -275,7 +281,7 @@ def _regenerate_fleet_artifacts(
 
         try:
             summary_path = os.path.join(outdir, "00_fleet_summary.html")
-            generate_summary_html(results, summary_path, hcl_bundle_metadata=custom_hcl_metadata, failed_hosts=failed_hosts, json_hcl=json_hcl)
+            generate_summary_html(results, summary_path, hcl_bundle_metadata=custom_hcl_metadata, failed_hosts=failed_hosts, json_hcl=json_hcl, **({"vinv_report": vinv_report, "mtat_html": mtat_html} if vinv_report is not None or mtat_html else {}))
             _log("[✓] Fleet summary    →  00_fleet_summary.html")
         except Exception as exc:
             _log(f"[!] Fleet summary failed: {exc}")
@@ -356,7 +362,7 @@ def _regenerate_fleet_artifacts(
 
         if (excel or export_sheets) and n >= 1:
             try:
-                sheets = _build_excel_sheets(results, failed_hosts=failed_hosts)
+                sheets = _build_excel_sheets(results, failed_hosts=failed_hosts, **({"vinv_snapshot": vinv_snapshot, "vinv_source_results": results} if vinv_snapshot is not None else {}))
                 xlsx_bytes = _write_xlsx(sheets)
                 excel_fname = sanitize_filename(f"vcf_readiness_{time.strftime('%Y%m%d_%H%M%S')}.xlsx")
                 excel_path = os.path.join(outdir, excel_fname)
@@ -368,7 +374,7 @@ def _regenerate_fleet_artifacts(
 
             try:
                 export_all_csvs(results, outdir, obfuscated=False, failed_hosts=failed_hosts)
-                _log("[✓] CSV exports      →  00_fleet_summary.csv, 00_drives_inventory.csv, 00_nics_inventory.csv")
+                _log("[✓] CSV exports      →  Inventory-files/00_fleet_summary.csv, 00_drives_inventory.csv, 00_nics_inventory.csv")
             except Exception as exc:
                 _log(f"[!] CSV exports failed: {exc}")
 
@@ -388,7 +394,7 @@ def _regenerate_fleet_artifacts(
 
                 try:
                     export_all_csvs(obf_results, outdir, obfuscated=True, failed_hosts=obf_failed_hosts)
-                    _log("[🔒] Obfuscated CSV exports  →  00_OBFUSCATED_fleet_summary.csv, ...")
+                    _log("[🔒] Obfuscated CSV exports  →  Inventory-files/00_OBFUSCATED_fleet_summary.csv, ...")
                 except Exception as exc:
                     _log(f"[!] Obfuscated CSV exports failed: {exc}")
 

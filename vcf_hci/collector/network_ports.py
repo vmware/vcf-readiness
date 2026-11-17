@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from vcf_hci.collector.network_identity import _clean_mac_address
 from vcf_hci.logging_utils import get_nested
+from vcf_hci.network_partitioning import is_fibre_channel_function, is_pure_fc_adapter
 
 
 def _evaluate_npar_partitions(partitions: list, port_count: int = 1, is_vic: bool = False) -> bool:
@@ -20,6 +21,9 @@ def _evaluate_npar_partitions(partitions: list, port_count: int = 1, is_vic: boo
     dedicated queues and native nenic/fnic drivers, and are excluded from NPAR classification.
     """
     if is_vic or not partitions or len(partitions) < 2:
+        return False
+    # Native FC speeds/function IDs are not Ethernet bandwidth partitions.
+    if all(is_fibre_channel_function(p) for p in partitions):
         return False
 
     # Check if partitions follow Cisco VIC naming and architecture
@@ -356,7 +360,7 @@ def finalize_network_adapters(nic_list: list, license_blocked_note: Optional[str
             nic["is_npar"] = False
             nic["is_vic_virtual"] = bool(nic_parts_list)
             nic["vic_virtual_interfaces"] = nic_parts_list
-        elif nic.get("npar_enabled") is False:
+        elif is_pure_fc_adapter(nic) or nic.get("npar_enabled") is False:
             nic["is_npar"] = False
             nic["npar_partitions"] = []
         else:

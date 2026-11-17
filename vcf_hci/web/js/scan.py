@@ -639,12 +639,9 @@ JS_SCAN = """
     }
 
     show(document.getElementById('openFolderBtn'));
-    ['executivePdfBtn','executiveHtmlBtn','executiveObfPdfBtn'].forEach(function(id) { show(document.getElementById(id)); });
     show(document.getElementById('exportXlsxBtn'));
     show(document.getElementById('exportObfXlsxBtn'));
     show(document.getElementById('exportObfZipBtn'));
-    show(document.getElementById('exportCsvBtn'));
-    show(document.getElementById('exportSummaryJsonBtn'));
     show(document.getElementById('prerenderReportsBtn'));
     show(document.getElementById('postScanActions'));
     var failBox = document.getElementById('summaryFailedList');
@@ -913,14 +910,17 @@ JS_SCAN = """
 
   // ── Missing Password Warning Modal & Validation ──────────────────────────
   var _pendingScanProceed = null;
+  var _pendingScanCancel = null;
 
   function closeMissingPasswordModal() {
     var modal = document.getElementById('missingPasswordModal');
     if (modal) hide(modal);
     _pendingScanProceed = null;
+    var cancel = _pendingScanCancel; _pendingScanCancel = null;
+    if (cancel) cancel(new Error('Hardware scan start cancelled. Review credentials and run again.'));
   }
 
-  function promptMissingPasswordWarning(missingHosts, onProceed) {
+  function promptMissingPasswordWarning(missingHosts, onProceed, onCancel) {
     if (!missingHosts || !missingHosts.length) {
       onProceed();
       return;
@@ -938,12 +938,14 @@ JS_SCAN = """
       if (proceed) {
         onProceed();
       } else {
+        if (onCancel) onCancel(new Error("Hardware scan start cancelled."));
         navigateToPasswordAnchor();
       }
       return;
     }
 
     _pendingScanProceed = onProceed;
+    _pendingScanCancel = onCancel;
 
     var textEl = document.getElementById('missingPasswordText');
     if (textEl) {
@@ -1026,6 +1028,7 @@ JS_SCAN = """
   if (continueWithoutPasswordBtn) {
     continueWithoutPasswordBtn.addEventListener('click', function() {
       var fn = _pendingScanProceed;
+      _pendingScanCancel = null;
       closeMissingPasswordModal();
       if (typeof fn === 'function') fn();
     });
@@ -1039,6 +1042,7 @@ JS_SCAN = """
 
   // ── Cert pin gate before scan ────────────────────────────────────────────
   var _pendingCertPinProceed = null;
+  var _pendingCertPinCancel = null;
   var _certPinFetchGen = 0;
   var _certPinCheckedHosts = [];
   var _certPinRangeText = '';
@@ -1080,6 +1084,8 @@ JS_SCAN = """
     var modal = document.getElementById('certPinModal');
     if (modal) hide(modal);
     _pendingCertPinProceed = null;
+    var cancel = _pendingCertPinCancel; _pendingCertPinCancel = null;
+    if (cancel) cancel(new Error('Hardware scan start cancelled. Review certificate trust and run again.'));
   }
 
   function setCertPinStatus(msg) {
@@ -1237,11 +1243,12 @@ JS_SCAN = """
   function finishCertPinChoice(note) {
     _certPinStartNote = note || '';
     var fn = _pendingCertPinProceed;
+    _pendingCertPinCancel = null;
     closeCertPinModal();
     if (typeof fn === 'function') fn();
   }
 
-  function promptCertPinBeforeScan(checkedHosts, rangeText, onProceed) {
+  function promptCertPinBeforeScan(checkedHosts, rangeText, onProceed, onCancel) {
     if (certPinAlreadySatisfied(checkedHosts, rangeText)) {
       onProceed();
       return;
@@ -1250,9 +1257,11 @@ JS_SCAN = """
     if (!modal) {
       var proceed = confirm('BMC TLS checks are off. The BMC password can be read on the path to these hosts. OK scans without certificate checks. Cancel stops.');
       if (proceed) onProceed();
+      else if (onCancel) onCancel(new Error("Hardware scan start cancelled."));
       return;
     }
     _pendingCertPinProceed = onProceed;
+    _pendingCertPinCancel = onCancel;
     _certPinCheckedHosts = (checkedHosts || []).slice();
     _certPinRangeText = rangeText || '';
     _certPinOverrideTargets = null;
@@ -1391,6 +1400,7 @@ JS_SCAN = """
   // ── Active Scan Conflict Modal (Jump Host) ────────────────────────────────
   var _activeScanConflictScans = [];
   var _activeScanRestartFn = null;
+  var _activeScanCancelFn = null;
 
   function closeActiveScanConflictModal() {
     var modal = document.getElementById('activeScanConflictModal');
@@ -1398,6 +1408,8 @@ JS_SCAN = """
   }
 
   function resetRunBtnToIdle() {
+    var cancel = _activeScanCancelFn; _activeScanCancelFn = null;
+    if (cancel) cancel(new Error('Hardware scan start cancelled. Check the active scan in Scanner before retrying.'));
     var runBtn = document.getElementById('runBtn');
     if (runBtn) {
       runBtn.disabled = false;
@@ -1409,9 +1421,10 @@ JS_SCAN = """
     _scanRunning = false;
   }
 
-  function promptActiveScanConflict(activeScans, onRestart) {
+  function promptActiveScanConflict(activeScans, onRestart, onCancel) {
     _activeScanConflictScans = activeScans || [];
     _activeScanRestartFn = onRestart;
+    _activeScanCancelFn = onCancel;
 
     var modal = document.getElementById('activeScanConflictModal');
     if (!modal) {
@@ -1516,6 +1529,8 @@ JS_SCAN = """
     resumeActiveScanBtn.addEventListener('click', function() {
       resumeActiveScanBtn.disabled = true;
       resumeActiveScanBtn.textContent = 'Reattaching…';
+      var cancel = _activeScanCancelFn; _activeScanCancelFn = null;
+      if (cancel) cancel(new Error('Existing remote scan reattached in Scanner. Finish it before running the wizard for new targets.'));
       var scan = _activeScanConflictScans[0] || {};
       var outdirVal = (document.getElementById('outdirInput') ? document.getElementById('outdirInput').value.trim() : '') || (typeof _lastScanOutdir !== 'undefined' ? _lastScanOutdir : '') || '';
       post('/api/scan/reconnect', {
@@ -1564,8 +1579,18 @@ JS_SCAN = """
   }
 
   // ── Run assessment ────────────────────────────────────────────────────────
-  document.getElementById('runBtn').addEventListener('click', function() {
-    if (_scanRunning) { showContextMessage('An assessment or import is already running.'); return; }
+  var _hardwareStartPending = false;
+  function startHardwareAssessment() {
+    return new Promise(function(resolve, reject) { runHardwareAssessment(resolve, reject); });
+  }
+  function runHardwareAssessment(onStarted, onFailed) {
+    onStarted = typeof onStarted === 'function' ? onStarted : function() {};
+    onFailed = typeof onFailed === 'function' ? onFailed : function() {};
+    if (_scanRunning || _hardwareStartPending) { var busy = 'An assessment or import is already running.'; showContextMessage(busy); onFailed(new Error(busy)); return; }
+    _hardwareStartPending = true;
+    var accepted = onStarted, failed = onFailed;
+    onStarted = function(result) { _hardwareStartPending = false; accepted(result); };
+    onFailed = function(error) { _hardwareStartPending = false; failed(error); };
     var targets = document.getElementById('rangeInput').value.trim();
     // If hosts were discovered and some are checked, use those; else use the range text
     var checkedBoxes = Array.from(document.querySelectorAll('.host-chk:checked'));
@@ -1607,6 +1632,7 @@ JS_SCAN = """
 
     if (!targets && !checkedHosts.length) {
       showContextMessage('Enter a target range or run Probe Hosts first.');
+      onFailed(new Error('Enter hardware targets before running.'));
       return;
     }
 
@@ -1622,12 +1648,14 @@ JS_SCAN = """
       if (typeof _vaultState !== 'undefined' && !_vaultState.unlocked) {
         showContextMessage('Remote jump host execution requires an unlocked credential vault with at least one jump host profile.\\n\\nPlease unlock or create a vault in the Credential Vault section before running.');
         openAndHighlightVault('vaultUnlockPass');
+        onFailed(new Error('Unlock the credential vault before running.'));
         return;
       }
       var jSelect = document.getElementById('jumpHostSelect');
       if (jSelect && jSelect.options.length <= 1 && (!jSelect.value || jSelect.value === 'auto')) {
         showContextMessage('No jump hosts are configured in your credential vault.\\n\\nPlease add a jump host profile under "Jump Hosts (Remote Execution)" in the Credential Vault section.');
         openAndHighlightVault('jumpId');
+        onFailed(new Error('Configure a jump host before running.'));
         return;
       }
     }
@@ -1697,8 +1725,6 @@ JS_SCAN = """
       hide(document.getElementById('exportXlsxBtn'));
       hide(document.getElementById('exportObfXlsxBtn'));
       hide(document.getElementById('exportObfZipBtn'));
-      hide(document.getElementById('exportCsvBtn'));
-      hide(document.getElementById('exportSummaryJsonBtn'));
       hide(document.getElementById('prerenderReportsBtn'));
       hide(document.getElementById('retryActionsGroup'));
       hide(document.getElementById('retryBanner'));
@@ -1764,6 +1790,7 @@ JS_SCAN = """
       };
 
       function startScanRequest() {
+        _activeScanCancelFn = null;
         hideJumpReconnectAlert();
         _scanRunning = true;
         _isRemoteScan = (body.execution === 'remote');
@@ -1771,6 +1798,7 @@ JS_SCAN = """
           if (r.error) {
             endScannerProgress('Assessment could not start'); document.getElementById('progressLabel').textContent = 'Assessment could not start';
             showContextMessage('Error: ' + r.error);
+            onFailed(new Error(r.error));
             document.getElementById('runBtn').disabled = false;
             document.getElementById('runBtn').textContent = '▶  Run Assessment';
             hide(document.getElementById('scanSpinner'));
@@ -1779,12 +1807,19 @@ JS_SCAN = """
             _isRemoteScan = false;
             return;
           }
+          if (!r.scan_id) {
+            _scanRunning = false; resetRunBtnToIdle();
+            onFailed(new Error('The scanner did not return a new scan ID. Check Scanner before retrying.'));
+            return;
+          }
+          onStarted(r);
           updateProgress(0, r.total);
           startSSE(r.scan_id);
         }).catch(function(e) {
           var msg = (e && e.message) ? e.message : String(e);
           endScannerProgress('Assessment could not start'); document.getElementById('progressLabel').textContent = 'Assessment could not start';
           showContextMessage('Scan request failed: ' + msg);
+          onFailed(new Error('Hardware scan could not start: ' + msg));
           document.getElementById('runBtn').disabled = false;
           document.getElementById('runBtn').textContent = '▶  Run Assessment';
           hide(document.getElementById('scanSpinner'));
@@ -1802,7 +1837,7 @@ JS_SCAN = """
           targets: body.targets
         }).then(function(pf) {
           if (pf && pf.has_active_scan && pf.active_scans && pf.active_scans.length > 0) {
-            promptActiveScanConflict(pf.active_scans, startScanRequest);
+            promptActiveScanConflict(pf.active_scans, startScanRequest, onFailed);
           } else {
             document.getElementById('runBtn').textContent = '⏳ Scanning…';
             startScanRequest();
@@ -1813,10 +1848,11 @@ JS_SCAN = """
       } else {
         startScanRequest();
       }
-      });
+      }, onFailed);
       // cert-pin gate
-    });
-  });
+    }, onFailed);
+  }
+  document.getElementById('runBtn').addEventListener('click', function() { runHardwareAssessment(); });
 
   document.getElementById('cancelBtn').addEventListener('click', function() {
     this.disabled = true;

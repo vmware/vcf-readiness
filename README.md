@@ -8,7 +8,7 @@ Experimental VDT integration: see **Help → VDT** in the scanner for installati
 
 - [Python 3.9+](https://python.org)
 - Zero dependencies
-- [Download v9.13.0b3](https://github.com/vmware/vcf-readiness/releases/tag/9.13.0-beta.3)
+- [Download v9.14.0b1](https://github.com/vmware/vcf-readiness/releases/tag/9.14.0-beta.1)
 - [Presentation kit](docs/INFOGRAPHIC.md)
 
 ---
@@ -38,17 +38,17 @@ Watch short step-by-step video guides to get up and running, launch on macOS, an
 
 The recommended and verified installation runs directly from source using the Python 3.9+ standard library (zero external dependencies).
 
-[Download the complete source bundle (v9.13.0b3 ZIP)](https://github.com/vmware/vcf-readiness/releases/download/9.13.0-beta.3/Distribution-VCF-Readiness.zip)
+[Download the complete source bundle (v9.14.0b1 ZIP)](https://github.com/vmware/vcf-readiness/releases/download/9.14.0-beta.1/Distribution-VCF-Readiness.zip)
 
 *Includes complete source code, web UI, CLI scanner, and offline HCL database. No `pip install` required.*
 
 <details>
 <summary><strong>Alternative: Pre-compiled standalone binaries (unsigned developer builds)</strong></summary>
 
-If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.13.0-beta.3 page](https://github.com/vmware/vcf-readiness/releases/tag/9.13.0-beta.3):
+If Python is not available on your system, standalone executables are provided on the [GitHub Release 9.14.0-beta.1 page](https://github.com/vmware/vcf-readiness/releases/tag/9.14.0-beta.1):
 
-- **Windows:** `VCF-Readiness-Web-v9.13.0b3-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
-- **macOS:** `VCF-Readiness-Web-v9.13.0b3-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
+- **Windows:** `VCF-Readiness-Web-v9.14.0b1-win.zip` (extract and double-click the executable; may show Windows SmartScreen notice). The archive includes `Launch-VCF-Readiness-Web.bat` as a shortcut to the executable.
+- **macOS:** `VCF-Readiness-Web-v9.14.0b1-mac.zip` (contains launcher script; may require Gatekeeper right-click Open override).
 
 *Note: These are unsigned community convenience builds. To avoid operating system security prompts, running directly from source with Python 3.9+ is strongly recommended.*
 

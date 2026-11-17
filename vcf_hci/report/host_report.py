@@ -27,6 +27,7 @@ from vcf_hci.report.disclosures import evidence_controls_html, supporting_eviden
 from vcf_hci.report.helpers import _h, html_escape
 from vcf_hci.report.memory_tiering import host_memory_tiering_status
 from vcf_hci.report.pcie_inventory import render_pcie_device_inventory
+from vcf_hci.report.power_cap import normalize_power_cap_evidence
 from vcf_hci.report.presentation import REPORT_UI_JS
 from vcf_hci.report.sections.bios_security import (
     render_bios_perf_card_and_accordion,
@@ -133,7 +134,7 @@ def generate_host_html_report(
     data = dict(data, fc_hbas=normalize_fc_ports(data.get("fc_hbas", [])))
     fc_hbas = data["fc_hbas"]
     lldp_neighbors = data.get("lldp_neighbors", [])
-    psu = data.get("psu_status", {})
+    psu = normalize_power_cap_evidence(data.get("psu_status"))
     bmc_lic = data.get("bmc_license", {})
     pcie_switches = data.get("pcie_switches", [])
     pcie_slots = data.get("pcie_slots", [])
@@ -208,7 +209,7 @@ def generate_host_html_report(
     sel_rows = render_sel_section(sel, vendor=_vendor_str)
     _sel_guide_btn = render_vendor_guide_button(_vendor_str)
 
-    _bios_perf_card_html, _ras_detail_section = render_bios_perf_card_and_accordion(bios_info, sys_info, bios_eval)
+    _bios_perf_card_html, _ras_detail_section = render_bios_perf_card_and_accordion(bios_info, sys_info, bios_eval, psu)
     _boot_order_section = render_boot_order_card(sys_info)
 
     # Vendor BIOS Tuning Guide link button for BIOS tab header

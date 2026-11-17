@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from urllib.parse import urlsplit
 
 SERVICE_KINDS = ("vcenter", "operations")
+VCENTER_ROLES = ("", "readonly", "administrator")
 
 
 def normalize_service(raw: Dict[str, Any]) -> Dict[str, str]:
@@ -45,6 +46,19 @@ def normalize_service(raw: Dict[str, Any]) -> Dict[str, str]:
     result.update(id=entry_id, kind=kind)
     if kind != "operations":
         result["auth_source"] = ""
+    role = raw.get("role", "")
+    if role is None:
+        role = ""
+    if not isinstance(role, str) or role not in VCENTER_ROLES:
+        raise ValueError("Choose a read-only or administrator vCenter role.")
+    result["role"] = role if kind == "vcenter" else ""
+    pin = raw.get("certificate_pin", "")
+    if not isinstance(pin, str):
+        raise ValueError("Invalid SHA-256 certificate fingerprint.")
+    pin = pin.replace(":", "").upper()
+    if pin and (kind != "vcenter" or not re.fullmatch(r"[A-F0-9]{64}", pin)):
+        raise ValueError("Invalid SHA-256 certificate fingerprint.")
+    result["certificate_pin"] = pin
     return result
 
 
@@ -59,6 +73,9 @@ class ServiceCredentialStore:
     def set_service_credential(self, raw: Dict[str, Any]) -> str:
         self._require_unlocked()
         record = normalize_service(raw)
+        previous = self._service_credentials.get(record["id"])
+        if previous and "certificate_pin" not in raw and previous["endpoint"] == record["endpoint"]:
+            record["certificate_pin"] = previous.get("certificate_pin", "") if record["kind"] == "vcenter" else ""
         self._service_credentials[record["id"]] = record
         return record["id"]
 

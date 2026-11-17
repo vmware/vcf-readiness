@@ -21,6 +21,7 @@ from vcf_hci.compat_engine import check_defective_drive_firmware, evaluate_drive
 from vcf_hci.constants import KB_TRIMODE, is_generic_name, is_unfriendly_nic_name, normalize_component_manufacturer
 from vcf_hci.drive_counters import nonnegative_io_total
 from vcf_hci.hcl import evaluate_drive_hcl_tier, lookup_unique_hcl_device
+from vcf_hci.network_partitioning import is_pure_fc_adapter
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.drive_alerts import drive_aging_wear_reasons
 from vcf_hci.report.formatting import compact_storage_tier_labels
@@ -114,6 +115,7 @@ def _nic_has_active_port(nic):
 
 def _render_nic_row(nic, hcl_data=None, page_salt=""):
     port_badges = []
+    show_npar = bool(nic.get("is_npar")) and not is_pure_fc_adapter(nic)
     nic_name = str(nic.get("name") or "")
     nic_id = str(nic.get("id") or "")
     is_nic_fc = (
@@ -127,7 +129,11 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         pid = p.get("port_id", 1)
         # Preserve the identifier text while allowing long OEM IDs to wrap at
         # separators inside the bounded status label.
-        pid_html = _h(str(pid)).replace("_", "_<wbr>").replace(".", ".<wbr>")
+        slot_port = re.match(r"^(?:NIC|FC)\.Slot\.[^-]+-(\d+)(?:-\d+)?$", str(pid), re.I)
+        if slot_port:
+            pid_html = f"<span title='{_h(str(pid))}'>{_h(slot_port.group(1))}</span>"
+        else:
+            pid_html = _h(str(pid)).replace("_", "_<wbr>").replace(".", ".<wbr>")
         is_port_fc = (
             is_nic_fc
             or str(pid).startswith("FC.")
@@ -143,7 +149,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             if is_unreported and link_st != "Up":
                 badge_html = f"<span class='badge danger' title='BMC Redfish telemetry omitted out-of-band link polling for this port'><span class='badge-label'>🔴 Port {pid_html}: Down / Unreported</span></span>"
             else:
-                badge_html = f"<span class='badge danger'><span class='badge-label'>🔴 Port {pid_html}: Link Down</span></span>"
+                badge_html = f"<span class='badge danger' title='Port {_h(str(pid))}'><span class='badge-label'>Link down</span></span>"
         elif is_port_fc:
             badge_html = f"<span class='badge success'><span class='badge-label'>🟢 Port {pid_html}: {spd} Gbps FC</span></span>"
         elif spd >= 25:
@@ -154,12 +160,24 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             badge_html = f"<span class='badge warning'><span class='badge-label'>🟡 Port {pid_html}: {spd} Gbps — OSA Only (&lt; 10 GbE)</span></span>"
         if p.get("is_management"):
             badge_html += " <small>(management)</small>"
-        if p.get("speed_source"):
-            badge_html += f"<br><small>speed source: {_h(str(p.get('speed_source')))}</small>"
+        # Normalized field names describe collection bookkeeping, not useful
+        # port status. Only show additional evidence for an active speed.
+        speed_source = p.get("speed_source")
+        if link_st == "Up" and spd > 0 and speed_source and speed_source not in (
+            "current_speed_gbps", "capability", "unreported",
+        ):
+            badge_html += f"<br><small>Speed evidence: {_h(str(speed_source))}</small>"
 
         def _tx_real(val):
-            s = str(val or "").strip()
-            return s if s and s.casefold() not in ("n/a", "none", "unknown", "null", "—", "-") else ""
+            s = str(val if val is not None else "").strip()
+            key = re.sub(r"[\s_/-]+", "", s.casefold())
+            return s if s and key not in (
+                "", "na", "none", "unknown", "null", "—", "notsupported",
+                "unsupported", "notavailable", "unavailable", "notreported",
+            ) else ""
+
+        def _tx_metric(val):
+            return val if _tx_real(val) else None
 
         tx_id = _tx_real(p.get("transceiver_identifier"))
         tx_if = _tx_real(p.get("transceiver_interface"))
@@ -175,9 +193,11 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if tx_parts:
             badge_html += f"<br><small style='color:var(--text-muted);font-size:.73rem;display:inline-block;padding-left:1.1rem;'>🔌 {_h(' | '.join(tx_parts))}</small>"
 
-        rx_p = p.get("rx_power_dbm")
-        tx_p = p.get("tx_power_dbm")
-        tx_temp = p.get("transceiver_temperature_c") if p.get("transceiver_temperature_c") is not None else p.get("temperature_c")
+        rx_p = _tx_metric(p.get("rx_power_dbm"))
+        tx_p = _tx_metric(p.get("tx_power_dbm"))
+        tx_temp = _tx_metric(p.get("transceiver_temperature_c"))
+        if tx_temp is None:
+            tx_temp = _tx_metric(p.get("temperature_c"))
         ddm_parts = []
         if rx_p is not None:
             ddm_parts.append(f"RX: {rx_p:+.1f} dBm" if isinstance(rx_p, (int, float)) else f"RX: {rx_p} dBm")
@@ -187,8 +207,8 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             ddm_parts.append(f"Temp: {tx_temp:.1f}°C" if isinstance(tx_temp, (int, float)) else f"Temp: {tx_temp}°C")
         if ddm_parts:
             ddm_tip_items = list(ddm_parts)
-            bias_ma = p.get("laser_bias_current_ma")
-            volt_v = p.get("voltage_v")
+            bias_ma = _tx_metric(p.get("laser_bias_current_ma"))
+            volt_v = _tx_metric(p.get("voltage_v"))
             if bias_ma is not None:
                 ddm_tip_items.append(f"Bias: {bias_ma:.1f} mA" if isinstance(bias_ma, (int, float)) else f"Bias: {bias_ma} mA")
             if volt_v is not None:
@@ -223,24 +243,12 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         )
     display_name = str(nic.get("name") or "").strip()
     pn_val = str(nic.get("part_number") or "").strip()
-    slot_lbl = nic.get("slot") or ""
-    if not slot_lbl:
-        m_s = re.search(r"\b(Slot\s+[0-9a-zA-Z_]+)\b", display_name, re.I)
-        if m_s:
-            slot_lbl = m_s.group(1).title()
-        else:
-            m_ids = re.search(r"\bSlot\.([0-9a-zA-Z_]+)\b", str(nic.get("id") or ""), re.I)
-            if m_ids:
-                slot_lbl = f"Slot {m_ids.group(1)}"
     if is_unfriendly_nic_name(display_name, pn_val):
         cand_m = str(nic.get("model") or "").strip()
         if cand_m and not is_unfriendly_nic_name(cand_m, pn_val):
             display_name = cand_m
         elif pn_val and not is_generic_name(pn_val):
             display_name = pn_val
-    if slot_lbl and slot_lbl.lower() not in display_name.lower() and f"({slot_lbl})" not in display_name:
-        display_name = f"{display_name} ({slot_lbl})"
-
     bcg_nic, bcg_vsan_nic = BCGLinkGenerator.io_nic_exact(
         display_name or nic.get("name", ""), fw,
         nic.get("vendor_id", ""), nic.get("device_id", ""),
@@ -273,7 +281,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
     if nic.get("is_vic_virtual") or nic.get("cna_family") == "cisco_vic" or nic.get("vic_virtual_interfaces"):
         v_count = len(nic.get("vic_virtual_interfaces") or [])
         pci_badge += f"<br><span class='badge info' style='font-size:.74rem;background:#0284c7;color:#fff;'>🔵 Cisco VIC Virtual Interfaces ({v_count} vNIC/vHBA)</span>"
-    elif nic.get("is_npar"):
+    elif show_npar:
         n_count = len(nic.get("npar_partitions") or [])
         pci_badge += f"<br><span class='badge warning' style='font-size:.74rem;'>🟡 NPAR Partitioned ({n_count} partitions)</span>"
     if nic.get("virtual_functions_enabled") or nic.get("max_virtual_functions"):
@@ -291,8 +299,6 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         matched_m = matched_entry.get("model") if isinstance(matched_entry, dict) else ""
         if is_unfriendly_nic_name(display_name, pn_val) and matched_m:
             display_name = str(matched_m).strip()
-            if slot_lbl and slot_lbl.lower() not in display_name.lower() and f"({slot_lbl})" not in display_name:
-                display_name = f"{display_name} ({slot_lbl})"
         pci_verdict_html = f"<br>{pci_eval['badge']}"
         if pci_eval.get("rdma_badge"):
             pci_verdict_html += f"<br>{pci_eval['rdma_badge']}"
@@ -318,8 +324,6 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
         if _unique:
             if is_unfriendly_nic_name(display_name, pn_val) and _unique.get("model"):
                 display_name = str(_unique["model"]).strip()
-                if slot_lbl and slot_lbl.lower() not in display_name.lower() and f"({slot_lbl})" not in display_name:
-                    display_name = f"{display_name} ({slot_lbl})"
             if _unique.get("vcglink"):
                 bcg_vsan_nic = _unique["vcglink"]
             elif _unique.get("product_id"):
@@ -402,7 +406,7 @@ def _render_nic_row(nic, hcl_data=None, page_salt=""):
             + "<br>".join(vic_lines)
             + "</div>"
         )
-    elif nic.get("is_npar") and nic.get("npar_partitions"):
+    elif show_npar and nic.get("npar_partitions"):
         p_list = nic["npar_partitions"]
         p_strs = []
         for p in p_list:

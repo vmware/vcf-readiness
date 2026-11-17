@@ -779,7 +779,7 @@ def scan_hosts(
 
             try:
                 export_all_csvs(results, outdir, obfuscated=False, failed_hosts=failed_hosts)
-                _log("[✓] CSV exports      →  00_fleet_summary.csv, 00_drives_inventory.csv, 00_nics_inventory.csv")
+                _log("[✓] CSV exports      →  Inventory-files/00_fleet_summary.csv, 00_drives_inventory.csv, 00_nics_inventory.csv")
             except Exception as exc:
                 _log(f"[!] CSV exports failed: {exc}")
 
@@ -799,7 +799,7 @@ def scan_hosts(
 
                 try:
                     export_all_csvs(obf_results, outdir, obfuscated=True, failed_hosts=obf_failed_hosts)
-                    _log("[🔒] Obfuscated CSV exports  →  00_OBFUSCATED_fleet_summary.csv, ...")
+                    _log("[🔒] Obfuscated CSV exports  →  Inventory-files/00_OBFUSCATED_fleet_summary.csv, ...")
                 except Exception as exc:
                     _log(f"[!] Obfuscated CSV exports failed: {exc}")
 

@@ -79,41 +79,6 @@ JS_ACTIONS = """
     });
   }
 
-  // ── Export CSV ────────────────────────────────────────────────────────────
-  var expCsvBtn = document.getElementById('exportCsvBtn');
-  if (expCsvBtn) {
-    expCsvBtn.addEventListener('click', function() {
-      var isObf = document.getElementById('obfuscateChk') && document.getElementById('obfuscateChk').checked;
-      var ep = '/api/export-csv' + (isObf ? '?obfuscated=1' : '');
-      fetch(ep, {method:'POST', credentials: 'same-origin'}).then(function(r) {
-        if (!r.ok) { r.json().then(function(j){showContextMessage('CSV error: '+j.error);}); return; }
-        return r.blob().then(function(blob) {
-          var url = URL.createObjectURL(blob);
-          var a2 = document.createElement('a');
-          a2.href = url;
-          a2.download = (isObf ? '00_OBFUSCATED_' : '') + 'fleet_summary_' + new Date().toISOString().slice(0,10) + '.csv';
-          a2.click();
-          URL.revokeObjectURL(url);
-        });
-      });
-    });
-  }
-
-  // ── Export Summary JSON ────────────────────────────────────────────────────
-  document.getElementById('exportSummaryJsonBtn').addEventListener('click', function() {
-    fetch('/api/export-summary-json', {method:'POST', credentials: 'same-origin'}).then(function(r) {
-      if (!r.ok) { r.json().then(function(j){showContextMessage('Export JSON error: '+j.error);}); return; }
-      return r.blob().then(function(blob) {
-        var url = URL.createObjectURL(blob);
-        var a2 = document.createElement('a');
-        a2.href = url;
-        a2.download = 'fleet_summary.json';
-        a2.click();
-        URL.revokeObjectURL(url);
-      });
-    });
-  });
-
   // ── Pre-render all host HTML reports ──────────────────────────────────────
   var prerenderBtn = document.getElementById('prerenderReportsBtn');
   if (prerenderBtn) {
@@ -415,23 +380,5 @@ JS_ACTIONS = """
   window.addEventListener('beforeunload', saveSession);
 
 
-  document.getElementById('executiveHtmlBtn').addEventListener('click', function() {
-    window.open('/api/export-executive?format=html', '_blank', 'noopener,noreferrer');
-  });
-  function downloadExecutive(obfuscated, button) {
-    button.disabled = true;
-    fetch('/api/export-executive' + (obfuscated ? '?obfuscated=1' : ''), {credentials:'same-origin'})
-      .then(function(response) {
-        if (!response.ok) throw new Error('Executive summary is not available. Complete or import a scan first.');
-        return response.blob();
-      }).then(function(blob) {
-        var url = URL.createObjectURL(blob), link = document.createElement('a');
-        link.href = url;
-        link.download = (obfuscated ? '00_OBFUSCATED_' : '00_') + 'executive_summary.pdf';
-        link.click();
-        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
-      }).catch(function(error) { showContextMessage(error.message); }).finally(function() { button.disabled = false; });
-  }
-  document.getElementById('executivePdfBtn').addEventListener('click', function() { downloadExecutive(false, this); });
-  document.getElementById('executiveObfPdfBtn').addEventListener('click', function() { downloadExecutive(true, this); });
+
 """

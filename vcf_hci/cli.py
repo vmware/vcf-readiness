@@ -439,7 +439,7 @@ Examples:
             if args.csv_export:
                 try:
                     export_all_csvs(results, outdir, obfuscated=False)
-                    print(f"  [✓] CSV Summary: {os.path.join(outdir, '00_fleet_summary.csv')}")
+                    print(f"  [✓] CSV Summary: {os.path.join(outdir, 'Inventory-files', '00_fleet_summary.csv')}")
                 except Exception as exc:
                     print(f"  [✗] Failed to generate CSV exports: {exc}")
 
@@ -461,7 +461,7 @@ Examples:
                     try:
                         obf_results = [obfuscate_host_data(r, f"Host-{i+1}", _obf_salt) for i, r in enumerate(results)]
                         export_all_csvs(obf_results, outdir, obfuscated=True)
-                        print(f"  [🔒] Obfuscated CSV Summary: {os.path.join(outdir, '00_OBFUSCATED_fleet_summary.csv')}")
+                        print(f"  [🔒] Obfuscated CSV Summary: {os.path.join(outdir, 'Inventory-files', '00_OBFUSCATED_fleet_summary.csv')}")
                     except Exception as exc:
                         print(f"  [✗] Failed to generate obfuscated CSV exports: {exc}")
 

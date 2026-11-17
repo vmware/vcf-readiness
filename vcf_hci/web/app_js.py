@@ -20,6 +20,7 @@ from vcf_hci.web.js import (
 from vcf_hci.web.js.clarity import JS_CLARITY
 from vcf_hci.web.js.groups import JS_GROUPS
 from vcf_hci.web.js.mtat import JS_MTAT
+from vcf_hci.web.js.mtat_upstream import JS_MTAT_UPSTREAM
 from vcf_hci.web.js.plugin_credentials import JS_PLUGIN_CREDENTIALS
 from vcf_hci.web.js.plugins import JS_PLUGINS
 from vcf_hci.web.js.vdt_remote import JS_VDT_REMOTE
@@ -41,6 +42,7 @@ APP_JS = "".join([
     JS_HCL.lstrip("\n"),
     JS_ACTIONS.lstrip("\n"),
     JS_GROUPS.lstrip("\n"),
+    JS_MTAT_UPSTREAM.lstrip("\n"),
     JS_WIZARD.lstrip("\n"),
     JS_PLUGINS.lstrip("\n"),
     JS_VDT_REMOTE.lstrip("\n"),

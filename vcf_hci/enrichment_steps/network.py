@@ -14,6 +14,7 @@ from vcf_hci.constants import (
     normalize_component_manufacturer,
 )
 from vcf_hci.fc_inventory import normalize_fc_ports
+from vcf_hci.network_partitioning import is_pure_fc_adapter
 
 
 def evaluate_optical_link_health(
@@ -267,6 +268,10 @@ def enrich_network_adapters(host_data: Dict[str, Any], json_hcl: Optional[Dict[s
                     nic["cna_family_label"] = cna_info.get("family_label", "")
                     nic["cna_eth_driver"] = cna_info.get("eth_driver", "")
                     nic["cna_fc_driver"] = cna_info.get("fc_driver", "")
+
+            if is_pure_fc_adapter(nic):
+                nic["is_npar"] = False
+                nic["npar_partitions"] = []
 
             if nic.get("is_cna"):
                 nic_name = str(nic.get("name") or nic.get("id") or "")

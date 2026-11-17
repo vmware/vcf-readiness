@@ -7,6 +7,7 @@ from vcf_hci.plugins.vinv.lifecycle import catalog_entry as vinv_catalog_entry
 from vcf_hci.web.mtat_html import MTAT_INTRO
 
 JS_PLUGINS = """
+  var mtatUpstreamActiveFolder = '';
   function assessmentCatalogGroup() {
     var parent = document.getElementById('plugins');
     if (!parent) return null;
@@ -36,7 +37,64 @@ JS_PLUGINS = """
       var help = document.createElement('a'); help.href = '/docs/mtat_experimental'; help.textContent = 'Read the MTAT assessment guidance';
       var actions = document.createElement('div'); actions.className = 'flex gap-sm mt-half';
       actions.style.flexWrap = 'wrap'; actions.style.alignItems = 'center'; actions.style.gap = '1rem';
-      actions.append(open, help); body.append(actions); card.append(body); parent.append(card);
+      actions.append(open, help); body.append(actions);
+      var packageLabel = document.createElement('label'); packageLabel.htmlFor = 'mtatPluginZip'; packageLabel.textContent = 'Install an upstream MTAT package';
+      var packageInput = document.createElement('input'); packageInput.type = 'file'; packageInput.id = 'mtatPluginZip'; packageInput.accept = '.zip';
+      var install = document.createElement('button'); install.type = 'button'; install.id = 'mtatPluginInstall'; install.className = 'btn btn-outline btn-sm'; install.textContent = 'Install MTAT ZIP'; install.disabled = true;
+      var packageStatus = document.createElement('p'); packageStatus.id = 'mtatPluginStatus'; packageStatus.setAttribute('role', 'status'); packageStatus.setAttribute('aria-live', 'polite');
+      var packageList = document.createElement('ul'); packageList.id = 'mtatPluginPackages';
+      body.append(packageLabel, packageInput, install, packageStatus, packageList);
+      var runtimeLabel = document.createElement('label'); runtimeLabel.htmlFor = 'mtatPluginVersion'; runtimeLabel.textContent = 'Upstream engine for this session';
+      var runtimeSelect = document.createElement('select'); runtimeSelect.id = 'mtatPluginVersion'; runtimeSelect.className = 'clr-select';
+      var activate = document.createElement('button'); activate.type = 'button'; activate.id = 'mtatPluginActivate'; activate.className = 'btn btn-outline btn-sm'; activate.textContent = 'Activate upstream engine';
+      var deactivate = document.createElement('button'); deactivate.type = 'button'; deactivate.id = 'mtatPluginDeactivate'; deactivate.className = 'btn btn-outline btn-sm'; deactivate.textContent = 'Stop upstream engine';
+      body.append(runtimeLabel, runtimeSelect, activate, deactivate);
+      activate.addEventListener('click', async function () {
+        if (!runtimeSelect.value) return;
+        activate.disabled = true;
+        try {
+          var request = {folder:runtimeSelect.value};
+          try { var saved = localStorage.getItem('vcfr.mtat.workspace'); if (/^[a-f0-9]{32}$/.test(saved || '')) request.workspace_id = saved; } catch (ignore) { /* storage is optional */ }
+          var result = await post('/api/plugins/mtat/upstream/activate', request);
+          if (result.error) throw new Error(typeof result.error === 'string' ? result.error : result.error.message);
+          mtatUpstreamActiveFolder = runtimeSelect.value;
+          if (result.workspace_id) { try { localStorage.setItem('vcfr.mtat.workspace', result.workspace_id); } catch (ignore) { /* retain only this session */ } }
+          document.dispatchEvent(new CustomEvent('mtat-upstream-activated', {detail:{folder:runtimeSelect.value}}));
+          var catalog = await get('/api/plugins'); renderMtatCatalog(catalog.mtat);
+          packageStatus.textContent = 'Upstream engine active for this session. Select Installed upstream plugin in the wizard, or open the MTAT workspace.';
+        } catch (error) { packageStatus.textContent = error.message; }
+        finally { activate.disabled = !runtimeSelect.value; }
+      });
+      deactivate.addEventListener('click', async function () {
+        deactivate.disabled = true;
+        try {
+          var result = await post('/api/plugins/mtat/upstream/close', {});
+          if (result.error) throw new Error(typeof result.error === 'string' ? result.error : result.error.message);
+          mtatUpstreamActiveFolder = '';
+          document.dispatchEvent(new CustomEvent('mtat-upstream-activated', {detail:{folder:''}}));
+          var catalog = await get('/api/plugins'); renderMtatCatalog(catalog.mtat);
+          packageStatus.textContent = 'Upstream engine stopped. Saved data is retained; the embedded engine remains available.';
+        } catch (error) { packageStatus.textContent = error.message; }
+        finally { deactivate.disabled = !mtatUpstreamActiveFolder; }
+      });
+      packageInput.addEventListener('change', function () { install.disabled = !packageInput.files.length || packageInput.disabled; });
+      install.addEventListener('click', async function () {
+        var file = packageInput.files[0];
+        if (!file || packageInput.disabled || packageInput.dataset.busy === 'true') return;
+        packageInput.dataset.busy = 'true'; install.disabled = true; packageInput.disabled = true;
+        packageStatus.textContent = 'Uploading and verifying MTAT package…';
+        try {
+          if (file.size > 32 * 1024 * 1024) throw new Error('Choose a ZIP no larger than 32 MiB.');
+          var response = await fetch('/api/plugins/mtat/install', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/zip'}, body:file});
+          var result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'MTAT package installation failed.');
+          var catalog = await get('/api/plugins');
+          renderMtatCatalog(catalog.mtat);
+          packageStatus.textContent = (result.installed.already_installed ? 'Already installed. ' : 'Installed. ') + 'SHA-256: ' + result.installed.archive_sha256 + '. The wizard continues to use the embedded engine.';
+        } catch (error) { packageStatus.textContent = error.message; }
+        finally { packageInput.dataset.busy = 'false'; packageInput.value = ''; packageInput.disabled = packageInput.dataset.allowed !== 'true'; install.disabled = true; }
+      });
+      card.append(body); parent.append(card);
     }
     document.getElementById('mtatCatalogField0').textContent = entry.name;
     document.getElementById('mtatCatalogField1').textContent = entry.enabled
@@ -47,6 +105,21 @@ JS_PLUGINS = """
     document.getElementById('mtatCatalogField4').textContent = 'MTAT ' + entry.mtat_contract + ' · ' + entry.sources.map(function(source) {
       return source.kind + ': ' + source.readiness;
     }).join(' · ');
+    var packages = entry.packages || {installations:[], install_allowed:false};
+    if (packages.active_folder !== undefined) mtatUpstreamActiveFolder = packages.active_folder || '';
+    var packageInput = document.getElementById('mtatPluginZip');
+    packageInput.dataset.allowed = packages.install_allowed ? 'true' : 'false';
+    packageInput.disabled = !packages.install_allowed || packageInput.dataset.busy === 'true';
+    var packageList = document.getElementById('mtatPluginPackages'); packageList.replaceChildren();
+    var runtimeSelect = document.getElementById('mtatPluginVersion'), priorRuntime = runtimeSelect.value; runtimeSelect.replaceChildren();
+    packages.installations.forEach(function (item) {
+      var row = document.createElement('li'); row.textContent = item.version + ' · source ' + item.source_build + (mtatUpstreamActiveFolder === item.folder ? ' · active for this session' : ' · installed, inactive'); packageList.append(row);
+      if (item.integration === 'vcfr-mtat/1') runtimeSelect.add(new Option(item.version + ' · ' + item.source_build, item.folder));
+    });
+    if (Array.from(runtimeSelect.options).some(function (option) { return option.value === priorRuntime; })) runtimeSelect.value = priorRuntime;
+    document.getElementById('mtatPluginActivate').disabled = !runtimeSelect.value || packages.install_allowed === false;
+    document.getElementById('mtatPluginDeactivate').disabled = !mtatUpstreamActiveFolder;
+    document.getElementById('mtatPluginStatus').textContent = (packages.installations.length ? 'Upstream packages installed. ' : 'No upstream package installed. ') + (mtatUpstreamActiveFolder ? 'An upstream engine is active for this session. The wizard engine selector chooses which engine collects.' : 'The wizard uses the embedded MTAT engine until you activate a compatible upstream package and select it.') + (packages.invalid_installations ? ' Some installed packages failed integrity checks.' : '');
   }
   renderMtatCatalog(__MTAT_DEFAULT_CATALOG__);
 

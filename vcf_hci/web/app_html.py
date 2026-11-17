@@ -13,13 +13,15 @@ from vcf_hci.web.app_js import APP_JS
 from vcf_hci.web.group_html import GROUP_LIBRARY_HTML, GROUP_SCANNER_HTML
 from vcf_hci.web.mtat_html import MTAT_PANEL
 from vcf_hci.web.plugin_credential_html import SERVICE_CREDENTIALS_PANEL
-from vcf_hci.web.plugin_html import PUBLIC_PLUGINS_PANEL, VDT_NAV, VDT_PANEL, VDT_WIZARD
+from vcf_hci.web.plugin_html import PUBLIC_PLUGINS_PANEL, VDT_NAV, VDT_PANEL
 from vcf_hci.web.summary_html import SUMMARY_ACTIONS
 from vcf_hci.web.vinv_html import VINV_PANEL
+from vcf_hci.web.wizard_html import wizard_section
 
 
 def build_app_html(tool_version: str, collector_ok: bool, server_token: str = "", oem_mode: bool = False, vdt_available: bool = False) -> str:
     keychain_note = _get_keychain_label()
+    wizard_markup = wizard_section(collector_ok, vdt_available)
 
     return replace_ui_icons(f"""<!DOCTYPE html>
 <html lang="en" cds-base-font="16" data-theme="dark" cds-theme="dark">
@@ -95,7 +97,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <span class="text-sm text-muted" id="discStatus"></span>
       </div>
       <div id="vpnWarning" class="alert alert-warning hidden" style="margin-top:0.5rem;">
-        <span>⚠️ <strong>Remote Connection / High Latency Detected:</strong> Average RTT is <strong><span id="vpnLatency">0</span> ms</strong>. Concurrent host count automatically set to <strong>6</strong> to prevent socket timeouts.</span>
+        <span>⚠️ <strong>Remote Connection / High Latency Detected:</strong> Average RTT is <strong><span id="vpnLatency">0</span> ms</strong>. This measurement applies to direct BMC scans from this computer. The recommended starting count is <strong>6</strong>; explicit settings are retained. Jump-host workers measure their own BMC path.</span>
       </div>
       <div id="retryBanner" class="alert alert-info hidden" style="margin-top:0.5rem; display:flex; align-items:center; justify-content:space-between;">
         <span>🔄 <strong>Gentle Retry Profile Applied:</strong> <span id="retryBannerText"></span></span>
@@ -136,7 +138,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
         <p class="text-sm text-muted">Per-host credentials — populated after Probe:</p>
         <div id="perHostRows"></div>
       </div>
-      <div class="flex gap-sm mt-half" style="flex-wrap:wrap; align-items:center;">
+      <div class="flex gap-sm mt-half" id="credentialsTestActions" style="flex-wrap:wrap; align-items:center;">
         <button class="btn btn-flat btn-sm" id="testCredsBtn" type="button">Test Connection</button>
         <button class="btn btn-outline btn-sm hidden" id="validateFleetCredsBtn" type="button">Validate All Hosts</button>
         <span class="text-sm text-muted" id="testCredsStatus"></span>
@@ -148,7 +150,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       </div>
       <a href="#credential-vault" class="section-shortcut">Manage credential vault</a>
       <div id="vaultCoverage" class="text-sm text-muted hidden" style="margin-top:.35rem"></div>
-      <div class="mt-half">
+      <div class="mt-half" id="execTargetBlock">
         <p class="text-sm" style="margin-bottom:.3rem"><strong>Execution target</strong></p>
         <div class="clr-check-row"><input type="radio" name="execTarget" id="execLocal" value="local" checked><label for="execLocal">Local workstation</label></div>
         <div class="clr-check-row"><input type="radio" name="execTarget" id="execRemote" value="remote"><label for="execRemote">remote Linux Jump host</label></div>
@@ -411,9 +413,11 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
       </div>
       <div class="form-grid">
         <div id="scanThreadsGroup" class="clr-form-group">
-          <label for="threadsInput" class="clr-control-label">Concurrent Hosts</label>
-          <input class="clr-input" id="threadsInput" type="number" value="12" min="1" max="32" style="width:80px">
-          <span class="clr-hint">Recommended: 4–8 over VPN/WAN, 8–16 on local LAN</span>
+          <label for="threadsInput" id="threadsLabel" class="clr-control-label">Concurrent BMC hosts</label>
+          <input class="clr-input" id="threadsInput" aria-describedby="threadsHint threadsScopeHint" type="number" value="12" min="1" max="32" style="width:80px">
+          <button class="btn btn-flat btn-sm" id="threadsResetBtn" type="button">Use recommended</button>
+          <p class="clr-hint" id="threadsHint">Recommended starting point: 12 direct BMC host assessments, or 16 per jump host.</p>
+          <p class="clr-hint" id="threadsScopeHint">Applies to hardware host scans; Inventory and MTAT have separate collection scheduling.</p>
         </div>
       </div>
 
@@ -669,36 +673,7 @@ def build_app_html(tool_version: str, collector_ok: bool, server_token: str = ""
 
   {PUBLIC_PLUGINS_PANEL}
   {VDT_PANEL}
-  <section id="scan-wizard" data-app-section aria-labelledby="wizardHeading" hidden>
-    <h1 id="wizardHeading" class="section-heading" tabindex="-1">Scan Wizard</h1>
-    <p class="text-muted">Set up an assessment in five steps. Vault credentials and a jump host are optional; new scans default to manual credentials on this workstation.</p>
-    <div class="workflow">
-      <nav class="workflow-steps" aria-label="Scan setup steps">
-        <ol>
-          <li><button type="button" data-wizard-step="0" aria-current="step">1. Targets</button></li>
-          <li><button type="button" data-wizard-step="1" disabled>2. Credentials &amp; execution</button></li>
-          <li><button type="button" data-wizard-step="2" disabled>3. HCL readiness</button></li>
-          <li><button type="button" data-wizard-step="3" disabled>4. Scan options &amp; output</button></li>
-          <li><button type="button" data-wizard-step="4" disabled>5. Review &amp; run</button></li>
-        </ol>
-      </nav>
-      <div class="workflow-content">
-        <p id="wizardStepStatus" class="text-muted" role="status">Step 1 of 5</p>
-        <div id="wizardError" class="alert alert-danger hidden" role="alert" tabindex="-1"></div>
-        <div data-wizard-panel="0"><h2 tabindex="-1">Choose targets</h2><p>Enter BMC addresses, hostnames, ranges, or subnets. Probing is optional.</p><div id="wizardTargetsSlot"></div></div>
-        <div data-wizard-panel="1" hidden><h2 tabindex="-1">Credentials and execution</h2><p>Enter BMC credentials below. Use the vault only if you want saved credentials; choose a jump host only for remote execution.</p><div id="wizardAccessSlot"></div>{VDT_WIZARD if vdt_available else ""}<a href="#credential-vault">Create or unlock a vault / manage jump hosts</a><p><a href="#scan-wizard">Return to Scan Wizard</a> after managing the vault.</p></div>
-        <div data-wizard-panel="2" hidden><h2 tabindex="-1">Check HCL readiness</h2><p>The workflow checks the local compatibility database. Download an update when connected, or import an approved dark-site ZIP.</p><p id="wizardHclStatus" role="status">Checking local HCL…</p><div id="wizardHclSlot"></div><div id="wizardHclAckRow" class="clr-check-row" hidden><input type="checkbox" id="wizardHclAck"><label for="wizardHclAck">Continue with limited or unverified HCL evidence. I understand this does not establish hardware certification.</label></div></div>
-        <div data-wizard-panel="3" hidden><h2 tabindex="-1">Scan options and output</h2><div id="wizardDepthSlot"></div><div id="wizardThreadsSlot"></div><div id="wizardOutputSlot"></div><p><a href="#advanced-configuration">More settings: TLS, exports, warranty, and scan behavior</a>. Return to Scan Wizard to review your choices.</p></div>
-        <div data-wizard-panel="4" hidden><h2 tabindex="-1">Review and run</h2><p>Review your assessment settings. Passwords stay out of this summary.</p><dl id="wizardReview" class="workflow-review"></dl><p>Run Assessment uses the same scan engine and certificate checks as Scanner.</p></div>
-        <div class="workflow-footer">
-          <a href="#scanner" class="btn btn-flat">Exit wizard</a>
-          <button type="button" id="wizardBackBtn" class="btn btn-outline" disabled>Back</button>
-          <button type="button" id="wizardNextBtn" class="btn btn-primary">Next</button>
-          <button type="button" id="wizardRunBtn" class="btn btn-primary" hidden {'disabled' if not collector_ok else ''}>Run Assessment</button>
-        </div>
-      </div>
-    </div>
-  </section>
+  {wizard_markup}
 
 <div class="card shared-results">
     <!-- Post-Scan / Report & Export Actions -->

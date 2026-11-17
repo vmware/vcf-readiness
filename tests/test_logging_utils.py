@@ -347,6 +347,16 @@ class TestCreateObfuscatedScanZipArchive(unittest.TestCase):
             with open(os.path.join(data_dir, "OBFUSCATED_Host-1.json"), "w", encoding="utf-8") as f:
                 json.dump({"target": "Host-1", "host": "Host-1", "obfuscated": True, "system": {"model": "R750"}}, f)
 
+            executive_dir = os.path.join(scan_dir, "executive reports")
+            os.makedirs(executive_dir)
+            for name in ("00_executive_summary.html", "00_OBFUSCATED_executive_summary.html"):
+                with open(os.path.join(executive_dir, name), "w", encoding="utf-8") as stream:
+                    stream.write(name)
+            inventory_dir = os.path.join(scan_dir, "Inventory-files")
+            os.makedirs(inventory_dir)
+            for name in ("00_fleet_summary.csv", "00_OBFUSCATED_fleet_summary.csv"):
+                with open(os.path.join(inventory_dir, name), "w", encoding="utf-8") as stream:
+                    stream.write(name)
             zip_path = create_obfuscated_scan_zip_archive(scan_dir)
             self.assertTrue(os.path.isfile(zip_path))
             self.assertTrue(zip_path.endswith("_OBFUSCATED.zip"))
@@ -354,7 +364,12 @@ class TestCreateObfuscatedScanZipArchive(unittest.TestCase):
             with zipfile.ZipFile(zip_path, "r") as zf:
                 self.assertIsNone(zf.testzip())
                 names = zf.namelist()
+                self.assertTrue(any(name.endswith('/executive reports/00_OBFUSCATED_executive_summary.html') for name in names))
+                self.assertFalse(any(name.endswith('/executive reports/00_executive_summary.html') for name in names))
                 root = "run-test-scan_OBFUSCATED"
+
+                self.assertIn(f"{root}/Inventory-files/00_OBFUSCATED_fleet_summary.csv", names)
+                self.assertNotIn(f"{root}/Inventory-files/00_fleet_summary.csv", names)
 
                 # Check required sanitized artifacts
                 self.assertIn(f"{root}/README.txt", names)

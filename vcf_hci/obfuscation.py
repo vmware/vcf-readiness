@@ -254,6 +254,8 @@ def obfuscate_host_data(
         d = copy.deepcopy(data_to_copy)
     else:
         d = copy.deepcopy(data)
+    # Route provenance contains private SSH/BMC addresses and host identifiers.
+    d.pop("acquisition", None)
     si = d.get("system", {})
     real_ip_for_alias = (
         si.get("ip")

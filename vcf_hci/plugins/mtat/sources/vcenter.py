@@ -309,7 +309,9 @@ class VcenterAdapter:
             width = 256  # Bound work even when the server declares unlimited metrics.
         return width
 
-    def _metrics(self, entities: list[Any], period: int, begin: Optional[datetime], end: Optional[datetime]) -> dict:
+    def _metrics(self, entities: list[Any], period: int, begin: Optional[datetime], end: Optional[datetime], progress: Optional[ProgressSink] = None) -> dict:
+        if progress is not None:
+            progress.update("performance", 0, len(entities), "Querying performance samples")
         pm = self._content.perfManager
         counter_keys = {}
         for counter in self._read(lambda: pm.perfCounter):
@@ -348,6 +350,8 @@ class VcenterAdapter:
                         continue  # -1 is unavailable, never a passing zero.
                     name = counter_keys[series.id.counterId]
                     values[name] = SampleSeries(raw, "hundredths" if name.startswith("cpu.") else "kibibytes", name, period)
+            if progress is not None:
+                progress.update("performance", stop, len(entities), "Querying performance samples")
         return result
 
     def _vm(self, row: dict, host_names: dict) -> VmEvidence:
@@ -390,6 +394,7 @@ class VcenterAdapter:
     def collect(self, request: CollectionRequest, progress: ProgressSink) -> Assessment:
         try:
             self._open(request)
+            progress.update("inventory", 0, 0, "Reading host and VM inventory")
             scope, cluster_name = self._scope(request)
             mode, period, begin, end = self._window(request)
             supported = True
@@ -407,7 +412,7 @@ class VcenterAdapter:
             ]
             live_keys = {_key(h) for h in live_hosts}
             entities = live_hosts + ([v["obj"] for v in raw_vms if not v["error"] and v.get("runtime.host") is not None and _key(v["runtime.host"]) in live_keys and str(v.get("runtime.powerState")) == "poweredOn"] if mode == "historical" else [])
-            metrics = self._metrics(entities, period, begin, end)
+            metrics = self._metrics(entities, period, begin, end, progress)
             if mode == "historical":
                 vms = [replace(vm, active=metrics.get(vm.vm_key, {}).get("mem.active.average")) for vm in vms]
             evidence = []
@@ -442,6 +447,7 @@ class VcenterAdapter:
                     connection_state=conn_state,
                     collection_error="Host properties unavailable" if (host["error"] and not is_disconnected) else ""))
                 progress.update("hosts", index + 1, len(hosts), "Collecting host evidence")
+            progress.update("assessment", 0, 0, "Building assessment")
             result = assess(request.range_name, self.kind, "vCenter", str(self._content.about.version), tuple(evidence), tuple(vms), request.policy, request.verify_tls or bool(request.certificate_pin), request.acknowledged)
             if request.certificate_pin:
                 result = replace(result, warnings=("TLS identity verified using a reviewed SHA-256 certificate pin; CA-chain verification replaced by pin verification.",))

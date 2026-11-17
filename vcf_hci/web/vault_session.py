@@ -134,6 +134,12 @@ def service_action(action: str, data: Optional[Dict[str, Any]] = None) -> Any:
         try:
             if action == "save":
                 result = _vault.set_service_credential(body)
+            elif action == "trust":
+                record = _vault.get_service_credential(body.get("id"), "vcenter")
+                # Bind acceptance to the endpoint reviewed by the caller.
+                if body.get("endpoint") != record["endpoint"] or not body.get("certificate_pin"):
+                    raise ValueError("Review the selected instance certificate again.")
+                result = _vault.set_service_credential({**record, "certificate_pin": body["certificate_pin"]})
             elif action == "remove":
                 result = _vault.remove_service_credential(body.get("id"))
             else:

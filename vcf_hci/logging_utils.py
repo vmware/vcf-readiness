@@ -21,7 +21,7 @@ def scan_contains_original_artifacts(outdir: str) -> bool:
 
     This is a conservative naming check, not content sanitization or certification.
     """
-    for subdir in ("", "reports", "data"):
+    for subdir in ("", "reports", "data", "Inventory-files", "executive reports"):
         directory = os.path.join(outdir, subdir)
         if not os.path.isdir(directory):
             continue
@@ -867,14 +867,15 @@ def create_obfuscated_scan_zip_archive(
     # Generate missing CSV exports if needed
     if include_csv is None:
         raw_csv = [
-            f for f in os.listdir(scan_dir)
+            f for directory in (scan_dir, os.path.join(scan_dir, "Inventory-files"))
+            if os.path.isdir(directory) for f in os.listdir(directory)
             if f.endswith(".csv") and not f.startswith("00_OBFUSCATED_")
         ]
         should_include_csv = bool(raw_csv)
     else:
         should_include_csv = bool(include_csv)
 
-    csv_summary_path = os.path.join(scan_dir, "00_OBFUSCATED_fleet_summary.csv")
+    csv_summary_path = os.path.join(scan_dir, "Inventory-files", "00_OBFUSCATED_fleet_summary.csv")
     if should_include_csv and not os.path.isfile(csv_summary_path) and obf_results:
         try:
             from vcf_hci.report.csv_export import export_all_csvs
@@ -968,6 +969,21 @@ def create_obfuscated_scan_zip_archive(
                 continue
             if f.startswith("00_OBFUSCATED_") or f.startswith("OBFUSCATED_"):
                 zf.write(abs_p, arcname=f"{archive_root_name}/{f}")
+
+        inventory_dir = os.path.join(scan_dir, "Inventory-files")
+        if os.path.isdir(inventory_dir):
+            for name in sorted(os.listdir(inventory_dir)):
+                source = os.path.join(inventory_dir, name)
+                if name.startswith("00_OBFUSCATED_") and name.endswith(".csv") and os.path.isfile(source):
+                    zf.write(source, arcname=f"{archive_root_name}/Inventory-files/{name}")
+
+        # Include only sanitized executive artifacts, never their standard companions.
+        executive_dir = os.path.join(scan_dir, "executive reports")
+        if os.path.isdir(executive_dir):
+            for name in sorted(os.listdir(executive_dir)):
+                source = os.path.join(executive_dir, name)
+                if name in ("00_OBFUSCATED_executive_summary.html", "00_OBFUSCATED_executive_summary.pdf") and os.path.isfile(source):
+                    zf.write(source, arcname=f"{archive_root_name}/executive reports/{name}")
 
         # reports/ folder: strictly starting with OBFUSCATED_
         reports_dir = os.path.join(scan_dir, "reports")

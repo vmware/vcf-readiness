@@ -69,6 +69,12 @@ def generate_scan_readme(
     # Inspect directory contents to adapt file catalog and quick-start recommendations
     existing_root_files = set(os.listdir(outdir)) if (outdir and os.path.isdir(outdir)) else set()
 
+    inventory_dir = os.path.join(outdir, "Inventory-files") if outdir else ""
+    inventory_files = {name for name in os.listdir(inventory_dir) if name.endswith(".csv")} if os.path.isdir(inventory_dir) else set()
+    existing_root_files.update(inventory_files)
+    def csv_location(name):
+        return "Inventory-files/" + name if name in inventory_files else name
+
     reports_dir = os.path.join(outdir, "reports") if outdir else ""
     report_files = sorted(os.listdir(reports_dir)) if (reports_dir and os.path.isdir(reports_dir)) else []
 
@@ -188,13 +194,13 @@ def generate_scan_readme(
         lines.append(f"{step_num}. Sizing, Procurement & Hardware Analysis:")
         lines.append(f"   -> Open \"{target_excel}\" (Excel spreadsheet with styled tabs)")
         lines.append("   -> Or inspect CSV exports for automated ingestion into external pipelines:")
-        lines.append(f"      - {pfx}fleet_summary.csv       (per-host readiness verdicts and specs)")
-        lines.append(f"      - {pfx}drives_inventory.csv    (disk bus types, wear endurance %, ESA status)")
-        lines.append(f"      - {pfx}nics_inventory.csv      (network adapters, link speeds, firmware, PCI IDs)")
+        lines.append(f"      - {'Inventory-files/' if inventory_files else ''}{pfx}fleet_summary.csv       (per-host readiness verdicts and specs)")
+        lines.append(f"      - {'Inventory-files/' if inventory_files else ''}{pfx}drives_inventory.csv    (disk bus types, wear endurance %, ESA status)")
+        lines.append(f"      - {'Inventory-files/' if inventory_files else ''}{pfx}nics_inventory.csv      (network adapters, link speeds, firmware, PCI IDs)")
         if has_gpus_csv:
-            lines.append(f"      - {pfx}gpus_inventory.csv      (PCIe accelerators and GPU devices)")
+            lines.append(f"      - {'Inventory-files/' if inventory_files else ''}{pfx}gpus_inventory.csv      (PCIe accelerators and GPU devices)")
         if has_failed_csv or failed_count > 0:
-            lines.append(f"      - {pfx}failed_hosts.csv        (unreachable or authentication-failed targets)")
+            lines.append(f"      - {'Inventory-files/' if inventory_files else ''}{pfx}failed_hosts.csv        (unreachable or authentication-failed targets)")
         lines.append("")
         step_num += 1
 
@@ -247,7 +253,7 @@ def generate_scan_readme(
 
     for name in sorted(existing_root_files):
         if name.endswith(("component_evidence.csv", "telemetry_completeness.csv", "firmware_spread.csv")):
-            catalog_entries.append({"name": name, "desc": "Component provenance or metric availability with explicit assessed/full-fleet counts."})
+            catalog_entries.append({"name": csv_location(name), "desc": "Component provenance or metric availability with explicit assessed/full-fleet counts."})
 
     csv_items = [
         ("00_OBFUSCATED_fleet_summary.csv", "Sanitized cluster summary CSV with anonymous host identifiers."),
@@ -269,7 +275,7 @@ def generate_scan_readme(
     ]
     for csv_name, csv_desc in csv_items:
         if csv_name in existing_root_files:
-            catalog_entries.append({"name": csv_name, "desc": csv_desc})
+            catalog_entries.append({"name": csv_location(csv_name), "desc": csv_desc})
 
     if "MANIFEST.json" in existing_root_files or outdir:
         catalog_entries.append({

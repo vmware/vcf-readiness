@@ -430,6 +430,7 @@ JS_JUMP = r"""
       var d = (r && r.data) ? r.data : (r || {});
       var isOk = (r && (r.status === 200 || (!r.status && r.ok))) && (d.ok !== false);
       var hosts = d.jump_hosts || [];
+      document.dispatchEvent(new CustomEvent('jump-hosts-change', {detail: isOk ? hosts : []}));
       if (select) {
         var current = select.value;
         select.innerHTML = '<option value="auto">Auto-route by subnet</option>';
@@ -876,6 +877,7 @@ JS_JUMP = r"""
     var box = document.getElementById('jumpSelectRow');
     var on = remote && remote.checked;
     if (box) box.classList.toggle('hidden', !on);
+    syncScanConcurrency();
     if (on) refreshJumpHosts();
     else updateJumpTargetHint();
   }

@@ -196,6 +196,16 @@ Saved files are unencrypted, restricted to the workstation account (POSIX mode 0
 
 Obfuscated downloads transform only the exported copy. They do not rewrite saved originals, downloads already shared, or backups. Deleting a saved collection removes its snapshot and metadata, while an already loaded session copy remains until removed or the application ends. Review retained evidence before sharing and protect the local workstation account and backups.
 
+### Wizard and operator-supplied runtime boundaries
+
+The assessment wizard coordinates selected hardware, Inventory and MTAT scopes. Its Review/start action authorizes the selected collections; the wizard does not require a separate experimental acknowledgement checkbox. Standalone plugin request acknowledgement checks remain separate. Hardware and vCenter tasks may overlap, with bounded concurrency and cancellation tied to the accepted run. Saved account certificate pins remain in the encrypted vault; new certificate trust requires explicit review.
+
+**ESXi USB Redfish (experimental).** This is an opt-in, initially Dell-only path requiring already-enabled SSH, a verified pinned SSH host key, an account permitted to read host network/platform diagnostics, existing host Python, and separate BMC credentials. It executes original broker code transiently through SSH and reads the existing USB interface/route/DHCP evidence before bounded host-local HTTPS reads. It does not install packages, upload a persistent agent, open a listener/forward, enable SSH, configure USB networking, alter permissions, or change managed state. No other OEM coverage is implied. Normal authentication logs and transient processes remain observable. Approving ordinary BMC scanning does not select or authorize this SSH execution path.
+
+**Upstream MTAT packages.** Operator-supplied source ZIPs are separate from scanner shipments. Discovery/installation validate bounded paths, hashes and notices without importing the payload. Installation does not activate it. Explicit activation starts a session-owned local Python process over private pipes; source-package contract v1 needs Python 3.11+, and native-app users must configure an external supported Python when required. The embedded engine remains available. Integrity hashes do not authenticate the publisher, and a subprocess is not an OS security sandbox: review and trust supplied code and dependencies before activation. Active code runs with the workstation user's permissions and receives the selected service credentials for its workload. It can access local resources; scanner-side transport restrictions are not a containment guarantee for arbitrary upstream code.
+
+Runtime workspaces, worker diagnostics and imported/saved workload data are private local evidence and may retain original identifiers. Review them before sharing; obfuscated hardware reports do not automatically sanitize upstream workload exports. No upstream MTAT ZIP, installed runtime, lab capture or maintainer handoff is a scanner release asset. Upstream MTAT and VDT have distinct prerequisites and execution boundaries.
+
 ## 4. Source Code and Runtime Auditability
 
 Security teams often restrict pre-compiled binaries due to opacity and potential code injection risks. The tool addresses this directly:

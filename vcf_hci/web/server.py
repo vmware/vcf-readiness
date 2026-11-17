@@ -31,6 +31,7 @@ import time
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any, Optional, Set
 
@@ -40,6 +41,7 @@ logger = logging.getLogger("vcf_assess")
 from vcf_hci.constants import TOOL_VERSION
 from vcf_hci.fleet_library import assemble_fleet, discover_scans, write_scan_manifest  # noqa: F401
 from vcf_hci.logging_utils import get_default_output_dir, is_root_user
+from vcf_hci.plugins.mtat_runtime import RuntimeManager
 from vcf_hci.plugins.vdt import default_plugin_root, discover_vdt
 from vcf_hci.report.csv_export import generate_fleet_summary_csv  # noqa: F401
 from vcf_hci.report.excel_export import (  # noqa: F401
@@ -256,6 +258,8 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
     def server_close(self):
+        if hasattr(self, 'mtat_runtime'):
+            self.mtat_runtime.close()
         cancel_remote_jobs(self, wait=25)
         super().server_close()
 
@@ -359,6 +363,8 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
         body_limit = self.MAX_BODY_SIZE
         if getattr(self, "path", "").split("?", 1)[0] in ("/api/plugins/mtat/jobs", "/api/plugins/mtat/preflight"):
             body_limit = 4 * ((32 * 1024 * 1024 + 2) // 3) + 65536
+        elif getattr(self, "path", "").split("?", 1)[0] in ("/api/plugins/mtat/upstream/import.upload", "/api/plugins/mtat/upstream/import.chunk"):
+            body_limit = 4 * ((16 * 1024 * 1024 + 2) // 3) + 65536
         elif getattr(self, "path", "").split("?", 1)[0] == "/api/plugins/vinv/import":
             body_limit = _VINV_UPLOAD_BODY_LIMIT
         if length <= 0 or length > body_limit:
@@ -696,6 +702,7 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
                     "scan_id": _state.get("scan_id"),
                     "running": _state.get("running", False),
                     "done": _state.get("done", False),
+                    "finalizing": bool(_state.get("_fleet_worker_active") or _state.get("_fleet_operation")),
                     "error": _state.get("error"),
                     "total": _state.get("total", 0),
                     "completed": _state.get("completed", 0),
@@ -883,6 +890,10 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
 
         if path == "/api/plugins/vdt/install":
             self._api_vdt_install()
+        elif path == "/api/plugins/mtat/install":
+            self._api_mtat_install()
+        elif path.startswith("/api/plugins/mtat/upstream/"):
+            self._api_mtat_upstream(path.rsplit('/', 1)[-1])
         elif path == "/api/plugins/vdt/discover":
             self._api_vdt_discover()
         elif path in ("/api/plugins/vdt/remote/probe", "/api/plugins/vdt/remote/preflight", "/api/plugins/vdt/remote/run", "/api/plugins/vdt/remote/cancel"):
@@ -954,6 +965,8 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             self._api_vault_services("save")
         elif path == "/api/vault/services/remove":
             self._api_vault_services("remove")
+        elif path == "/api/vault/services/trust":
+            self._api_vault_services("trust")
         elif path == "/api/vault/remove":
             self._api_vault_remove()
         elif path == "/api/vault/import-csv":
@@ -987,12 +1000,24 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
                                              _shutdown_event.set()), daemon=True).start()
         elif path == "/api/plugins/mtat/preflight":
             self._api_mtat_preflight()
+        elif path == "/api/wizard/artifacts":
+            from vcf_hci.web.wizard_artifacts import save_artifacts
+            save_artifacts(self)
         elif path == "/api/plugins/mtat/jobs":
             self._api_mtat_jobs_post()
         elif path.startswith("/api/plugins/mtat/jobs/") and path.endswith("/cancel"):
             self._api_mtat_cancel(path)
         elif path == "/api/plugins/vinv/preflight":
             self._api_vinv_preflight()
+        elif path == "/api/plugins/vcenter-check":
+            from vcf_hci.web.vcenter_check_api import handle_vcenter_check
+            handle_vcenter_check(self)
+        elif path == "/api/plugins/esxi-usb/targets":
+            from vcf_hci.web.esxi_usb_api import handle_esxi_targets
+            handle_esxi_targets(self)
+        elif path == "/api/plugins/esxi-usb/jobs":
+            from vcf_hci.web.esxi_usb_api import handle_esxi_scan
+            handle_esxi_scan(self)
         elif path == "/api/plugins/vinv/jobs":
             self._api_vinv_jobs_post()
         elif path.startswith("/api/plugins/vinv/jobs/") and path.endswith("/cancel"):
@@ -1059,6 +1084,7 @@ def make_server(
     server.vdt_lock = threading.Lock()
     server.vdt_sessions = {}
     server.vdt_plugin_root = os.path.abspath(plugins_dir) if plugins_dir is not None else str(default_plugin_root())
+    server.mtat_runtime = RuntimeManager(Path(server.vdt_plugin_root))
     server.vdt_remote_jobs = {}
     server.experimental_vinv = True
     server.vinv_lock = threading.Lock()

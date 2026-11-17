@@ -12,6 +12,7 @@ from vcf_hci.constants import (
     VENDOR_HARDENING_GUIDES,
 )
 from vcf_hci.report.helpers import _h, host_has_redfish_latency
+from vcf_hci.report.power_cap import render_power_cap_review
 from vcf_hci.security.metadata import (
     GROUP_LABELS,
     GROUP_ORDER,
@@ -286,15 +287,18 @@ def _hpe_allowlisted_bios_rows(pending_attrs: Dict[str, Any]) -> List[Dict[str, 
     return rows
 
 
-def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
+def render_bios_baseline_scorecard(
+    bios_info: Optional[Dict[str, Any]], psu: Optional[Dict[str, Any]] = None,
+) -> str:
     """Render the VCF 9.1 BIOS Golden Baseline Scorecard accordion.
 
     Displays compliance metrics, drifted BIOS settings with severity badges,
     current vs recommended values, and VMware Best Practice rationales, as well as
     compliant golden baseline settings.
     """
+    power_cap_html = render_power_cap_review(psu)
     if not isinstance(bios_info, dict):
-        return ""
+        return power_cap_html
     drift_data = (
         bios_info.get("bios_baseline_drift")
         or bios_info.get("hpe_baseline_drift")
@@ -304,7 +308,7 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
         or bios_info.get("generic_baseline_drift")
     )
     if not isinstance(drift_data, dict) or not drift_data.get("rules"):
-        return ""
+        return power_cap_html
 
     compliance_pct = drift_data.get("compliance_pct", 100.0)
     total_rules = drift_data.get("total_rules", 0)
@@ -559,6 +563,7 @@ def render_bios_baseline_scorecard(bios_info: Optional[Dict[str, Any]]) -> str:
         f"</summary>"
         f"<div class=\"accordion-body\">"
         f"{perf_guide_hdr}"
+        f"{power_cap_html}"
         f"{stats_html}"
         f"{catalog_callout}"
         f"{drift_table_html}"
@@ -573,6 +578,7 @@ def render_bios_perf_card_and_accordion(
     bios_info: Dict[str, Any],
     sys_info: Dict[str, Any],
     bios_eval: Dict[str, Any],
+    psu: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
     """Render BIOS & Performance summary card and combined BIOS Performance Settings accordion."""
     bios_info = bios_info or {}
@@ -742,7 +748,7 @@ def render_bios_perf_card_and_accordion(
     else:
         _ras_detail_section = ""
 
-    _baseline_scorecard = render_bios_baseline_scorecard(bios_info)
+    _baseline_scorecard = render_bios_baseline_scorecard(bios_info, psu)
     _ras_detail_section = _baseline_scorecard + _ras_detail_section
 
     return _bios_perf_card_html, _ras_detail_section

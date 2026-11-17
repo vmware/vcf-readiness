@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from vcf_hci.collector.fc_plus import classify_fc_plus
 from vcf_hci.compat_engine import evaluate_npar
 from vcf_hci.hcl import lookup_unique_hcl_device
+from vcf_hci.network_partitioning import is_pure_fc_adapter
 from vcf_hci.obfuscation import _pii_span
 from vcf_hci.report.components import (
     _nic_has_active_port,
@@ -198,7 +199,21 @@ def render_network_section(
     data = data or {}
     fc_hba_card_html = render_fc_hba_card(fc_hbas, json_hcl=json_hcl)
 
-    real_nics = [n for n in (nics or []) if not n.get("unsupported_license")]
+    # Older summaries included native FC cards in both inventories. Only remove
+    # copies represented in HBA, retaining unmatched port evidence as a fallback.
+    fc_port_ids = {str(h.get("port_id")) for h in (fc_hbas or []) if h.get("port_id")}
+    fc_adapter_ids = {str(h.get(key)) for h in (fc_hbas or [])
+                      for key in ("adapter_id", "physical_adapter_id") if h.get(key)}
+
+    def in_hba_inventory(nic):
+        port_ids = {str(p.get("port_id")) for p in nic.get("ports", []) if p.get("port_id")}
+        return is_pure_fc_adapter(nic) and (
+            str(nic.get("id") or "") in fc_adapter_ids
+            or bool(port_ids and port_ids.issubset(fc_port_ids))
+        )
+
+    real_nics = [n for n in (nics or []) if not n.get("unsupported_license")
+                 and not in_hba_inventory(n)]
     nic_blocked_rows = "".join(
         f"<tr><td colspan='5' style='color:#7f1d1d'>⚠️ {_h(n.get('name', 'NIC'))}: {_h(n.get('note', 'Collection blocked'))}</td></tr>"
         for n in (nics or []) if n.get("unsupported_license")

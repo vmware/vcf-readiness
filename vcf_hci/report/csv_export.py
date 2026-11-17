@@ -382,10 +382,11 @@ def export_all_csvs(
     obfuscated: bool = False,
     failed_hosts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, str]:
-    """Generate and write all CSV export files into outdir.
+    """Generate CSV exports into the Inventory-files subfolder of outdir.
 
     Returns dict mapping artifact name -> absolute filepath.
     """
+    outdir = os.path.join(outdir, "Inventory-files")
     prefix = "00_OBFUSCATED_" if obfuscated else "00_"
     os.makedirs(outdir, exist_ok=True)
 

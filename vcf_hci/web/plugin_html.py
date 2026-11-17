@@ -134,4 +134,4 @@ VDT_PANEL = '''
 </section>
 '''
 
-VDT_PANEL = VDT_PANEL.replace('<div class="clr-form-group mt-half"><label class="clr-control-label" for="vdtRemoteHost">', service_picker('vdt', 'vdt-plugin', 'vdtRemoteHost', 'vdtRemoteSsoUsername', 'vdtRemoteSsoPassword', '', 'vdtRemoteApiPort') + '<div class="clr-form-group mt-half"><label class="clr-control-label" for="vdtRemoteHost">', 1)
+VDT_PANEL = VDT_PANEL.replace('<div class="clr-form-group mt-half"><label class="clr-control-label" for="vdtRemoteHost">', service_picker('vdt', 'vdt-plugin', 'vdtRemoteHost', 'vdtRemoteSsoUsername', 'vdtRemoteSsoPassword', '', 'vdtRemoteApiPort', 'administrator') + '<div class="clr-form-group mt-half"><label class="clr-control-label" for="vdtRemoteHost">', 1)

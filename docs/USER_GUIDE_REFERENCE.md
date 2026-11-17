@@ -1490,7 +1490,7 @@ Collected JSON, user group labels, copied paths, code and CSV/Excel text preserv
 
 ### 10.8 Finished Scan Summary and Offline HCL Transfer
 
-The finished summary pairs **Standard** and **Obfuscated** report actions on the same rows for executive, fleet and combined-host reports. Excel exports use the same pairing; CSV, summary JSON, obfuscated ZIP and file utilities are grouped below. Theme-aware outline buttons and aligned details improve readability, with stacked actions on narrow screens. Obfuscated Excel downloads include a key: keep that key private when sharing the workbook.
+The finished summary provides standard and obfuscated fleet/combined-host reports and Excel exports. CSV inventories are generated under `Inventory-files/`; executive HTML/PDF outputs are under `executive reports/` in the scan folder. Use the scan-folder artifacts for outputs whose former summary buttons have been removed. Obfuscated Excel downloads include a key: keep that key private when sharing the workbook.
 
 To transfer HCL datasets without the CLI, open **Advanced Configuration → Broadcom HCL Database & Dark-Site Bundle** (or the wizard's HCL controls). On the connected scanner, refresh if needed and choose **Export Dark-Site HCL ZIP**. Copy the ZIP to the destination scanner and choose **Import Dark-Site HCL ZIP**. Check the imported source, age and coverage. The ZIP contains active compatibility data and provenance, not collected scans, credentials or the scanner application. Existing limited or stale data remains limited or stale. CPU policy follows the scanner version.
 
@@ -1510,3 +1510,13 @@ Use the top-right **Compact** toggle to switch between comfortable and compact t
 The scanner progress bar measures **hosts processed in the current pass**, including hosts with collection failures. It is not a count of healthy hosts or an estimate of elapsed runtime. Retry passes are labelled separately. Report preparation, cancellation and reconnect states have their own messages.
 
 VDT collection shows stages with an indeterminate indicator while duration is unknown. Its setup step number is separate from collection progress. Retrieved evidence, findings and remote cleanup outcomes remain distinct; review any retained temporary-directory message. Operations with no measurable total show activity and elapsed time without inventing a completion percentage. Collection logs and detailed evidence remain available in expandable sections.
+
+### Guided assessment wizard
+
+The six steps are **Scope → Credentials → Discovery → HCL → Options → Review**. Select hardware, Inventory, MTAT or optional diagnostic scopes first; unused controls are skipped or disabled. BMC Redfish is the default hardware access method. The experimental Dell ESXi USB method requires separately pinned SSH access and BMC credentials; see the security guide before selecting it.
+
+Use saved accounts or enter credentials for the selected services. Review certificates and explicitly trust verified fingerprints when recovering from certificate errors; saved vCenter pins stay with the encrypted account. Discovery identifies selected clusters and hardware targets. HCL controls apply to hardware assessments.
+
+Options checks available MTAT history and defaults to the most detailed usable window, with real-time fallback guidance. Inventory and MTAT may overlap hardware scanning by default; disable overlap if needed. Jump-host hardware concurrency and workstation concurrency are separate settings. Upstream MTAT requires a separately installed, explicitly activated trusted package; the embedded engine remains available.
+
+Review the selected scopes and start. Progress, elapsed time and activity are associated with that accepted run. Changing setup invalidates stale summaries; **Reset wizard** clears the workflow state. Cancelled or rejected starts do not reuse an earlier scan's results. Completed Inventory/MTAT exports are retained with the assessment, including completed parts of partially failed runs. Unified reports include Inventory matching information and an offline MTAT tab when those inputs are available. Review raw identifiers before sharing; obfuscation applies only to the selected exported copy.

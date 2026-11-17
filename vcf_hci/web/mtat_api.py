@@ -74,6 +74,20 @@ def failure_payload(exc: Exception, operation: str) -> dict:
     message = str(exc) if isinstance(exc, MtatError) else (
         "Check the source, endpoint, cluster, history window and workbook options." if isinstance(exc, ValueError)
         else "MTAT could not complete this request. Check the server diagnostics using the reference below.")
+    if isinstance(exc, ValueError):
+        # Only authored validation messages are mapped; never expose arbitrary SDK text.
+        known = {
+            "select one unambiguous cluster identifier": (
+                "cluster_required", "MTAT requires one cluster. Select a discovered cluster instead of All clusters."),
+            "no retained historical interval of at least 30 minutes is available": (
+                "history_unavailable", "MTAT seven-day history requires enabled vCenter statistics at Level 2 or higher, with at least seven days of retention and a sampling period of 30 minutes or longer. Choose Real-time snapshot in wizard Options, or review history settings with your vCenter administrator."),
+            "no retained historical interval of at least 5 minutes is available": (
+                "history_unavailable", "MTAT history requires enabled vCenter statistics at Level 2 or higher with sufficient retention. Choose Real-time snapshot or review history settings with your vCenter administrator."),
+            "historical window is outside retained history": (
+                "history_unavailable", "The requested MTAT window is outside retained vCenter history. Select a shorter window on the MTAT page or choose Real-time snapshot."),
+        }
+        if str(exc) in known:
+            code, message = known[str(exc)]
     logger.warning("MTAT %s failed: reference=%s code=%s stage=%s exception_type=%s",
                    operation, reference, code, stage, type(exc).__name__)
     return {"error": message, "error_code": code, "stage": stage, "reference": reference}
@@ -159,6 +173,7 @@ def export_zip(
         "hosts_history.csv": hosts_history_csv.encode("utf-8"),
         "vms_history.csv": vms_history_csv.encode("utf-8"),
         "manifest.json": manifest,
+        "matrix.csv": render_matrix_csv(all_assessments).encode("utf-8"),
     }
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:

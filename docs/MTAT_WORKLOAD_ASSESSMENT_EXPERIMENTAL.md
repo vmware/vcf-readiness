@@ -149,3 +149,9 @@ These figures are planning estimates. They do not model DIMM channel population 
 ## Privacy of assessment exports
 
 MTAT CSVs, reports and sidecar manifests retain environment identifiers such as host, VM, cluster and source names. They are private assessment evidence, not anonymized public samples. Review them before sharing. Passwords and authentication tokens must not appear in exports or diagnostic errors. Saved accounts are an explicit Credential Vault choice; collection jobs resolve selected credentials on the server.
+
+## Wizard and optional upstream packages
+
+The assessment wizard supports embedded collection and explicitly activated operator-supplied MTAT packages, with live/import/saved workflows. Review/start authorizes selected scopes without a separate acknowledgement checkbox. The embedded engine remains available. Installation alone does not activate a package. Upstream source packages require a supported Python 3.11+ runtime, including an external Python for native-app use when required. Package hashes verify integrity, not publisher identity. Review trusted source and dependencies before activation: local worker processes run with your account's permissions and are not an OS sandbox. Upstream payloads are not bundled with VCF-R.
+
+Workspaces, logs and saved/imported workload data can retain environment identifiers. Review exports before sharing; hardware-report obfuscation does not automatically sanitize workload artifacts. See [security boundaries](SECURITY_ARCHITECTURE.md#wizard-and-operator-supplied-runtime-boundaries).

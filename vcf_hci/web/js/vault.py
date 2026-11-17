@@ -7,6 +7,8 @@ JS_VAULT = """
   // ── Discovery & Certificate Trust (TOFU) ──────────────────────────────────
   var _discoveredHosts = [];
   var _probedTargetRaw = '';
+  var _discoveryRequestGeneration = 0;
+  document.getElementById('rangeInput').addEventListener('input', function() { _discoveryRequestGeneration++; });
   var _pinnedThumbprints = {};
   var _modalCertsList = [];
 
@@ -14,6 +16,7 @@ JS_VAULT = """
     var count = Object.keys(_pinnedThumbprints).length;
     var el = document.getElementById('pinnedCertSummary');
     if (el) el.textContent = count + ' thumbprint(s) pinned';
+    document.dispatchEvent(new Event('bmc-trust-change'));
   }
 
   function openCertModal(certsList) {
@@ -274,8 +277,10 @@ JS_VAULT = """
     if (hostList) hide(hostList);
     var vpnWarn = document.getElementById('vpnWarning');
     if (vpnWarn) hide(vpnWarn);
+    var discoveryGeneration = ++_discoveryRequestGeneration;
     post('/api/discover', {targets: raw})
       .then(function(r) {
+        if (discoveryGeneration !== _discoveryRequestGeneration || raw !== document.getElementById('rangeInput').value.trim()) return;
         if (spinner) hide(spinner);
         if (r.error) {
           if (discStatus) discStatus.textContent = 'Error: ' + r.error;
@@ -286,20 +291,11 @@ JS_VAULT = """
               r.hosts.length + ' reachable host(s) found';
           }
           renderHostList(r.hosts);
-          if (r.high_latency_detected) {
-            var vpnLat = document.getElementById('vpnLatency');
-            if (vpnLat) vpnLat.textContent = r.avg_latency_ms || '0';
-            if (vpnWarn) show(vpnWarn);
-            var thInp = document.getElementById('threadsInput');
-            if (thInp && parseInt(thInp.value, 10) > 6) {
-              thInp.value = '6';
-            }
-          } else {
-            if (vpnWarn) hide(vpnWarn);
-          }
+          applyDiscoveryConcurrency(!!r.high_latency_detected, r.avg_latency_ms, raw);
         }
       })
       .catch(function(e) {
+        if (discoveryGeneration !== _discoveryRequestGeneration) return;
         if (spinner) hide(spinner);
         if (discStatus) discStatus.textContent = 'Probe failed: ' + e;
       });

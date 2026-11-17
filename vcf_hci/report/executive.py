@@ -237,6 +237,8 @@ def executive_pdf(summary: dict) -> bytes:
 
 
 def write_executive_reports(results: list, directory: str, failed_hosts: Optional[list] = None, obfuscated: bool = False) -> tuple:
+    directory = os.path.join(directory, "executive reports")
+    os.makedirs(directory, exist_ok=True)
     summary = build_executive_summary(results, failed_hosts, obfuscated)
     stem = '00_OBFUSCATED_executive_summary' if obfuscated else '00_executive_summary'
     html_path, pdf_path = os.path.join(directory, stem + '.html'), os.path.join(directory, stem + '.pdf')
