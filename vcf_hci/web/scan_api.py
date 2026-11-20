@@ -171,12 +171,21 @@ class ScanApiMixin(_ApiMixinBase):
                 return
             vault = vault_session.get()
             if vault is None:
+                logger.warning("Wizard scan credential resolution: vault_requested=true vault_unlocked=false; refusing scan start")
                 self._send_json({"error": "Vault is locked. Unlock it in the Credential Vault panel first.", "locked": True}, 423)
                 return
             creds = vault.resolve_for_targets(ips)
+            vault_covered = sum(1 for ip in ips if ip in creds or "default" in creds)
             if shared_pass:
                 creds.setdefault("default", (shared_user, shared_pass))
             missing = [ip for ip in ips if ip not in creds and "default" not in creds]
+            logger.info(
+                "Wizard scan credential resolution: targets=%d vault_requested=true vault_unlocked=true vault_covered=%d password_fallback=%s missing=%d",
+                len(ips),
+                vault_covered,
+                bool(shared_pass),
+                len(missing),
+            )
             if missing:
                 logger.info("Vault scan: %d target(s) without credentials will be skipped", len(missing))
         elif creds_list:
@@ -198,9 +207,8 @@ class ScanApiMixin(_ApiMixinBase):
             blank_pwd_hosts = [ip for ip, (_, pw) in creds.items() if not (pw or "").strip()]
             if blank_pwd_hosts:
                 logger.warning(
-                    "Scan started with NO password for %d target(s) (e.g. %s) — BMC requests will likely fail with 401 Unauthorized.",
+                    "Wizard scan credential resolution: vault_requested=false targets_without_password=%d",
                     len(blank_pwd_hosts),
-                    ", ".join(blank_pwd_hosts[:5]),
                 )
 
         execution = str(body.get("execution") or "local").strip().lower()

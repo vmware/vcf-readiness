@@ -339,7 +339,9 @@ def load_vsan_hcl_json(local_path: Optional[str] = None, refresh_live: bool = Fa
         except Exception:
             pass
 
+    from vcf_hci.hcl.memory_tiering_data import load_memory_tiering_catalog
     hcl_index = {
+        '_memory_tiering': load_memory_tiering_catalog(refresh_live=refresh_live),
         "quads": {},
         "pairs": {},
         "models": {},

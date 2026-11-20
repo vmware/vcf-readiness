@@ -103,12 +103,14 @@ When sharing reports with external hardware vendors or Broadcom support, passing
 | `fleet_summary.html` | Fleet-wide overview dashboard with health tiles and host summary table. | Infrastructure Managers & Architects. |
 | `fleet_combined.html` / `00_fleet_combined.html` | Fleet Hub HTML dashboard embedding all host reports (single inline file for &le; 64 hosts, sidecar pack with lazy on-demand frames for &gt; 64 hosts up to 3,000+ hosts without 256-host cliff). | Enterprise Architects & IT Leadership. |
 | `MANIFEST.json` | Scan execution metadata manifest (`tool_version`, `scanned_at`, `host_count`, `collector_id`, `site`, `scan_profile`, `obfuscated`) for library discovery and remote drop ingestion. | Automation Engineers & Orchestrators. |
-| `vcf_readiness_<timestamp>.xlsx` | Multi-tab Excel workbook: Summary, Storage, NICs, GPUs, Security, Failed Hosts. | IT Procurement & Capacity Planners. |
+| `vcf_readiness_<timestamp>.xlsx` | Multi-tab Excel workbook with Summary, Decision, vCPU, vMemory, vStorage, vNetwork, vGPU, vFirmware, vHBA, vBIOS, Health_Alarms, Remediation, Security, Security_Audit, and optional Failed_Hosts sheets. | IT Procurement & Capacity Planners. |
 | `00_fleet_summary.csv` | Standardized tabular CSV with 40+ schema fields for automated pipeline ingestion. | Infrastructure Automation & CMDB Leads. |
 | `00_drives_inventory.csv` | Granular physical storage drive inventory across all assessed nodes. | Storage Engineers & Hardware Vendors. |
 | `00_nics_inventory.csv` | Network adapter, port, link speed, and ToR switch neighbor inventory. | Network Architects & Fabric Engineers. |
 | `00_gpus_inventory.csv` | Hardware accelerator and GPU inventory across all nodes. | AI Infrastructure & Data Science Leads. |
 | `00_failed_hosts.csv` | Preflight diagnostics, unreachable BMC IPs, and authentication errors. | Operations & Network Support Teams. |
+
+The workbook's **vFirmware** sheet evaluates BIOS, BMC, NIC, NVMe, and HBA/RAID evidence against release-specific VCF 9.1 listings where available. It separates supported, update-needed, and incomplete evidence; an old BIOS date alone does not establish firmware support. The Summary adds per-host firmware upgrade rollups and **All NICs Ready**. **Remediation** lists firmware evidence gaps and NIC link review with retained BCG references. A BMC age advisory (over 365 days at capture) indicates age only; it is not a certification or health verdict. These workbook assessments do not change the shared CSV schema or hardware compatibility verdicts.
 
 ---
 
@@ -214,6 +216,14 @@ python3 vcfr_collector.py --targets 192.0.2.0/24 --vault
 - Vault auto-locks after 60 minutes of inactivity and upon server shutdown.
 
 
+#### Saved Plugin Credentials
+
+Under **Credential Vault → vCenter & VCF Operations**, save a named HTTPS instance and its service account. Select **Use saved credentials** in a plugin to replace manual connection fields with a saved-instance selector. The selector opens the vault in a separate tab; return to the plugin tab to continue. Its list refreshes on focus, and you can refresh it manually. Editing an instance requires re-entering its password.
+
+vCenter entries are shared by VDT, MTAT Workload Assessment and vSphere Inventory Export. Operations entries apply to MTAT Operations REST only. BMC credentials and appliance SSH accounts stay separate. Normal TLS review, acknowledgements and SSH fingerprint checks still apply; saved passwords are resolved only on the server. See the [Credential Vault Guide](../CREDENTIAL_VAULT.md#saved-vcenter-and-vcf-operations-instances).
+
+For vSphere Inventory Export, select the vCenter account, review TLS or an optional certificate pin, acknowledge the experimental collection, and click **Connect**. Connect discovers clusters automatically; choose one or keep **All clusters**. Use **Discover clusters** only to refresh the list. Review the collection options and click **Collect**. If a prerequisite is missing, the page explains it beside the connection steps.
+
 #### Forgotten Vault Passphrase
 
 Open **Credential Vault → Forgot the vault passphrase?** to see the configured vault-file location and reset instructions. The default is `~/.vcf-readiness/credentials.vault` on macOS/Linux, or `%USERPROFILE%\.vcf-readiness\credentials.vault` on Windows; CLI users with `--vault PATH` must use their custom file.
@@ -232,7 +242,7 @@ Collected JSON, user group labels, copied paths, code and CSV/Excel text preserv
 
 ### 10.8 Finished Scan Summary and Offline HCL Transfer
 
-The finished summary pairs **Standard** and **Obfuscated** report actions on the same rows for executive, fleet and combined-host reports. Excel exports use the same pairing; CSV, summary JSON, obfuscated ZIP and file utilities are grouped below. Theme-aware outline buttons and aligned details improve readability, with stacked actions on narrow screens. Obfuscated Excel downloads include a key: keep that key private when sharing the workbook.
+The finished summary provides standard and obfuscated fleet/combined-host reports and Excel exports. CSV inventories are generated under `Inventory-files/`; executive HTML/PDF outputs are under `executive reports/` in the scan folder. Use the scan-folder artifacts for outputs whose former summary buttons have been removed. Obfuscated Excel downloads include a key: keep that key private when sharing the workbook.
 
 To transfer HCL datasets without the CLI, open **Advanced Configuration → Broadcom HCL Database & Dark-Site Bundle** (or the wizard's HCL controls). On the connected scanner, refresh if needed and choose **Export Dark-Site HCL ZIP**. Copy the ZIP to the destination scanner and choose **Import Dark-Site HCL ZIP**. Check the imported source, age and coverage. The ZIP contains active compatibility data and provenance, not collected scans, credentials or the scanner application. Existing limited or stale data remains limited or stale. CPU policy follows the scanner version.
 
@@ -252,3 +262,13 @@ Use the top-right **Compact** toggle to switch between comfortable and compact t
 The scanner progress bar measures **hosts processed in the current pass**, including hosts with collection failures. It is not a count of healthy hosts or an estimate of elapsed runtime. Retry passes are labelled separately. Report preparation, cancellation and reconnect states have their own messages.
 
 VDT collection shows stages with an indeterminate indicator while duration is unknown. Its setup step number is separate from collection progress. Retrieved evidence, findings and remote cleanup outcomes remain distinct; review any retained temporary-directory message. Operations with no measurable total show activity and elapsed time without inventing a completion percentage. Collection logs and detailed evidence remain available in expandable sections.
+
+### Guided assessment wizard
+
+The six steps are **Scope → Credentials → Discovery → HCL → Options → Review**. Select hardware, Inventory, MTAT or optional diagnostic scopes first; unused controls are skipped or disabled. BMC Redfish is the default hardware access method. The experimental Dell ESXi USB method requires separately pinned SSH access and BMC credentials; see the security guide before selecting it.
+
+Use saved accounts or enter credentials for the selected services. Review certificates and explicitly trust verified fingerprints when recovering from certificate errors; saved vCenter pins stay with the encrypted account. Discovery identifies selected clusters and hardware targets. HCL controls apply to hardware assessments.
+
+Options checks available MTAT history and defaults to the most detailed usable window, with real-time fallback guidance. Inventory and MTAT may overlap hardware scanning by default; disable overlap if needed. Jump-host hardware concurrency and workstation concurrency are separate settings. Upstream MTAT requires a separately installed, explicitly activated trusted package; the embedded engine remains available.
+
+Review the selected scopes and start. Progress, elapsed time and activity are associated with that accepted run. Changing setup invalidates stale summaries; **Reset wizard** clears the workflow state. Cancelled or rejected starts do not reuse an earlier scan's results. Completed Inventory/MTAT exports are retained with the assessment, including completed parts of partially failed runs. Unified reports include Inventory matching information and an offline MTAT tab when those inputs are available. Review raw identifiers before sharing; obfuscation applies only to the selected exported copy.

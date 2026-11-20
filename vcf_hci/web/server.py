@@ -31,6 +31,7 @@ import time
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any, Optional, Set
 
@@ -40,6 +41,7 @@ logger = logging.getLogger("vcf_assess")
 from vcf_hci.constants import TOOL_VERSION
 from vcf_hci.fleet_library import assemble_fleet, discover_scans, write_scan_manifest  # noqa: F401
 from vcf_hci.logging_utils import get_default_output_dir, is_root_user
+from vcf_hci.plugins.mtat_runtime import RuntimeManager
 from vcf_hci.plugins.vdt import default_plugin_root, discover_vdt
 from vcf_hci.report.csv_export import generate_fleet_summary_csv  # noqa: F401
 from vcf_hci.report.excel_export import (  # noqa: F401
@@ -57,6 +59,7 @@ from vcf_hci.web.desktop import (  # noqa: F401
 )
 from vcf_hci.web.group_api import GroupApiMixin
 from vcf_hci.web.hcl_export_api import HclExportApiMixin
+from vcf_hci.web.mtat_api import MtatApiMixin
 from vcf_hci.web.plugin_api import PluginApiMixin
 from vcf_hci.web.remote_vdt_api import RemoteVdtApiMixin, cancel_remote_jobs
 from vcf_hci.web.scan_worker import (  # noqa: F401
@@ -86,6 +89,8 @@ from vcf_hci.web.session_store import (  # noqa: F401
 )
 from vcf_hci.web.update_check import ReleaseUpdateChecker
 from vcf_hci.web.vdt_setup_api import VdtSetupApiMixin
+from vcf_hci.web.vinv_api import UPLOAD_BODY_LIMIT as _VINV_UPLOAD_BODY_LIMIT
+from vcf_hci.web.vinv_api import VinvApiMixin, VinvLibrary
 
 _COLLECTOR_OK = True
 
@@ -110,6 +115,7 @@ _VALID_SESSIONS: Set[str] = set()
 _SERVER_BIND_TOKEN: str = _LAUNCH_TOKEN
 _OEM_MODE = False
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", ""})
 _TOKEN_QUERY_RE = re.compile(r"(token=)[^&\s\"']+")
 
 
@@ -123,6 +129,77 @@ def listener_requires_tls(bind_host: str, allow_remote: bool) -> bool:
     if allow_remote:
         return True
     return host not in _LOOPBACK_HOSTS
+
+
+def _normalise_host(host: str) -> str:
+    """Return a lower-case hostname/IP without a port, brackets, or one trailing dot."""
+    raw = str(host or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("["):
+        try:
+            name = urllib.parse.urlparse("//" + raw).hostname or ""
+        except ValueError:
+            return ""
+    elif raw.count(":") == 1:
+        name = raw.split(":", 1)[0]
+    else:
+        name = raw
+    name = name.lower()
+    return name[:-1] if name.endswith(".") else name
+
+
+def _certificate_san_names(cert_path: str) -> set:
+    """Read DNS and IP subjectAltName values from the listener certificate."""
+    decoder = getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None)
+    if decoder is None:
+        raise ValueError("This Python build cannot inspect the listener certificate names")
+    try:
+        decoded = decoder(cert_path)
+    except (OSError, ssl.SSLError, ValueError) as exc:
+        raise ValueError("Could not read subjectAltName values from the listener certificate") from exc
+    names = set()
+    for kind, value in decoded.get("subjectAltName", ()):
+        if kind in ("DNS", "IP Address"):
+            name = _normalise_host(value)
+            if name:
+                names.add(name)
+    return names
+
+
+def _remote_gate_gap(bind_host: str, allow_remote: bool) -> bool:
+    host = (bind_host or "").strip().lower()
+    return (
+        listener_requires_tls(bind_host, allow_remote)
+        and not allow_remote
+        and host not in (_LOOPBACK_HOSTS | _WILDCARD_HOSTS)
+    )
+
+
+def _indented_warning(message: str) -> str:
+    return "  " + message.replace("\n", "\n  ")
+
+
+def _remote_gate_gap_warning(bind_host: str) -> str:
+    return (
+        "[!] WARNING: This listener is reachable over HTTPS, but remote-mode gates remain local.\n"
+        f"    Bind {bind_host} is not loopback, and --allow-remote was not set.\n"
+        "    The credential vault, OS keychain, desktop folder chooser, saved plug-in credentials,\n"
+        "    and MTAT package install / upstream bridge remain available as on a local listener.\n"
+        "    Bind 127.0.0.1 to remove this exposure. --allow-remote applies the remote gates;\n"
+        "    it is not the recommended headless setup. Prefer the SSH local forward in docs/INSTALL.md:\n"
+        "      ssh -L 7182:127.0.0.1:7182 user@server\n"
+        "      python3 vcfr_web.py --no-browser"
+    )
+
+
+def _allow_remote_warning(allowed_names: set) -> str:
+    names_text = ", ".join(sorted(allowed_names))
+    return (
+        "[!] WARNING: --allow-remote is an opt-in and is not the recommended headless setup.\n"
+        "    Prefer a loopback bind and the SSH local forward in docs/INSTALL.md.\n"
+        f"    Accepted Host names: {names_text}"
+    )
 
 
 def tls_material_error(
@@ -247,12 +324,15 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     ):
         self.bind_host = bind_host
         self.allow_remote = allow_remote
-        self.allow_hosts = allow_hosts or set()
+        self.allow_hosts = {_normalise_host(value) for value in (allow_hosts or set()) if _normalise_host(value)}
+        self.cert_san_names = set()
         self.tls_enabled = False
         self.update_checker = ReleaseUpdateChecker(TOOL_VERSION)
         super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
     def server_close(self):
+        if hasattr(self, 'mtat_runtime'):
+            self.mtat_runtime.close()
         cancel_remote_jobs(self, wait=25)
         super().server_close()
 
@@ -264,7 +344,7 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         super().handle_error(request, client_address)
 
 
-class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtApiMixin, PluginApiMixin, ApiMixin, BaseHTTPRequestHandler):
+class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtApiMixin, MtatApiMixin, VinvApiMixin, PluginApiMixin, ApiMixin, BaseHTTPRequestHandler):
     server_version = f"VCFReadiness/{TOOL_VERSION}"
 
     def handle(self):
@@ -353,7 +433,14 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             length = int(self.headers.get("Content-Length", 0))
         except (ValueError, TypeError):
             return {}
-        if length <= 0 or length > self.MAX_BODY_SIZE:
+        body_limit = self.MAX_BODY_SIZE
+        if getattr(self, "path", "").split("?", 1)[0] in ("/api/plugins/mtat/jobs", "/api/plugins/mtat/preflight"):
+            body_limit = 4 * ((32 * 1024 * 1024 + 2) // 3) + 65536
+        elif getattr(self, "path", "").split("?", 1)[0] in ("/api/plugins/mtat/upstream/import.upload", "/api/plugins/mtat/upstream/import.chunk"):
+            body_limit = 4 * ((16 * 1024 * 1024 + 2) // 3) + 65536
+        elif getattr(self, "path", "").split("?", 1)[0] == "/api/plugins/vinv/import":
+            body_limit = _VINV_UPLOAD_BODY_LIMIT
+        if length <= 0 or length > body_limit:
             return {}
         try:
             return json.loads(self.rfile.read(length))
@@ -422,22 +509,18 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
         raw = self.headers.get("Host", "").strip() if hasattr(self, "headers") and self.headers else ""
         if not raw:
             return ""
-        try:
-            parsed = urllib.parse.urlparse("//" + raw)
-            return (parsed.hostname or "").lower().rstrip(".")
-        except Exception:
-            return ""
+        return _normalise_host(raw)
 
     def _host_matches_request(self, hostname: str) -> bool:
         """True when hostname is this request's Host, or an explicit allow_hosts entry."""
-        h = (hostname or "").lower().rstrip(".")
+        h = _normalise_host(hostname)
         if not h:
             return False
         req = self._request_host_name()
         if req and h == req:
             return True
         allow_hosts = getattr(self.server, "allow_hosts", set()) or set()
-        return h in {str(ah).lower().rstrip(".") for ah in allow_hosts}
+        return h in {_normalise_host(ah) for ah in allow_hosts}
 
     def _is_allowed_origin(self, origin: str) -> bool:
         if not origin:
@@ -446,7 +529,7 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             parsed = urllib.parse.urlparse(origin)
             if parsed.scheme not in ("http", "https"):
                 return False
-            h = (parsed.hostname or "").lower()
+            h = _normalise_host(parsed.hostname or "")
             if not h:
                 return False
             srv_port = getattr(self.server, "server_address", ("127.0.0.1", 0))[1]
@@ -462,12 +545,12 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             actual_host = getattr(self.server, "server_address", ("127.0.0.1", 0))[0]
             allowed = {"127.0.0.1", "localhost"}
             if bind_host and bind_host not in ("0.0.0.0", "::", ""):
-                allowed.add(bind_host.lower())
+                allowed.add(_normalise_host(bind_host))
             if actual_host and actual_host not in ("0.0.0.0", "::", ""):
-                allowed.add(actual_host.lower())
+                allowed.add(_normalise_host(actual_host))
             allow_hosts = getattr(self.server, "allow_hosts", set())
             if allow_hosts:
-                allowed.update(ah.lower() for ah in allow_hosts)
+                allowed.update(_normalise_host(ah) for ah in allow_hosts)
             return h in allowed
         except Exception:
             return False
@@ -495,22 +578,30 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
 
         def _is_allowed_host(host_str: str) -> bool:
             if not host_str:
-                return True
-            h = host_str.lower()
-            if allow_remote:
-                return True
-            allowed = {"127.0.0.1", "localhost"}
-            if bind_host and bind_host not in ("0.0.0.0", "::", ""):
-                allowed.add(bind_host.lower())
-            if actual_host and actual_host not in ("0.0.0.0", "::", ""):
-                allowed.add(actual_host.lower())
+                return not listener_requires_tls(bind_host, allow_remote)
+            h = _normalise_host(host_str)
+            allowed = set()
+            if listener_requires_tls(bind_host, allow_remote):
+                allowed.update(
+                    _normalise_host(value)
+                    for value in (bind_host, actual_host)
+                    if value and value not in _WILDCARD_HOSTS
+                )
+                allowed.update(_normalise_host(value) for value in allow_hosts)
+                allowed.update(getattr(self.server, "cert_san_names", set()) or set())
+                return bool(h) and h in allowed
+
+            allowed.update(_LOOPBACK_HOSTS)
+            if bind_host and bind_host not in _WILDCARD_HOSTS:
+                allowed.add(_normalise_host(bind_host))
+            if actual_host and actual_host not in _WILDCARD_HOSTS:
+                allowed.add(_normalise_host(actual_host))
             if allow_hosts:
-                allowed.update(ah.lower() for ah in allow_hosts)
+                allowed.update(_normalise_host(value) for value in allow_hosts)
             return h in allowed
 
-        raw_host = self.headers.get("Host", "").strip() if hasattr(self, "headers") and self.headers else ""
-        host = raw_host.split(":")[0].lower() if raw_host else ""
-        if host and not _is_allowed_host(host):
+        host = self._request_host_name()
+        if not _is_allowed_host(host):
             self.send_error(403, "Forbidden: invalid Host header")
             return False
 
@@ -688,6 +779,7 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
                     "scan_id": _state.get("scan_id"),
                     "running": _state.get("running", False),
                     "done": _state.get("done", False),
+                    "finalizing": bool(_state.get("_fleet_worker_active") or _state.get("_fleet_operation")),
                     "error": _state.get("error"),
                     "total": _state.get("total", 0),
                     "completed": _state.get("completed", 0),
@@ -749,7 +841,11 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
 
         elif path == "/api/vault/entries":
             self._api_vault_entries()
+        elif path == "/api/vault/bmc-pins":
+            self._api_vault_bmc_pins()
 
+        elif path == "/api/vault/services":
+            self._api_vault_services("list")
         elif path == "/api/vault/jump-hosts":
             self._api_jump_hosts_list()
 
@@ -819,6 +915,19 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
         elif path == "/metrics":
             self._serve_prometheus_metrics(parsed.query)
 
+        elif path == "/api/plugins/mtat":
+            self._api_mtat_catalog()
+        elif path.startswith("/api/plugins/mtat/jobs/"):
+            self._api_mtat_job_get(path)
+        elif path == "/api/plugins/vinv":
+            self._api_vinv_catalog()
+        elif path.startswith("/api/plugins/vinv/jobs/"):
+            self._api_vinv_job_get(self.path)
+        elif path == "/api/plugins/vinv/library" or path.startswith("/api/plugins/vinv/library/"):
+            self._api_vinv_library_get(self.path)
+        elif path == "/api/plugins/vinv/reconciled/fleet.html":
+            self._api_vinv_reconciled_fleet()
+
         else:
             self.send_error(404)
 
@@ -860,6 +969,10 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
 
         if path == "/api/plugins/vdt/install":
             self._api_vdt_install()
+        elif path == "/api/plugins/mtat/install":
+            self._api_mtat_install()
+        elif path.startswith("/api/plugins/mtat/upstream/"):
+            self._api_mtat_upstream(path.rsplit('/', 1)[-1])
         elif path == "/api/plugins/vdt/discover":
             self._api_vdt_discover()
         elif path in ("/api/plugins/vdt/remote/probe", "/api/plugins/vdt/remote/preflight", "/api/plugins/vdt/remote/run", "/api/plugins/vdt/remote/cancel"):
@@ -927,6 +1040,14 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             self._api_vault_lock()
         elif path == "/api/vault/entries":
             self._api_vault_set_entry()
+        elif path == "/api/vault/bmc-pins":
+            self._api_vault_bmc_pins(save=True)
+        elif path == "/api/vault/services":
+            self._api_vault_services("save")
+        elif path == "/api/vault/services/remove":
+            self._api_vault_services("remove")
+        elif path == "/api/vault/services/trust":
+            self._api_vault_services("trust")
         elif path == "/api/vault/remove":
             self._api_vault_remove()
         elif path == "/api/vault/import-csv":
@@ -958,6 +1079,37 @@ class AppHandler(GroupApiMixin, HclExportApiMixin, VdtSetupApiMixin, RemoteVdtAp
             self._send_json({"ok": True})
             threading.Thread(target=lambda: (time.sleep(0.3),
                                              _shutdown_event.set()), daemon=True).start()
+        elif path == "/api/plugins/mtat/preflight":
+            self._api_mtat_preflight()
+        elif path == "/api/wizard/artifacts":
+            from vcf_hci.web.wizard_artifacts import save_artifacts
+            save_artifacts(self)
+        elif path == "/api/plugins/mtat/jobs":
+            self._api_mtat_jobs_post()
+        elif path.startswith("/api/plugins/mtat/jobs/") and path.endswith("/cancel"):
+            self._api_mtat_cancel(path)
+        elif path == "/api/plugins/vinv/preflight":
+            self._api_vinv_preflight()
+        elif path == "/api/plugins/vcenter-check":
+            from vcf_hci.web.vcenter_check_api import handle_vcenter_check
+            handle_vcenter_check(self)
+        elif path == "/api/plugins/esxi-usb/targets":
+            from vcf_hci.web.esxi_usb_api import handle_esxi_targets
+            handle_esxi_targets(self)
+        elif path == "/api/plugins/esxi-usb/jobs":
+            from vcf_hci.web.esxi_usb_api import handle_esxi_scan
+            handle_esxi_scan(self)
+        elif path == "/api/plugins/vinv/jobs":
+            self._api_vinv_jobs_post()
+        elif path.startswith("/api/plugins/vinv/jobs/") and path.endswith("/cancel"):
+            self._api_vinv_cancel(path)
+        elif path == "/api/plugins/vinv/import":
+            self._api_vinv_import()
+        elif path.startswith("/api/plugins/vinv/saved/"):
+            self._api_vinv_saved_post(path)
+        elif path == "/api/plugins/vinv/detach" or path.startswith("/api/plugins/vinv/library/"):
+            self._api_vinv_library_post(path)
+
         else:
             self.send_error(404)
 
@@ -996,6 +1148,7 @@ def make_server(
     tls_cert: Optional[str] = None,
     tls_key: Optional[str] = None,
     plugins_dir: Optional[str] = None,
+    cert_san_names: Optional[set] = None,
 ) -> _ThreadingHTTPServer:
     """Create a ThreadingHTTPServer bound to the given host and port.
 
@@ -1012,8 +1165,20 @@ def make_server(
     server.vdt_plugin = discover_vdt(plugins_dir)
     server.vdt_lock = threading.Lock()
     server.vdt_sessions = {}
+    server.mtat_lock = threading.Lock()
+    # Session-keyed for future multi-session hardening; beta still mints one session.
+    server.mtat_job = {}
     server.vdt_plugin_root = os.path.abspath(plugins_dir) if plugins_dir is not None else str(default_plugin_root())
+    server.mtat_runtime = RuntimeManager(Path(server.vdt_plugin_root))
+    # Jobs carry session ownership; per-session busy checks are future hardening while beta still mints one session.
     server.vdt_remote_jobs = {}
+    server.experimental_mtat = True
+    server.experimental_vinv = True
+    server.cert_san_names = set(cert_san_names or ())
+    server.vinv_lock = threading.Lock()
+    # Session-keyed for future multi-session hardening; beta still mints one session.
+    server.vinv_job = {}
+    server.vinv_library = VinvLibrary()
     if tls_cert and tls_key:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -1063,7 +1228,9 @@ def main() -> None:
         "--port", "-p", type=int, default=7182, help="Port to bind HTTP server to (default: 7182)"
     )
     parser.add_argument(
-        "--bind", "-b", type=str, default="127.0.0.1", help="IP interface to bind server to (default: 127.0.0.1)"
+        "--bind", "-b", type=str, default="127.0.0.1",
+        help=("IP interface to bind (default: 127.0.0.1). A non-loopback bind requires TLS; "
+              "without --allow-remote, a warning explains that local-mode gates stay local."),
     )
     parser.add_argument(
         "--no-browser", action="store_true", help="Do not automatically open the default web browser"
@@ -1072,7 +1239,13 @@ def main() -> None:
         "--import-hcl", type=str, default=None, help="Path to offline air-gapped dark-site HCL zip bundle"
     )
     parser.add_argument(
-        "--allow-remote", action="store_true", help="Explicitly allow binding and remote connections across all network interfaces (0.0.0.0 / ::). Requires --tls-cert and --tls-key."
+        "--allow-remote", action="store_true",
+        help=("Opt in to remote access; not the recommended headless setup. Prefer a loopback bind "
+              "and the SSH forward in docs/INSTALL.md. Requires --tls-cert and --tls-key."),
+    )
+    parser.add_argument(
+        "--allow-host", action="append", default=[], metavar="HOST",
+        help="Additional Host name accepted by an exposed HTTPS listener; repeat for each name.",
     )
     parser.add_argument(
         "--tls-cert", type=str, default=None, help="PEM certificate for the Web UI listener. Required with --allow-remote or a non-loopback --bind."
@@ -1087,7 +1260,20 @@ def main() -> None:
         "--crawl", "--crawl-endpoints", action="store_true", dest="crawl", help="Launch with deep Redfish crawling enabled by default"
     )
     parser.add_argument("--plugins-dir", default=None, help="Optional plugin folder (default: Plugins beside the source or executable)")
+    parser.add_argument(
+        "--nvme-namespace-preview", action="store_true",
+        help="Include TLC RI 1 DWPD ESA drive tags and NVMe namespace sizing Help (default: off)",
+    )
+    parser.add_argument(
+        "--no-hcl-auto-refresh", action="store_true",
+        help="Keep startup HCL data offline; disable the background public BCG refresh",
+    )
     args = parser.parse_args()
+    from vcf_hci.hcl.memory_tiering import PREVIEW_ENV
+    if args.nvme_namespace_preview:
+        os.environ[PREVIEW_ENV] = "1"
+    else:
+        os.environ.pop(PREVIEW_ENV, None)
 
     # Safety check: Prevent accidental wildcard network exposures unless --allow-remote is provided
     if args.bind in ("0.0.0.0", "::", "") and not args.allow_remote:
@@ -1104,6 +1290,36 @@ def main() -> None:
     if tls_err:
         print(f"\n  [✗] {tls_err}\n", file=sys.stderr)
         sys.exit(1)
+
+    exposed = listener_requires_tls(args.bind, args.allow_remote)
+    allow_hosts = {_normalise_host(value) for value in args.allow_host}
+    if "" in allow_hosts:
+        print("\n  [✗] SECURITY BLOCK: --allow-host requires a hostname or IP address.\n", file=sys.stderr)
+        sys.exit(1)
+    cert_san_names = set()
+    if exposed and args.tls_cert:
+        try:
+            cert_san_names = _certificate_san_names(args.tls_cert)
+        except (OSError, ssl.SSLError, ValueError) as exc:
+            print(f"\n  [✗] SECURITY BLOCK: could not read listener certificate names: {exc}\n", file=sys.stderr)
+            sys.exit(1)
+
+    bind_name = _normalise_host(args.bind)
+    specific_bind = bool(bind_name and bind_name not in _WILDCARD_HOSTS)
+    if args.allow_remote and not specific_bind and not allow_hosts and not cert_san_names:
+        print(
+            "\n  [✗] SECURITY BLOCK: wildcard remote listeners need at least one certificate DNS/IP SAN "
+            "or --allow-host name. Pass --allow-host once for each name browsers will use.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    gap_warning = None
+    if _remote_gate_gap(args.bind, args.allow_remote):
+        gap_warning = _remote_gate_gap_warning(args.bind)
+        print("\n" + gap_warning + "\n", file=sys.stderr)
+
+    allow_remote_warning = None
 
     global _OEM_MODE
     if getattr(args, "oem", False) or getattr(args, "crawl", False):
@@ -1144,19 +1360,30 @@ def main() -> None:
         else:
             print(f"  [✗] WARNING: Dark-Site HCL Bundle not found: {args.import_hcl}", file=sys.stderr)
 
-    exposed = listener_requires_tls(args.bind, args.allow_remote)
     try:
         server = make_server(
             port,
             host=args.bind,
             allow_remote=args.allow_remote,
+            allow_hosts=allow_hosts,
             tls_cert=args.tls_cert if exposed else None,
             tls_key=args.tls_key if exposed else None,
             plugins_dir=args.plugins_dir,
+            cert_san_names=cert_san_names,
         )
     except (OSError, ssl.SSLError, ValueError) as exc:
         print(f"\n  [✗] SECURITY BLOCK: could not start the TLS listener: {exc}\n", file=sys.stderr)
         sys.exit(1)
+
+    if args.allow_remote:
+        allowed_names = set(allow_hosts) | set(cert_san_names)
+        actual_name = _normalise_host(server.server_address[0])
+        if actual_name and actual_name not in _WILDCARD_HOSTS:
+            allowed_names.add(actual_name)
+        if specific_bind:
+            allowed_names.add(bind_name)
+        allow_remote_warning = _allow_remote_warning(allowed_names)
+        print("\n" + allow_remote_warning + "\n", file=sys.stderr)
 
     scheme = "https" if server.tls_enabled else "http"
     tokenized_url = f"{scheme}://{display_host}:{port}/?token={_LAUNCH_TOKEN}"
@@ -1165,9 +1392,17 @@ def main() -> None:
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     server.update_checker.start()
+    from vcf_hci.web.hcl_startup import start_hcl_refresh
+    start_hcl_refresh(disabled=args.no_hcl_auto_refresh, imported_bundle=args.import_hcl)
 
     print("\n  VCF Readiness Assessment")
     print("  ─────────────────────────────────────────────────────")
+    if gap_warning:
+        print(_indented_warning(gap_warning))
+        print("  ─────────────────────────────────────────────────────")
+    if allow_remote_warning:
+        print(_indented_warning(allow_remote_warning))
+        print("  ─────────────────────────────────────────────────────")
     if server.tls_enabled:
         print("  [!] Remote Web UI is HTTPS (TLS 1.2+).")
         print("      The launch URL works once. After the browser loads, it stops working.")

@@ -49,19 +49,21 @@ JS_CORE = """
   });
 
   // Section links retain form nodes and active scan connections.
-  function showAppSection(focusHeading) {
+  function activeAppSection() {
     var name = window.location.hash.slice(1);
     var section = document.getElementById(name);
-    if (!section || !section.hasAttribute('data-app-section')) {
-      name = 'scanner';
-      section = document.getElementById(name);
-    }
+    return section && section.hasAttribute('data-app-section') ? name : 'scan-wizard';
+  }
+
+  function showAppSection(focusHeading) {
+    var name = activeAppSection();
+    var section = document.getElementById(name);
     if (typeof syncWizardLayout === 'function') syncWizardLayout(name);
     document.querySelectorAll('[data-app-section]').forEach(function(panel) {
       panel.hidden = panel !== section;
     });
     document.querySelectorAll('[data-section-link]').forEach(function(link) {
-      if (link.dataset.sectionLink === name) link.setAttribute('aria-current', 'page');
+      if (link.dataset.sectionLink === name || (link.dataset.sectionLink === 'plugins' && (name === 'mtat-experimental' || name === 'vinv-experimental' || name === 'vdt-plugin'))) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
     if (name === 'credential-vault' && typeof _vaultState !== 'undefined') refreshVaultStatus();
@@ -151,6 +153,81 @@ JS_CORE = """
     }).then(_handleFetchResponse);
   }
 
+  // Execution-specific outer host concurrency; SSH transport latency is not BMC latency.
+  var scanConcurrencyMode = 'local';
+  var scanConcurrencyChoices = {local:{value:12, source:'default'}, remote:{value:16, source:'default'}};
+  var scanDirectLatency = null;
+  function scanExecutionMode() { return document.getElementById('execRemote').checked ? 'remote' : 'local'; }
+  function boundedHostConcurrency(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    var number = Number(value);
+    return Number.isInteger(number) && number >= 1 && number <= 32 ? number : null;
+  }
+  function syncScanConcurrency() {
+    var mode = scanExecutionMode(), input = document.getElementById('threadsInput');
+    if (mode !== scanConcurrencyMode) {
+      var previous = boundedHostConcurrency(input.value);
+      if (previous !== null) scanConcurrencyChoices[scanConcurrencyMode].value = previous;
+      scanConcurrencyMode = mode;
+    }
+    var choice = scanConcurrencyChoices[mode];
+    input.value = choice.value;
+    var remote = mode === 'remote';
+    document.getElementById('threadsLabel').textContent = remote ? 'Concurrent BMC hosts per jump host' : 'Concurrent BMC hosts';
+    var reason = {manual:'Your manual setting. ', profile:'Loaded from a scan profile. ', saved:'Restored from your saved setting. ', legacy:'Restored from the previous session for direct scans. ', latency:'Adjusted for high BMC latency measured from this computer. ', retry:'Gentle retry setting. ', default:'Recommended starting point. '}[choice.source] || '';
+    document.getElementById('threadsHint').textContent = reason + (remote ?
+      'Start with 16 simultaneous BMC host assessments per jump host (adjustable 1–32). Your VPN to the jump host does not set this count. Each worker adapts to its own BMC latency and CPU/memory pressure.' :
+      'Simultaneous BMC host assessments from this computer (1–32): usually 12 on a LAN, 6 when direct BMC latency is high.');
+    document.getElementById('threadsScopeHint').textContent = 'This controls hardware host scans, not individual HTTPS connections or vCenter Inventory/MTAT collections. Inventory and MTAT use separate collection scheduling.';
+    var warning = document.getElementById('vpnWarning');
+    if (warning) toggle(warning, !remote && !!scanDirectLatency);
+  }
+  function setScanConcurrency(value, source) {
+    syncScanConcurrency();
+    var number = boundedHostConcurrency(value);
+    if (number === null) return;
+    scanConcurrencyChoices[scanConcurrencyMode] = {value:number, source:source};
+    syncScanConcurrency();
+  }
+  function applyDiscoveryConcurrency(highLatency, average, targets) {
+    // Ignore stale discovery responses after the target field changes.
+    if (targets !== document.getElementById('rangeInput').value.trim()) return;
+    scanDirectLatency = highLatency ? {average:average || 0} : null;
+    var local = scanConcurrencyChoices.local;
+    if (['default','latency','legacy'].indexOf(local.source) >= 0) {
+      scanConcurrencyChoices.local = {value:highLatency ? 6 : (local.source === 'latency' ? 12 : local.value), source:highLatency ? 'latency' : local.source === 'latency' ? 'default' : local.source};
+    }
+    document.getElementById('vpnLatency').textContent = average || '0';
+    syncScanConcurrency();
+  }
+  function restoreScanConcurrency(session) {
+    var preferences = session.host_concurrency;
+    if (preferences && typeof preferences === 'object') {
+      ['local','remote'].forEach(function(mode) {
+        if (['manual','profile','retry'].indexOf(scanConcurrencyChoices[mode].source) >= 0) return;
+        var record = preferences[mode], value = record && boundedHostConcurrency(record.value);
+        if (value !== null && value !== undefined && record) scanConcurrencyChoices[mode] = {value:value, source:['manual','profile','saved','legacy','latency','retry','default'].indexOf(record.source) >= 0 ? record.source : 'saved'};
+      });
+    } else if (boundedHostConcurrency(session.threads) !== null && ['manual','profile','retry'].indexOf(scanConcurrencyChoices.local.source) < 0) {
+      // Legacy sessions did not identify execution mode: never apply their VPN value to a jump host.
+      scanConcurrencyChoices.local = {value:Number(session.threads), source:'legacy'};
+    }
+    syncScanConcurrency();
+  }
+  document.getElementById('threadsInput').addEventListener('input',function(event) {
+    if (!event.isTrusted) return;
+    var value = boundedHostConcurrency(this.value);
+    if (value !== null) scanConcurrencyChoices[scanExecutionMode()] = {value:value, source:'manual'};
+    // Keep partial/invalid edits intact for the existing change/validation handling.
+  });
+  document.getElementById('threadsInput').addEventListener('change',function(event) {
+    if (event.isTrusted) setScanConcurrency(Math.max(1, Math.min(32, parseInt(this.value, 10) || 12)), 'manual');
+  });
+  document.getElementById('threadsResetBtn').addEventListener('click',function() {
+    setScanConcurrency(scanExecutionMode() === 'remote' ? 16 : scanDirectLatency ? 6 : 12, scanExecutionMode() === 'local' && scanDirectLatency ? 'latency' : 'default');
+  });
+  syncScanConcurrency();
+
   // ── Session save/restore ──────────────────────────────────────────────────
   function saveSession() {
     var chosenProfile = (document.querySelector('input[name=scanProfile]:checked') || {}).value || 'readiness-full';
@@ -159,6 +236,7 @@ JS_CORE = """
       username:        document.getElementById('usernameInput').value,
       output_dir:      document.getElementById('outdirInput').value,
       threads:         document.getElementById('threadsInput').value,
+      host_concurrency: scanConcurrencyChoices,
       profile:         chosenProfile,
       mode:            chosenProfile === 'inventory-lite' ? 'quick' : 'full',
       combined_report: document.getElementById('combinedChk').checked,
@@ -298,7 +376,7 @@ JS_CORE = """
       inp.value = s.output_dir;
       inp.dataset.customized = 'true';
     }
-    if (s.threads)     document.getElementById('threadsInput').value  = s.threads;
+    restoreScanConcurrency(s);
     if (s.profile) {
       var pRadio = document.querySelector('input[name=scanProfile][value="'+s.profile+'"]');
       if (pRadio) pRadio.checked = true;
@@ -424,7 +502,7 @@ JS_CORE = """
       if (p.range)      { document.getElementById('rangeInput').value = p.range || ''; updateHostGates(); }
       if (p.username)   document.getElementById('usernameInput').value = p.username || '';
       if (p.output_dir) document.getElementById('outdirInput').value   = p.output_dir || '';
-      if (p.threads)    document.getElementById('threadsInput').value  = p.threads || 12;
+      if (p.threads) setScanConcurrency(p.threads, 'profile');
       // Load password from keychain
       post('/api/keychain/retrieve', {key: 'profile:' + name}).then(function(r) {
         if (r.value) document.getElementById('passwordInput').value = r.value;

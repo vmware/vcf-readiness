@@ -374,6 +374,8 @@ def redfish_get(
                 except (socket.timeout, TimeoutError):
                     raise
                 except (http.client.HTTPException, ConnectionError, OSError) as exc:
+                    if getattr(conn_pool, "remote_only", False):
+                        raise RuntimeError("Host-local transport failed; direct fallback refused") from None
                     if "timed out" in str(exc).lower():
                         raise socket.timeout(str(exc)) from exc
                     target_host = str(getattr(collector, "host", "") or "")

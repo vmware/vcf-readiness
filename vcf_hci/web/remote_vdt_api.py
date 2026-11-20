@@ -16,6 +16,7 @@ from vcf_hci.plugins.vcenter_probe import probe_vcenter, select_vdt
 from vcf_hci.remote.executor import RemoteExecError, _redact, probe_jump_host_key
 from vcf_hci.web.desktop import _is_safe_desktop_folder
 from vcf_hci.web.export_api import _ApiMixinBase
+from vcf_hci.web.plugin_credentials import resolve_plugin_credentials
 
 _TERMINAL = ('completed', 'failed', 'cancelled', 'needs_credentials')
 _MESSAGES = {
@@ -253,6 +254,8 @@ class RemoteVdtApiMixin(_ApiMixinBase):
             if action not in ('preflight', 'run'):
                 self._send_json({'error': 'Unknown VDT remote action.'}, 404)
                 return
+            if not resolve_plugin_credentials(self, data, "vcenter", "vdt"):
+                return
             payload = _selected_payload(server, data.get('folder'), data.get('product'))
             target = data.get('target', data)
             if not isinstance(target, dict):
@@ -283,7 +286,8 @@ class RemoteVdtApiMixin(_ApiMixinBase):
             if not _is_safe_desktop_folder(output):
                 raise ValueError('Choose an output folder under your home, report output, or temporary directory.')
             with server.vdt_lock:
-                if any(job['status'] not in _TERMINAL for job in server.vdt_remote_jobs.values()):
+                if any(job['status'] not in _TERMINAL for job in server.vdt_remote_jobs.values()
+                       if job['_session'] == session):
                     self._send_json({'error': 'A VDT collection is already active. Wait for it or cancel it first.'}, 409)
                     return
                 own_jobs = sorted((job for job in server.vdt_remote_jobs.values() if job['_session'] == session), key=lambda item: item['created_at'])

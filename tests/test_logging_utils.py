@@ -189,6 +189,16 @@ class TestScanOutputAndAliases(unittest.TestCase):
             summary_path = os.path.join(scan_dir, "00_fleet_summary.html")
             with open(summary_path, "w", encoding="utf-8") as f:
                 f.write("<html>Summary</html>")
+            for metadata in (".DS_Store", "Icon\r", "._summary.html"):
+                # Finder can create this POSIX filename; Windows rejects its
+                # carriage return before the archive code can be exercised.
+                if os.name == "nt" and metadata == "Icon\r":
+                    continue
+                with open(os.path.join(scan_dir, metadata), "w", encoding="utf-8") as f:
+                    f.write("Private Finder metadata")
+            os.makedirs(os.path.join(scan_dir, "__MACOSX"))
+            with open(os.path.join(scan_dir, "__MACOSX", "private.txt"), "w", encoding="utf-8") as f:
+                f.write("Private Finder metadata")
 
             zip_path = create_scan_zip_archive(scan_dir)
 
@@ -201,6 +211,7 @@ class TestScanOutputAndAliases(unittest.TestCase):
                 namelist = zf.namelist()
                 self.assertIn("Scan_2026-08-19_1430_2hosts/00_fleet_summary.html", namelist)
                 self.assertNotIn("Scan_2026-08-19_1430_2hosts/Scan_2026-08-19_1430_2hosts.zip", namelist)
+                self.assertFalse(any(".DS_Store" in n or "Icon\r" in n or "._summary" in n or "__MACOSX" in n for n in namelist))
 
     def test_update_latest_scan_aliases_creates_and_removes_aliases(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -336,6 +347,16 @@ class TestCreateObfuscatedScanZipArchive(unittest.TestCase):
             with open(os.path.join(data_dir, "OBFUSCATED_Host-1.json"), "w", encoding="utf-8") as f:
                 json.dump({"target": "Host-1", "host": "Host-1", "obfuscated": True, "system": {"model": "R750"}}, f)
 
+            executive_dir = os.path.join(scan_dir, "executive reports")
+            os.makedirs(executive_dir)
+            for name in ("00_executive_summary.html", "00_OBFUSCATED_executive_summary.html"):
+                with open(os.path.join(executive_dir, name), "w", encoding="utf-8") as stream:
+                    stream.write(name)
+            inventory_dir = os.path.join(scan_dir, "Inventory-files")
+            os.makedirs(inventory_dir)
+            for name in ("00_fleet_summary.csv", "00_OBFUSCATED_fleet_summary.csv"):
+                with open(os.path.join(inventory_dir, name), "w", encoding="utf-8") as stream:
+                    stream.write(name)
             zip_path = create_obfuscated_scan_zip_archive(scan_dir)
             self.assertTrue(os.path.isfile(zip_path))
             self.assertTrue(zip_path.endswith("_OBFUSCATED.zip"))
@@ -343,7 +364,12 @@ class TestCreateObfuscatedScanZipArchive(unittest.TestCase):
             with zipfile.ZipFile(zip_path, "r") as zf:
                 self.assertIsNone(zf.testzip())
                 names = zf.namelist()
+                self.assertTrue(any(name.endswith('/executive reports/00_OBFUSCATED_executive_summary.html') for name in names))
+                self.assertFalse(any(name.endswith('/executive reports/00_executive_summary.html') for name in names))
                 root = "run-test-scan_OBFUSCATED"
+
+                self.assertIn(f"{root}/Inventory-files/00_OBFUSCATED_fleet_summary.csv", names)
+                self.assertNotIn(f"{root}/Inventory-files/00_fleet_summary.csv", names)
 
                 # Check required sanitized artifacts
                 self.assertIn(f"{root}/README.txt", names)

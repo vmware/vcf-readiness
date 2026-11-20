@@ -16,3 +16,30 @@ The HCL package loads local compatibility datasets, imports and exports dark-sit
 Use `--refresh-hcl`, `--bundle-hcl`, or the browser refresh action when a public download is intended. `--import-hcl` and browser export of active local data support transfer into isolated environments. A 30-day age threshold is a freshness indicator, not an automatic refresh schedule. Baseline or unverified data must remain labeled as such in readiness workflows.
 
 See [installation and dark-site operation](../../docs/INSTALL.md#offline-and-air-gapped-operation) and [architecture](../../ARCHITECTURE.md).
+
+## Memory Tiering drive listings
+
+`memory_tiering_catalog.py` is the packaged public BCG `memorytier` fallback with
+model, partner, product ID, listed releases and retrieval date. The active local
+cache is `memory_tiering.json`. Online Web UI launch refreshes vSAN and Memory
+Tiering data once in the background and rebuilds the local bundle; suppress this
+with `--no-hcl-auto-refresh` or preload `--import-hcl`. The Refresh Live HCL action
+and CLI `--refresh-hcl` / `--bundle-hcl` also refresh Memory Tiering. Failed/partial downloads retain
+the last valid cache or packaged fallback. No network request runs during report
+generation or ordinary HCL loading.
+
+CLI bundle creation and browser ZIP export include `memory_tiering.json`. Import
+uses that ZIP's catalog ahead of local data, including its own retrieval date;
+older ZIPs fall back to the packaged snapshot. Export preserves the selected
+bundle's catalog and includes it in the manifest and SHA-256 inventory. The
+developer fallback generator remains `python tools/sync_memory_tiering.py`;
+`--input` supports a previously retrieved viewResults response.
+
+`memory_tiering.py` uses exact model names, complete SKU tokens or exact local HCL
+aliases with capacity checks. A Mem Tier badge establishes a catalog listing;
+firmware/release/deployment validation remains separate. Family-only or unknown
+matches stay untagged. The web `--nvme-namespace-preview` flag additionally enables
+TLC RI 1 DWPD ESA drives and their namespace-sizing Help. Identification requires
+explicit rated NAND/endurance metadata or a reviewed product brief (including exact
+HCL aliases for OEM SKUs); absence from the QLC list never proves TLC. Extend the
+reviewed evidence registry for additional opaque models rather than guessing.

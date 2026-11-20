@@ -27,15 +27,15 @@
 - **`wsman.py`**: `WsManCollector` handling legacy WS-Man / AMT out-of-band management protocols.
 
 ### Subpackages
-- **[`collector/`](collector/README.md)**: Layer A Redfish API query engine, hardware collection mixins, diagnostic hypermedia crawler (`crawler.py`), and vendor-specific OEM hook subclasses (`dell.py`, `hpe.py`, `supermicro.py`, `cisco.py`, `lenovo.py`, `intel.py`, `quanta.py`, `gigabyte.py`).
+- **[`collector/`](collector/README.md)**: Layer A Redfish API query engine, hardware collection mixins, diagnostic hypermedia crawler (`crawler.py`), and vendor-specific OEM hook subclasses (`dell.py`, `hpe.py`, `supermicro.py`, `cisco.py`, `lenovo.py`, `intel.py`, `quanta.py`, `gigabyte.py`, `asrock.py`).
 - **`security/`**: BMC Hardware Security Audit engine evaluating 84 canonical controls, standard DMTF Redfish + Dell iDRAC9 / HPE iLO OEM evaluators, recursive secret redaction, host/fleet posture scoring, and zero-dependency IPMI 2.0 RMCP+ Cipher Suite 0 network probing (`ipmi_probe.py`).
 - **[`report/`](report/README.md)**: Layer D standalone HTML report generator (`host_report.py`, `fleet/`), multi-vendor SEL deep-link resolver (`sel_links.py`), SE Decision Matrix and inventory tables (`inventory_tables.py`), multi-sheet Excel exporter (`excel_export.py`), standardized CSV exporter (`csv_export.py`), centralized Schema v2.0 domain registry (`schema_registry.py`), and switch buffer taxonomy / ASIC intelligence (`switch_topology.py`).
 - **[`hcl/`](hcl/README.md)**: Broadcom vSAN HCL dataset loader, offline bundle manager, PCI component cross-referencing, and offline certified Network I/O catalog (`io_nics.json`).
 - **`bios/`**: BIOS feature evaluators (`power_modes.py`, `ras_modes.py`, `security.py`).
 - **`servicetag/`**: Dell TechDirect API integration and warranty lookup (`dell_api.py`, `esa_evaluator.py`).
 - **`web/`**: Single-page browser application, embedded Clarity CSS assets (`assets.py`), SSE API server (`server.py`), modular endpoints (`fleet_api.py`, `scan_api.py`, `import_api.py`, `export_api.py`, `security_api.py`, `session_api.py`), modular assets (`app_*.py`, `docs_*.py`), and the opt-in in-memory vault holder (`vault_session.py`).
-- **`vault/`**: Optional, off-by-default encrypted local credential vault (`crypto.py`, `store.py`, `csv_io.py`, `cli.py`, `session.py`, `python -m vcf_hci.vault`). PBKDF2 with optional installed AES-256-GCM support, or stdlib HMAC-SHA256 Encrypt-then-MAC; exact → CIDR → default resolution. Must never import `vcf_hci.web`, `compat_engine`, or `bcg_links`. See [docs/CREDENTIAL_VAULT.md](../docs/CREDENTIAL_VAULT.md).
-- **`plugins/`**: Scanner-owned VDT discovery, bounded ZIP installation, evidence normalization and appliance execution adapters. Upstream payloads are separate operator installations under root `Plugins/`, excluded from shipment.
+- **`vault/`**: Optional, off-by-default encrypted local credential vault (`crypto.py`, `store.py`, `csv_import.py`, `providers.py`, `python -m vcf_hci.vault` via `__main__.py`). Jump-host profiles are `jump_hosts.py` and `jump_cli.py`. PBKDF2 with optional installed AES-256-GCM support, or stdlib HMAC-SHA256 Encrypt-then-MAC; exact → CIDR → default resolution. Must never import `vcf_hci.web`, `compat_engine`, or `bcg_links`. See [docs/CREDENTIAL_VAULT.md](../docs/CREDENTIAL_VAULT.md).
+- **`plugins/`**: Scanner-owned VDT discovery, bounded ZIP installation, evidence normalization and appliance execution adapters. Experimental MTAT (`plugins/mtat/`) reads vCenter or Operations after acknowledgement and returns local CSV; only the vCenter source lazy-loads the hash-pinned pyVmomi wheel. See [docs/MTAT_WORKLOAD_ASSESSMENT_EXPERIMENTAL.md](../docs/MTAT_WORKLOAD_ASSESSMENT_EXPERIMENTAL.md). Upstream VDT payloads remain separate operator installations under root `Plugins/`, excluded from shipment.
 - **`remote/`**: Pinned-SSH jump-host orchestration, ephemeral zipapp execution, artifact retrieval and guarded cleanup.
 - **`server_groups.py`**: Named multi-membership groups shared by scanner, fleet assembly, reports and exports.
 - **Core Orchestration & Infrastructure Modules**:
@@ -49,6 +49,6 @@
 
 ## Architectural Constraints
 
-1. **No Required External Runtime Packages:** Core scanning uses the standard library; the optional vault can use installed AES support. Upstream VDT remains operator-supplied and runs only through its explicit appliance workflow.
+1. **No Required External Runtime Packages:** Core scanning uses the standard library; the optional vault can use installed AES support. Upstream VDT remains operator-supplied and runs only through its explicit appliance workflow. Experimental MTAT is a separate read path; its pinned pyVmomi wheel loads only for the vCenter source.
 2. **Python 3.9+ Compatibility:** `Union[X, Y]` / `Optional[X]` annotations only.
 3. **Defensive Parsing:** All JSON decoding must handle non-JSON HTML error responses.

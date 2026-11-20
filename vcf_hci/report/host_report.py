@@ -25,7 +25,9 @@ from vcf_hci.compat_engine import VCF9CompatibilityEngine
 from vcf_hci.hcl import load_optional_vsan_csv, load_vsan_hcl_json
 from vcf_hci.report.disclosures import evidence_controls_html, supporting_evidence_html
 from vcf_hci.report.helpers import _h, html_escape
+from vcf_hci.report.memory_tiering import host_memory_tiering_status
 from vcf_hci.report.pcie_inventory import render_pcie_device_inventory
+from vcf_hci.report.power_cap import normalize_power_cap_evidence
 from vcf_hci.report.presentation import REPORT_UI_JS
 from vcf_hci.report.sections.bios_security import (
     render_bios_perf_card_and_accordion,
@@ -64,6 +66,11 @@ from vcf_hci.report.sections.storage import (
     enrich_drives_hcl,
     render_storage_subsystem_section,
     render_vsan_esa_ready_node_cards,
+)
+from vcf_hci.report.sections.vsphere_context import (
+    render_vsphere_context_card,
+    render_vsphere_context_section,
+    render_vsphere_network_section,
 )
 from vcf_hci.report.sel_links import render_vendor_guide_button
 from vcf_hci.report.styles import HOST_REPORT_CSS, THEME_TOGGLE_JS
@@ -127,7 +134,7 @@ def generate_host_html_report(
     data = dict(data, fc_hbas=normalize_fc_ports(data.get("fc_hbas", [])))
     fc_hbas = data["fc_hbas"]
     lldp_neighbors = data.get("lldp_neighbors", [])
-    psu = data.get("psu_status", {})
+    psu = normalize_power_cap_evidence(data.get("psu_status"))
     bmc_lic = data.get("bmc_license", {})
     pcie_switches = data.get("pcie_switches", [])
     pcie_slots = data.get("pcie_slots", [])
@@ -178,7 +185,9 @@ def generate_host_html_report(
     _cpu_deep_section_html = render_cpu_deep_section(cpu_info, sys_info, bios_info, cpu_verdict)
 
     _mem_section_html = render_memory_interleaving_section(mem_topo, bios_info=bios_info)
-    _memory_combined_card_html = render_memory_combined_card(mem_topo, sys_info, bios_info)
+    _memory_combined_card_html = render_memory_combined_card(
+        mem_topo, sys_info, bios_info, memory_tiering_html=host_memory_tiering_status(data, json_hcl, compact=True)
+    )
 
     _rn_card_html, _vsan_esa_card_html = render_vsan_esa_ready_node_cards(
         sys_info, cpu_info, nics, all_drives, esa_nvme_count, vmd_enabled, is_skylake_deprecated, data=data
@@ -200,7 +209,7 @@ def generate_host_html_report(
     sel_rows = render_sel_section(sel, vendor=_vendor_str)
     _sel_guide_btn = render_vendor_guide_button(_vendor_str)
 
-    _bios_perf_card_html, _ras_detail_section = render_bios_perf_card_and_accordion(bios_info, sys_info, bios_eval)
+    _bios_perf_card_html, _ras_detail_section = render_bios_perf_card_and_accordion(bios_info, sys_info, bios_eval, psu)
     _boot_order_section = render_boot_order_card(sys_info)
 
     # Vendor BIOS Tuning Guide link button for BIOS tab header
@@ -254,6 +263,10 @@ def generate_host_html_report(
     _warranty_card_html = render_warranty_card(warranty_info)
     _bundle_card_html = render_bundle_card(hcl_bundle_metadata)
     _os_card_html = render_os_card(host_os)
+    _vsphere_ctx = data.get("vsphere_context") if isinstance(data.get("vsphere_context"), dict) else None
+    _vsphere_card_html = render_vsphere_context_card(_vsphere_ctx)
+    _vsphere_section_html = render_vsphere_context_section(_vsphere_ctx)
+    _vsphere_network_html = render_vsphere_network_section(_vsphere_ctx, data)
     real_nics = [n for n in nics if not n.get("unsupported_license")]
     _driver_fw_alignment_card_html = render_driver_fw_alignment_card(real_nics, storage, json_hcl=json_hcl)
     _firmware_inv_section = render_firmware_inventory_section(data, sys_info, json_hcl=json_hcl)
@@ -374,6 +387,7 @@ def generate_host_html_report(
         {_vsan_esa_card_html}
         {_rn_card_html}
         {_os_card_html}
+        {_vsphere_card_html}
         {psu_card_html}
         {tel_cards}
         {_fc_hba_card_html}
@@ -400,6 +414,7 @@ def generate_host_html_report(
 
     <div id="tab-overview" class="tab-pane">
         {_rollup_detail_html}
+        {_vsphere_section_html}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
             <h2 style="margin:0">Recent System Event Log (SEL / IML)</h2>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -429,6 +444,7 @@ def generate_host_html_report(
 
     <div id="tab-memory" class="tab-pane">
         {render_memory_sizing_resources()}
+        {host_memory_tiering_status(data, json_hcl)}
         {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=memory" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Memory in Redfish Explorer">🧭 Inspect Memory in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_mem_section_html}
         {tel_section}
@@ -451,7 +467,7 @@ def generate_host_html_report(
     </div>
 
     <div id="tab-pcie" class="tab-pane">
-        {render_pcie_device_inventory(data.get("pcie_devices"), pcie_slots)}
+        {render_pcie_device_inventory(data.get("pcie_devices"), pcie_slots, data.get("pcie_inventory_partial"))}
         {pcie_slot_section}
     </div>
 
@@ -462,6 +478,7 @@ def generate_host_html_report(
         {f'<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;"><a href="redfish_explorer_{_ip}.html?fixture=network" target="_blank" class="btn-link" style="font-size:.8rem;color:var(--accent,#38bdf8);border:1px solid rgba(56,189,248,0.3);padding:2px 8px;border-radius:4px" title="Inspect Network Adapters in Redfish Explorer">🧭 Inspect NICs in Redfish ↗</a></div>' if _ip and data.get("_explorer_written") else ''}
         {_tor_switch_map_html}
         {network_section_html}
+        {_vsphere_network_html}
     </div>
 
     <div id="tab-health" class="tab-pane">

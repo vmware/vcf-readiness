@@ -617,6 +617,7 @@ class _SystemMixin(_CollectorBase):
             "persistent_boot_target": boot['persistent_boot_target'],
             "boot_order": boot['boot_order'],
             "boot_order_details": boot['boot_order_details'],
+            "boot_inventory_partial": boot.get("boot_inventory_partial") or {},
             "boot_override": boot['boot_override'],
             "total_memory_gb": (
                 (data.get("MemorySummary") or {}).get("TotalSystemMemoryGiB")

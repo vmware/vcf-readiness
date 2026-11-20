@@ -603,6 +603,8 @@ FLEET_SUMMARY_FIELDS: List[ExportField] = [
     ExportField("sku", "SKU / Part Number", "Host", _extract_sku, is_core=False),
     ExportField("scan_status", "Scan Status", "Host", _extract_scan_status, color_rule=color_for_verdict, is_core=True),
 
+    ExportField("access_path", "Access Path", "Host", lambda data: data.get("access_path", "bmc"), is_core=False),
+
     # Group 2: Readiness Summary Verdicts
     ExportField("vcf_support", "Overall VCF Support", "Verdicts", _extract_vcf_support, color_rule=color_for_verdict, is_core=True),
     ExportField("cpu_verdict", "CPU Support Tier", "Verdicts", _extract_cpu_verdict, color_rule=color_for_verdict, is_core=True),

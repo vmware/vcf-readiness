@@ -510,7 +510,7 @@ function showTab(n, subTab){
   });
   var activeBtn = null;
   document.querySelectorAll('.tab-btn').forEach(function(el, i){
-    var isActive = (i === n);
+    var isActive = el.dataset.tabTarget === 'tab-' + n;
     el.classList.toggle('active', isActive);
     if (isActive) activeBtn = el;
   });
@@ -637,7 +637,7 @@ function handleHashChange(){
   var rawHash = (location.hash || '').replace(/^#/, '').trim();
   if (!rawHash) return;
 
-  var match = rawHash.match(/^tab-(\d+)(?:[:/_-](tab-[a-z0-9_-]+|[a-z0-9_-]+))?$/i);
+  var match = rawHash.match(/^tab-(-?\d+)(?:[:/_-](tab-[a-z0-9_-]+|[a-z0-9_-]+))?$/i);
   if (match) {
     var tabNum = parseInt(match[1], 10);
     var sub = match[2] || '';

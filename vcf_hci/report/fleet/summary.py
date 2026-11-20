@@ -18,6 +18,7 @@ from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
 from vcf_hci.report.fleet.vendor import normalize_oem_vendor
 from vcf_hci.report.formatting import fleet_tpm_badge, format_report_html
 from vcf_hci.report.helpers import _h
+from vcf_hci.report.memory_tiering import host_memory_tiering_drives, memory_tiering_count_badge
 from vcf_hci.report.presentation import REPORT_UI_JS
 from vcf_hci.report.readiness import cpu_verdict_unassessed
 from vcf_hci.report.styles import FLEET_PAGE_CSS, THEME_TOGGLE_JS
@@ -33,6 +34,9 @@ def generate_summary_html(
     hcl_bundle_metadata: Optional[dict] = None,
     obfuscated: bool = False,
     failed_hosts: Optional[list] = None,
+    json_hcl: Optional[dict] = None,
+    vinv_report=None,
+    mtat_html: Optional[str] = None,
 ):
     """One-page fleet health dashboard with 13 check tiles, per-host assessment table, and failed host roster."""
     all_results = [storage_pcie_view(host) for host in all_results]
@@ -53,6 +57,9 @@ def generate_summary_html(
                 for i, r in enumerate(all_results)
             ]
 
+    if json_hcl is None:
+        from vcf_hci.hcl import load_vsan_hcl_json
+        json_hcl = load_vsan_hcl_json()
     host_count = len(all_results)
 
     _partial_count = sum(1 for d in all_results if d.get("partial_scan"))
@@ -232,22 +239,8 @@ def generate_summary_html(
         else:
             esa_td = f"<span class='badge danger'>🔴 Insufficient</span> <small style='color:var(--text-muted)'>{esa_count}</small>"
         _esa_sort = str(esa_count)
-        psu = data.get("psu_status", {})
-        is_redundant = bool(psu.get("redundant"))
-        power_capped = bool(psu.get("power_limit_enforced"))
-        cap_badge = ""
-        if power_capped:
-            limit_w = psu.get("power_limit_watts")
-            tip_w = f"Power limit {limit_w} W" if limit_w is not None else "Power limit enforced"
-            cap_badge = f" <span class='badge warning' title='{_h(tip_w)}'>Cap</span>"
-
-        if is_redundant:
-            psu_td = f"<span class='badge success'>🟢 Redundant</span>{cap_badge}"
-            _psu_sort = "2" if power_capped else "1"
-        else:
-            psu_td = f"<span class='badge warning'>🟡 Single</span>{cap_badge}"
-            _psu_sort = "4" if power_capped else "3"
-
+        memory_tiering = host_memory_tiering_drives(data, json_hcl)
+        memory_tiering_total = memory_tiering["total"]
         # GPU column — vendor-classified labels
         _gpus = data.get("gpu_accelerators", [])
         gpu_count = len(_gpus)
@@ -379,13 +372,13 @@ def generate_summary_html(
             f"<td data-sort='{_h(_model_str)}'>{_h(_model_str)}{_partial_badge}</td>"
             f"<td data-sort='{_h(_cpu_model_raw)}'>{cpu_model_td}</td>"
             f"<td data-sort='{_cpu_sort}'>{cpu_jump}</td>"
-            f"{os_td_cell}"
             f"<td data-sort='{_tpm_sort}'>{tpm}</td>"
-            f"<td data-sort='{_sec_sort}'>{sec_td}</td>"
             f"<td data-sort='{_mem_pct}'>{mem_td}</td>"
             f"<td data-sort='{_esa_sort}'>{esa_td}</td>"
-            f"<td data-sort='{_psu_sort}'>{psu_td}</td>"
+            f"<td data-sort='{memory_tiering_total}'>{memory_tiering_count_badge(memory_tiering)}</td>"
             f"<td data-sort='{gpu_count}'>{gpu_td}</td>"
+            f"<td data-sort='{_sec_sort}'>{sec_td}</td>"
+            f"{os_td_cell}"
             f"</tr>"
         )
     # Build OEM dropdown options (sorted alphabetically, "All" first)
@@ -393,7 +386,7 @@ def generate_summary_html(
         f"<option value='{_h(v)}'>{_h(v)}</option>"
         for v in sorted(_oem_set)
     )
-    tiles_block = build_fleet_tiles_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt)
+    tiles_block = build_fleet_tiles_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt, json_hcl=json_hcl)
     switch_matrix_block = build_fleet_switch_matrix_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt, obfuscated=obfuscated)
     fc_matrix_block = build_fleet_fc_matrix_html(all_results, report_prefix=_report_prefix, page_salt=_page_salt, obfuscated=obfuscated)
 
@@ -498,12 +491,13 @@ def generate_summary_html(
     <th title="Click to sort">Model<span class="sort-ind">⇅</span></th>
     <th title="Click to sort">CPU Model<span class="sort-ind">⇅</span></th>
     <th title="Click to sort">CPU Support<span class="sort-ind">⇅</span></th>
-    {os_th_cell}<th title="Click to sort">TPM 2.0<span class="sort-ind">⇅</span></th>
-    <th title="Click to sort">BMC Security<span class="sort-ind">⇅</span></th>
+    <th title="Click to sort">TPM<span class="sort-ind">⇅</span></th>
     <th title="Click to sort">Memory Interleaving<span class="sort-ind">⇅</span></th>
     <th title="Click to sort">vSAN ESA Drives<span class="sort-ind">⇅</span></th>
-    <th title="Power supply redundancy and power cap enforcement">PSU<span class="sort-ind">⇅</span></th>
+    <th title="Identified NVMe Memory Tiering drives">Memory Tier Drives<span class="sort-ind">⇅</span></th>
     <th title="Click to sort">GPUs<span class="sort-ind">⇅</span></th>
+    <th title="Click to sort">BMC Security<span class="sort-ind">⇅</span></th>
+    {os_th_cell}
   </tr></thead>
   <tbody>{rows}</tbody>
 </table>
@@ -689,10 +683,18 @@ def generate_summary_html(
     executive_html_path, executive_pdf_path = write_executive_reports(all_results, os.path.dirname(os.path.abspath(output_filepath)), failed_hosts, obfuscated)
     executive_links = (
         '<nav aria-label="Executive reports" class="executive-report-links" style="padding:12px 24px">'
-        f'<a href="{_h(os.path.basename(executive_html_path))}">Executive summary</a> · '
-        f'<a href="{_h(os.path.basename(executive_pdf_path))}" download>Download executive PDF</a></nav>'
+        f'<a href="{_h(os.path.relpath(executive_html_path, os.path.dirname(os.path.abspath(output_filepath))).replace(os.sep, "/"))}">Executive summary</a> · '
+        f'<a href="{_h(os.path.relpath(executive_pdf_path, os.path.dirname(os.path.abspath(output_filepath))).replace(os.sep, "/"))}" download>Download executive PDF</a></nav>'
     )
     html_content = html_content.replace('<body>', '<body>' + executive_links, 1)
+    if not obfuscated:
+        extra = ''
+        if vinv_report is not None:
+            from vcf_hci.report.fleet.vsphere_reconciliation import render_fleet_reconciliation_html
+            extra += render_fleet_reconciliation_html(vinv_report)
+        if mtat_html:
+            extra += mtat_html
+        html_content = html_content.replace('</body>', extra + '</body>')
     html_safe = html_content.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
     with open(output_filepath, "w", encoding="utf-8", errors="replace") as f:
         f.write(format_report_html(html_safe))

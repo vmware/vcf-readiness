@@ -979,6 +979,8 @@ def build_ssl_context(
     ca_bundle: Optional[str] = None,
     tls_min_version: Optional[str] = None,
     legacy_ciphers: bool = False,
+    cadata: Optional[Union[str, bytes]] = None,
+    exposed: bool = False,
 ) -> ssl.SSLContext:
     """Create an ssl.SSLContext configured according to user preferences.
 
@@ -986,6 +988,8 @@ def build_ssl_context(
         verify_ssl: If True, enforce certificate validation and hostname checking.
                     If False (default), allow self-signed and unverified BMC certificates.
         ca_bundle: Optional filesystem path to a custom CA bundle (.pem / .crt).
+        cadata: Optional in-memory PEM bundle for exposed-listener requests.
+        exposed: If True, reject filesystem CA paths and fail closed on invalid custom PEM.
         tls_min_version: Minimum TLS protocol version required (e.g. "1.0", "1.1", "1.2", "1.3").
         legacy_ciphers: If True, permit legacy TLS 1.0/1.1 protocols and older OpenSSL cipher suites.
 
@@ -1004,12 +1008,28 @@ def build_ssl_context(
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
+    elif exposed and ca_bundle:
+        raise ValueError("Filesystem CA bundle paths are not accepted on an exposed listener.")
+    elif cadata is not None:
+        try:
+            ctx = ssl.create_default_context(cadata=cadata)
+            ctx.check_hostname = True
+            ctx.verify_mode = ssl.CERT_REQUIRED
+        except Exception as exc:
+            if exposed:
+                raise ValueError("Could not load the supplied PEM CA bundle.") from exc
+            logger.warning("Failed loading in-memory CA bundle: %s. Falling back to system trust store.", exc)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = True
+            ctx.verify_mode = ssl.CERT_REQUIRED
     elif ca_bundle and os.path.isfile(ca_bundle):
         try:
             ctx = ssl.create_default_context(cafile=ca_bundle)
             ctx.check_hostname = True
             ctx.verify_mode = ssl.CERT_REQUIRED
         except Exception as exc:
+            if exposed:
+                raise ValueError("Could not load the supplied CA bundle.") from exc
             logger.warning(
                 "Failed loading custom CA bundle '%s': %s. Falling back to system trust store.",
                 ca_bundle,

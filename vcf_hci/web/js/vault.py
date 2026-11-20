@@ -7,6 +7,8 @@ JS_VAULT = """
   // ── Discovery & Certificate Trust (TOFU) ──────────────────────────────────
   var _discoveredHosts = [];
   var _probedTargetRaw = '';
+  var _discoveryRequestGeneration = 0;
+  document.getElementById('rangeInput').addEventListener('input', function() { _discoveryRequestGeneration++; });
   var _pinnedThumbprints = {};
   var _modalCertsList = [];
 
@@ -14,6 +16,28 @@ JS_VAULT = """
     var count = Object.keys(_pinnedThumbprints).length;
     var el = document.getElementById('pinnedCertSummary');
     if (el) el.textContent = count + ' thumbprint(s) pinned';
+    document.dispatchEvent(new Event('bmc-trust-change'));
+  }
+
+  function persistBmcPins(pins) {
+    return postJson('/api/vault/bmc-pins', {pins:pins}).then(function(response) {
+      if (response.status !== 200 || !response.data.ok) throw new Error(response.data.error || 'Could not save BMC certificate pins to the vault.');
+      return response.data;
+    });
+  }
+  function saveAcceptedPins() {
+    if (!_vaultState.unlocked) {
+      var lockedStatus = document.getElementById('discStatus');
+      if (lockedStatus) lockedStatus.textContent = 'Certificate pins are active for this session. Unlock the Credential Vault to save them permanently.';
+      return Promise.resolve();
+    }
+    return persistBmcPins(_pinnedThumbprints).then(function() {
+      var status = document.getElementById('discStatus');
+      if (status) status.textContent += ' Saved in the encrypted credential vault.';
+    }).catch(function(error) {
+      var status = document.getElementById('discStatus');
+      if (status) status.textContent = 'Pins are active for this session but were not saved to the vault: ' + error.message;
+    });
   }
 
   function openCertModal(certsList) {
@@ -98,6 +122,7 @@ JS_VAULT = """
       saveSession();
       updatePinnedCertUi();
       closeCertModal();
+      saveAcceptedPins();
       var ds = document.getElementById('discStatus');
       if (ds) ds.textContent = 'Pinned ' + count + ' certificate thumbprint(s).';
     });
@@ -118,6 +143,7 @@ JS_VAULT = """
       saveSession();
       updatePinnedCertUi();
       closeCertModal();
+      saveAcceptedPins();
       var ds = document.getElementById('discStatus');
       if (ds) ds.textContent = 'Pinned all ' + count + ' certificate thumbprint(s).';
     });
@@ -156,6 +182,7 @@ JS_VAULT = """
     });
     saveSession();
     updatePinnedCertUi();
+    saveAcceptedPins();
     var discStatus = document.getElementById('discStatus');
     if (discStatus) discStatus.textContent = 'Pinned ' + count + ' certificate thumbprint(s).';
     var certBanner = document.getElementById('certTrustBanner');
@@ -260,7 +287,9 @@ JS_VAULT = """
     }
     buildPerHostCreds(hosts.map(function(h){return h.ip;}));
     updateHostGates();
+    if (typeof updateVaultCoverage === 'function') updateVaultCoverage();
     syncCredButtons();
+    document.dispatchEvent(new Event('bmc-trust-change'));
   }
 
   document.getElementById('discoverBtn').addEventListener('click', function() {
@@ -274,8 +303,10 @@ JS_VAULT = """
     if (hostList) hide(hostList);
     var vpnWarn = document.getElementById('vpnWarning');
     if (vpnWarn) hide(vpnWarn);
+    var discoveryGeneration = ++_discoveryRequestGeneration;
     post('/api/discover', {targets: raw})
       .then(function(r) {
+        if (discoveryGeneration !== _discoveryRequestGeneration || raw !== document.getElementById('rangeInput').value.trim()) return;
         if (spinner) hide(spinner);
         if (r.error) {
           if (discStatus) discStatus.textContent = 'Error: ' + r.error;
@@ -286,20 +317,11 @@ JS_VAULT = """
               r.hosts.length + ' reachable host(s) found';
           }
           renderHostList(r.hosts);
-          if (r.high_latency_detected) {
-            var vpnLat = document.getElementById('vpnLatency');
-            if (vpnLat) vpnLat.textContent = r.avg_latency_ms || '0';
-            if (vpnWarn) show(vpnWarn);
-            var thInp = document.getElementById('threadsInput');
-            if (thInp && parseInt(thInp.value, 10) > 6) {
-              thInp.value = '6';
-            }
-          } else {
-            if (vpnWarn) hide(vpnWarn);
-          }
+          applyDiscoveryConcurrency(!!r.high_latency_detected, r.avg_latency_ms, raw);
         }
       })
       .catch(function(e) {
+        if (discoveryGeneration !== _discoveryRequestGeneration) return;
         if (spinner) hide(spinner);
         if (discStatus) discStatus.textContent = 'Probe failed: ' + e;
       });
@@ -410,6 +432,13 @@ JS_VAULT = """
   }
 
   // ── Test credentials ──────────────────────────────────────────────────────
+  function bmcVaultRequested() {
+    if (activeAppSection() === 'scan-wizard') {
+      return document.getElementById('useVaultSlide').checked;
+    }
+    var checkbox = document.getElementById('useVaultChk');
+    return !!(checkbox && !checkbox.disabled && checkbox.checked);
+  }
   document.getElementById('testCredsBtn').addEventListener('click', function() {
     var rawInput = document.getElementById('rangeInput').value.trim();
     if (!rawInput) { alert('Enter a target IP first.'); return; }
@@ -431,8 +460,7 @@ JS_VAULT = """
       var verifySsl = !ignoreTls;
       var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
       var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
-      var useVaultChkEl = document.getElementById('useVaultChk');
-      var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);
+      var useVaultOn = bmcVaultRequested();
       document.getElementById('testCredsStatus').textContent = 'Testing…';
       post('/api/test-creds', {
         ip: targetToSend,
@@ -474,8 +502,7 @@ JS_VAULT = """
         var verifySsl = !ignoreTls;
         var tlsMode = (document.querySelector('input[name=tlsMode]:checked') || {}).value || 'system';
         var caBundle = (verifySsl && tlsMode === 'custom') ? (document.getElementById('caBundleInput').value.trim() || null) : null;
-        var useVaultChkEl = document.getElementById('useVaultChk');
-        var useVaultOn = !!(useVaultChkEl && useVaultChkEl.checked && !useVaultChkEl.disabled);
+        var useVaultOn = bmcVaultRequested();
 
         var sameCreds = document.getElementById('sameCredsChk') ? document.getElementById('sameCredsChk').checked : true;
         var perHostList = [];
@@ -518,7 +545,9 @@ JS_VAULT = """
           } else if (r.batch) {
             var badgeClass = (r.auth_ok > 0) ? 'badge-warning' : 'badge-danger';
             var detailText = r.auth_ok + '/' + r.total + ' Auth OK';
-            if (r.auth_failed > 0) detailText += ' · ' + r.auth_failed + ' auth failed';
+            var authRejected = Math.max(0, (r.auth_failed || 0) - (r.credentials_missing || 0));
+            if (authRejected > 0) detailText += ' · ' + authRejected + ' auth rejected';
+            if (r.credentials_missing > 0) detailText += ' · ' + r.credentials_missing + ' missing credentials';
             if (r.unreachable > 0) detailText += ' · ' + r.unreachable + ' unreachable';
             statusEl.innerHTML = '<span class="badge ' + badgeClass + '">' + detailText + '</span>';
           } else {
@@ -556,7 +585,7 @@ JS_VAULT = """
       .then(function(r) { return r.json().catch(function(){ return {}; }).then(function(d) { return {status: r.status, data: d}; }); });
   }
   var $v = function(id) { return document.getElementById(id); };
-  var _vaultState = {exists:false, unlocked:false, entry_count:0, remote_disabled:false};
+  var _vaultState = {exists:null, unlocked:false, entry_count:0, remote_disabled:false};
 
   function setVaultEntriesAccordion(open) {
     var body = $v('vaultEntriesBody');
@@ -587,11 +616,17 @@ JS_VAULT = """
   }
 
   function renderVaultState() {
+    document.dispatchEvent(new Event("vault-state-change"));
     var s = _vaultState;
     var badge = $v('vaultStateBadge');
     if (s.remote_disabled) {
       badge.className = 'badge badge-danger'; badge.textContent = 'disabled';
       $v('vaultStatusText').textContent = 'Vault is disabled while --allow-remote is enabled.';
+      hide($v('vaultCreateBlock')); hide($v('vaultUnlockBlock')); hide($v('vaultOpenBlock')); hide($v('vaultLockBtn'));
+    } else if (s.exists == null) {
+      badge.className = 'badge badge-secondary';
+      badge.textContent = s.statusError ? 'unavailable' : 'checking…';
+      $v('vaultStatusText').textContent = s.statusError || 'Checking for an existing vault…';
       hide($v('vaultCreateBlock')); hide($v('vaultUnlockBlock')); hide($v('vaultOpenBlock')); hide($v('vaultLockBtn'));
     } else if (!s.exists) {
       badge.className = 'badge badge-secondary'; badge.textContent = 'no vault';
@@ -604,12 +639,12 @@ JS_VAULT = """
       setVaultEntriesAccordion(false);
     } else {
       badge.className = 'badge badge-success'; badge.textContent = 'unlocked';
-      $v('vaultStatusText').textContent = s.entry_count + ' entr' + (s.entry_count === 1 ? 'y' : 'ies') + ' · auto-locks after 60 min idle';
+      $v('vaultStatusText').textContent = s.entry_count + ' BMC entr' + (s.entry_count === 1 ? 'y' : 'ies') + ' · ' + (s.service_count || 0) + ' service instance(s) · unlocked until Lock or application shutdown';
       hide($v('vaultCreateBlock')); hide($v('vaultUnlockBlock')); show($v('vaultOpenBlock')); show($v('vaultLockBtn'));
     }
     var cipherBadge = $v('vaultCipherBadge');
     if (cipherBadge) {
-      if (s.remote_disabled) {
+      if (s.remote_disabled || s.exists == null) {
         hide(cipherBadge);
       } else if (s.exists) {
         show(cipherBadge);
@@ -652,11 +687,30 @@ JS_VAULT = """
 
   function refreshVaultStatus() {
     return getJson('/api/vault/status').then(function(r) {
-      if (r.status === 403) { _vaultState = {remote_disabled:true}; }
-      else if (r.status === 200) { _vaultState = r.data; }
+      if (r.status === 403) {
+        _vaultState = {remote_disabled:true, statusError:r.data.error || 'Credential Vault access is unavailable.'};
+      }
+      else if (r.status === 200 && typeof r.data.exists === 'boolean') { _vaultState = r.data; }
+      else {
+        _vaultState = {exists:null, statusError:r.status === 401
+          ? 'This browser session has expired. Open the app from its launch window.'
+          : 'Could not check the Credential Vault status.'};
+      }
       renderVaultState();
-      if (_vaultState.unlocked) refreshVaultEntries();
-    }).catch(function() {});
+      if (_vaultState.unlocked) {
+        refreshVaultEntries();
+        getJson('/api/vault/bmc-pins').then(function(pinsResponse) {
+          if (pinsResponse.status === 200 && pinsResponse.data.ok) {
+            _pinnedThumbprints = Object.assign({}, _pinnedThumbprints, pinsResponse.data.pins || {});
+            saveSession();
+            updatePinnedCertUi();
+          }
+        });
+      }
+    }).catch(function() {
+      _vaultState = {exists:null, statusError:'Could not check the Credential Vault status.'};
+      renderVaultState();
+    });
   }
 
   function refreshVaultEntries() {

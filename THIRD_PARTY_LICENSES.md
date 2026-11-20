@@ -183,3 +183,10 @@ here is a blessing:
 ## 8. Research Attributions
 
 - **Network Switch Buffer Intelligence & ASIC Telemetry:** Switch buffer classifications, VOQ buffer algorithms, and switch ASIC architecture cross-references are derived from research and documentation published by Michael Buraglio and Jim Warner.
+
+## 9. pyVmomi
+
+- **Component:** pyvmomi 9.0.0.0, file `pyvmomi-9.0.0.0-py3-none-any.whl`.
+- **License:** Apache-2.0. Notices extracted from the pinned wheel are in `licenses/pyvmomi/`.
+- **Usage:** Optional embedded wheel for MTAT Workload Assessment and vSphere Inventory (Experimental). It is not a core dependency. `pyproject.toml` keeps `dependencies = []`. The loader in `vcf_hci/plugins/mtat/vendor.py` checks the filename, SHA-256, and metadata version before import.
+- **SHA-256:** `7812642a62b6ce2b439d7e4856d27101ad102734bce41daf77bedfb3e2d9cbf2`.

@@ -64,6 +64,7 @@ def create_collector(
     probe_timeout: Optional[int] = None,
     tls_min_version: Optional[str] = None,
     legacy_ciphers: bool = False,
+    transport=None,
 ):
     """Probe /redfish/v1 and /Systems/{id}, read Manufacturer and OEM keys,
     and return the best-matching OEM collector subclass.
@@ -115,6 +116,14 @@ def create_collector(
         for attempt in range(2):
             try:
                 is_mocked = not hasattr(urllib.request.urlopen, "__code__") or "Mock" in type(urllib.request.urlopen).__name__ or hasattr(urllib.request.urlopen, "mock")
+                if transport is not None:
+                    status, _headers, raw = transport.request("GET", url, timeout=t_out)
+                    if status != 200:
+                        return {}
+                    try:
+                        return json.loads(raw)
+                    except json.JSONDecodeError:
+                        return {}
                 if is_mocked:
                     with urllib.request.urlopen(req, timeout=t_out, context=ctx) as r:
                         return json.loads(r.read().decode("utf-8", errors="replace"))
@@ -241,6 +250,9 @@ def create_collector(
         tls_min_version=tls_min_version,
         legacy_ciphers=legacy_ciphers,
     )
+    if transport is not None:
+        c._conn_pool.close()
+        c._conn_pool = transport
     c.host_timeout = host_timeout
     return c
 

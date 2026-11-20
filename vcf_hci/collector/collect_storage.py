@@ -67,6 +67,7 @@ from vcf_hci.constants import (
     DELL_SKU_CHASSIS_DB,
     HPE_SKU_CHASSIS_DB,
     LENOVO_MODEL_CHASSIS_DB,
+    hpe_unknown_sku,
     is_generic_ctrl_name,
 )
 from vcf_hci.logging_utils import get_nested
@@ -1715,14 +1716,21 @@ class _StorageMixin(_CollectorBase):
                         total_slots = enc_slots
 
                 _sku_sys = getattr(self, "sys_sku", "").upper()
-                _sku_entry = HPE_SKU_CHASSIS_DB.get(_sku_sys) or DELL_SKU_CHASSIS_DB.get(_sku_sys)
+                _unknown_hpe_sku = hpe_unknown_sku(getattr(self, "sys_model", ""), _sku_sys)
+                if _unknown_hpe_sku:
+                    total_slots = 0
+                    logger.debug(
+                        "HPE SKU %s is not in the chassis database; bay count is not assessed",
+                        self.sys_sku,
+                    )
+                _sku_entry = None if _unknown_hpe_sku else (HPE_SKU_CHASSIS_DB.get(_sku_sys) or DELL_SKU_CHASSIS_DB.get(_sku_sys))
                 if _sku_entry and _sku_entry[0] > total_slots:
                     total_slots = _sku_entry[0]
                     logger.debug(
                         "Slot count overridden by SKU DB: SKU=%s → %d bays (%s)",
                         self.sys_sku, total_slots, _sku_entry[1],
                     )
-                elif not _sku_entry and total_slots == 0:
+                elif not _unknown_hpe_sku and not _sku_entry and total_slots == 0:
                     _raw_model = getattr(self, "sys_model", "")
                     _mkey = re.sub(r'^(?:PowerEdge|ProLiant|ThinkSystem)\s+', '', _raw_model, flags=re.I).upper().strip()
                     _mkey = re.sub(r'[-]\d+$', '', _mkey)
@@ -1744,7 +1752,7 @@ class _StorageMixin(_CollectorBase):
                                     _raw_model, total_slots, _lenovo_entry.get("label", ""),
                                 )
 
-                synthetic_needed = max(0, total_slots - total_populated)
+                synthetic_needed = 0 if _unknown_hpe_sku else max(0, total_slots - total_populated)
                 if synthetic_needed > 0:
                     target_ctrl = None
                     for c in non_boot_ctrls:

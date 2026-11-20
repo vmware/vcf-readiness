@@ -53,7 +53,8 @@ Security notes
 - The browser scanner checks GitHub for updates in the background at launch.
   Set VCF_READINESS_CHECK_UPDATES=0 to disable this optional check.
 - Collection contacts only the BMC targets you provide.
-- Public HCL downloads require an explicit --refresh-hcl or --bundle-hcl.
+- CLI collection uses local HCL data unless you pass --refresh-hcl or --bundle-hcl.
+- Web UI launch refreshes public vSAN and Memory Tiering data in the background. Pass --no-hcl-auto-refresh to keep that startup offline, or preload a bundle with --import-hcl.
 - BMC certificate verification is off by default for self-signed controllers;
   use --verify-ssl and --ca-bundle where an enterprise CA is available.
 - Do not share credentials, launch URLs, raw captures, or unreviewed reports.

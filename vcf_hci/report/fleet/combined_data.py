@@ -3,6 +3,7 @@ import hashlib
 import html
 import re
 from functools import partial
+from typing import Any, Optional
 
 from vcf_hci.bios.x2apic import refresh_x2apic_guidance
 from vcf_hci.branding import MARK_SVG
@@ -12,9 +13,10 @@ from vcf_hci.report.fleet.fc_matrix import build_fleet_fc_matrix_html
 from vcf_hci.report.fleet.switch_matrix import build_fleet_switch_matrix_html
 from vcf_hci.report.fleet.tiles import build_fleet_tiles_html
 from vcf_hci.report.fleet.vendor import normalize_oem_vendor
-from vcf_hci.report.formatting import fleet_tpm_badge
+from vcf_hci.report.formatting import fleet_host_os_cell, fleet_tpm_badge
 from vcf_hci.report.helpers import _h
 from vcf_hci.report.inventory_tables import clean_model_code, summarize_fc_hbas
+from vcf_hci.report.memory_tiering import host_memory_tiering_drives, memory_tiering_count_badge
 from vcf_hci.report.readiness import cpu_verdict_unassessed
 from vcf_hci.security.scoring import score_host_security
 from vcf_hci.storage_pcie import storage_pcie_view
@@ -57,7 +59,7 @@ def identity_text(value: str, kind: str = "host", *, page_salt: str, obfuscated:
     return f'<span class="pii" data-real="{safe_val}" data-mask="{mask}">{safe_val}</span>'
 
 
-def build_combined_summary_rows(all_results: list, obfuscated: bool, page_salt: str) -> tuple:
+def build_combined_summary_rows(all_results: list, obfuscated: bool, page_salt: str, json_hcl: Optional[dict] = None) -> tuple:
     """Build capped per-host facts, OEM options and slow-BMC observations."""
     n_hosts = len(all_results)
     _pii = partial(identity_text, page_salt=page_salt, obfuscated=obfuscated)
@@ -118,13 +120,12 @@ def build_combined_summary_rows(all_results: list, obfuscated: bool, page_salt: 
         else:
             esa_td = "🔴 None"
         _esa_sort = str(esa_n)
-        psu = data.get("psu_status", {})
-        psu_cls = "success" if psu.get("redundant") else "warning"
-        psu_td = "🟢 Redundant" if psu.get("redundant") else "🟡 Single"
-        _psu_sort = "1" if psu.get("redundant") else "2"
+        memory_tiering = host_memory_tiering_drives(data, json_hcl)
+        memory_tiering_total = memory_tiering["total"]
         fc_summary = summarize_fc_hbas(data)
         fc_n = fc_summary["count"]
         gpu_n = len(data.get("gpu_accelerators", []))
+        os_cell, os_sort = fleet_host_os_cell(data)
         tpm = fleet_tpm_badge(si)
         _tpm_sort = "1" if "success" in tpm else ("3" if "danger" in tpm else "2")
         hostname = si.get("hostname") or si.get("ip", "Unknown")
@@ -217,11 +218,12 @@ def build_combined_summary_rows(all_results: list, obfuscated: bool, page_salt: 
             f"<td data-sort='{_xe(_model_str)}' title='{_xe(_model_str)}'>{_xe(_clean_model)}{slow_bmc_badge}</td>"
             f"<td data-sort='{_cpu_sort}'>{cpu_cell_html}</td>"
             f"<td data-sort='{_tpm_sort}'>{tpm_cell_html}</td>"
-            f"<td data-sort='{_sec_sort}'>{sec_td}</td>"
             f"<td data-sort='{_esa_sort}'>{esa_cell_html}</td>"
-            f"<td data-sort='{_psu_sort}'><span class='badge {psu_cls}'>{psu_td}</span></td>"
+            f"<td data-sort='{memory_tiering_total}'>{memory_tiering_count_badge(memory_tiering)}</td>"
             f"<td data-sort='{fc_n}'>{_h(fc_summary['display']) if fc_n else '—'}</td>"
             f"<td data-sort='{gpu_n}'>{'🟣 ' + str(gpu_n) + ' GPU' if gpu_n else '—'}</td>"
+            f"<td data-sort='{_sec_sort}'>{sec_td}</td>"
+            f"<td data-sort='{_xe(os_sort)}'>{os_cell}</td>"
             f"</tr>"
         )
 
@@ -264,16 +266,26 @@ def build_slow_bmc_alert(slow_bmc_hosts: list, obfuscated: bool, page_salt: str)
     return slow_bmc_alert_html
 
 
-def build_combined_summary(all_results: list, obfuscated: bool, page_salt: str) -> str:
+def build_combined_summary(
+    all_results: list,
+    obfuscated: bool,
+    page_salt: str,
+    json_hcl: Optional[dict] = None,
+    vinv_report: Optional[Any] = None,
+) -> str:
     """Compose existing tiles/matrices and the per-host assessment view."""
     n_hosts = len(all_results)
     _page_salt = page_salt
-    tiles_html = build_fleet_tiles_html(all_results, report_prefix="", page_salt=_page_salt)
+    tiles_html = build_fleet_tiles_html(all_results, report_prefix="", page_salt=_page_salt, json_hcl=json_hcl)
     switch_matrix_block = build_fleet_switch_matrix_html(all_results, report_prefix="", page_salt=_page_salt, obfuscated=obfuscated)
     fc_matrix_block = build_fleet_fc_matrix_html(all_results, report_prefix="", page_salt=_page_salt, obfuscated=obfuscated)
 
-    sum_rows, _oem_options_html, slow_bmc_hosts = build_combined_summary_rows(all_results, obfuscated, page_salt)
+    sum_rows, _oem_options_html, slow_bmc_hosts = build_combined_summary_rows(all_results, obfuscated, page_salt, json_hcl=json_hcl)
     slow_bmc_alert_html = build_slow_bmc_alert(slow_bmc_hosts, obfuscated, page_salt)
+    if vinv_report is not None:
+        from vcf_hci.report.fleet.vsphere_reconciliation import render_fleet_reconciliation_html
+
+        slow_bmc_alert_html += render_fleet_reconciliation_html(vinv_report)
     summary_title = f"VCF / vSphere 9.1 Readiness — Fleet Health Dashboard{' (Obfuscated)' if obfuscated else ''}"
     if obfuscated:
         header_controls = (
@@ -362,12 +374,13 @@ def build_combined_summary(all_results: list, obfuscated: bool, page_salt: str) 
 <th title="Click to sort">Host / IP<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">Model<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">CPU Support<span class="sort-ind">⇅</span></th>
-<th title="Click to sort">TPM 2.0<span class="sort-ind">⇅</span></th>
-<th title="Click to sort">BMC Security<span class="sort-ind">⇅</span></th>
+<th title="Click to sort">TPM<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">vSAN Tier<span class="sort-ind">⇅</span></th>
-<th title="Click to sort">PSU<span class="sort-ind">⇅</span></th>
+<th title="Identified NVMe Memory Tiering drives">Memory Tier Drives<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">FC cards / ports<span class="sort-ind">⇅</span></th>
 <th title="Click to sort">GPUs<span class="sort-ind">⇅</span></th>
+<th title="Click to sort">BMC Security<span class="sort-ind">⇅</span></th>
+<th title="Click to sort">Host OS<span class="sort-ind">⇅</span></th>
 </tr></thead><tbody>{sum_rows}</tbody></table>
 </div>
 </div>

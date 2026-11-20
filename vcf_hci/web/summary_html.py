@@ -10,16 +10,6 @@ SUMMARY_ACTIONS = f"""
             <span>Report</span><span>Standard</span><span>Obfuscated</span>
           </div>
           <div class="summary-action-row">
-            <span class="summary-artifact">Executive summary</span>
-            <div class="summary-action-cell" data-variant="Standard">
-              <button type="button" class="btn btn-outline btn-sm hidden" id="executivePdfBtn">{icon_html('pdf-file')} Executive summary (PDF)</button>
-              <button type="button" class="btn btn-outline btn-sm hidden" id="executiveHtmlBtn">View executive summary</button>
-            </div>
-            <div class="summary-action-cell" data-variant="Obfuscated">
-              <button type="button" class="btn btn-outline btn-sm hidden" id="executiveObfPdfBtn">{icon_html('pdf-file')} Executive PDF — obfuscated</button>
-            </div>
-          </div>
-          <div class="summary-action-row">
             <span class="summary-artifact">Fleet summary</span>
             <div class="summary-action-cell" data-variant="Standard">
               <button type="button" class="btn btn-outline btn-sm hidden" id="openSummaryBtn">📊 Open Fleet Summary</button>
@@ -54,8 +44,6 @@ SUMMARY_ACTIONS = f"""
             </div>
           </div>
           <div class="summary-export-tools">
-            <button type="button" class="btn btn-outline btn-sm hidden" id="exportCsvBtn">{icon_html('file')} Export CSV</button>
-            <button type="button" class="btn btn-outline btn-sm hidden" id="exportSummaryJsonBtn">{icon_html('file')} Export Summary JSON</button>
             <button type="button" class="btn btn-outline btn-sm hidden" id="exportObfZipBtn" title="Download the obfuscated HTML hub, sub-reports, Excel, and CSVs. Review the contents before sharing externally.">{icon_html('file-zip')} Export Obfuscated Package (.zip)</button>
           </div>
           <div class="summary-export-tools summary-file-tools" aria-label="Scan files">

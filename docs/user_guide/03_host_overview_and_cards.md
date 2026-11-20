@@ -37,12 +37,15 @@ Eight high-contrast visual cards immediately communicate qualification status ac
   - `🔴 Unsupported`: Intel Haswell, Broadwell (v3/v4), or older architectures; blocks ESXi 9.1 installation.
 - **External Reference:** [Broadcom KB 428874](https://kb.vmware.com/s/article/428874).
 
-#### 2. BIOS & Microcode Card
-- **Evaluation Logic:** Compares installed BIOS firmware against OEM minimum release matrices and evaluates processor microcode side-channel security tiers.
+#### 2. BIOS & Performance Card
+- **Evaluation Logic:** Compares installed BIOS firmware with the tool’s recorded model and version baseline.
 - **Statuses:**
-  - `🟢 Baseline Met`: Installed BIOS meets the tool’s recorded model/version baseline. The separate date-based CVE tier does not prove current microcode coverage.
-  - `🟡 Update Recommended`: BIOS is below recommended baseline or aging release date detected.
-  - `🔴 Action Required`: Vulnerable microcode level (Tier <4) requiring mandatory BIOS flashing.
+  - `🟢 Up-to-Date`: Installed BIOS matches the recorded catalog version.
+  - `🟢 Ahead of catalog`: Installed BIOS is newer than the recorded catalog snapshot.
+  - `🟡 Update Available`: BIOS is behind the recorded recommendation.
+  - `🔴 Outdated BIOS`: BIOS is below the recorded minimum.
+  - `Not verified`: Version or baseline evidence was not assessed.
+- The report’s **BIOS Date Estimate** is a historical BIOS release-date estimate. It does not read installed microcode or prove current mitigation. Missing, invalid, and future dates stay unassessed. Tier windows are in [Historical BIOS Date Estimates](#cve-microcode-tiers).
 - **External Reference:** [Broadcom KB 330041](https://kb.vmware.com/s/article/330041).
 
 #### 3. TPM 2.0 Security Card
@@ -54,7 +57,7 @@ Eight high-contrast visual cards immediately communicate qualification status ac
 - **External Reference:** [vSphere TPM 2.0 Guide](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-security/GUID-10F7022C-DBE0-4E80-9285-EB02CEF513A1.html).
 
 #### 4. Memory Interleaving Card
-- **Evaluation Logic:** Assesses total system RAM, populated DIMM slot symmetry, and channel interleaving efficiency across CPU sockets.
+- **Evaluation Logic:** Assesses total system RAM, populated DIMM slot symmetry, and channel interleaving efficiency across CPU sockets. When identified NVMe Memory Tiering drives are present, the Memory card includes a compact green **NVMe Tiering** check. The check is catalog evidence of drive availability, not firmware or deployment validation.
 - **Statuses:**
   - `🟢 Balanced (100% Throughput)`: Symmetrical channel population delivering maximum memory bandwidth.
   - `🟡 Suboptimal Interleaving`: Unbalanced channel configuration causing memory throttling.

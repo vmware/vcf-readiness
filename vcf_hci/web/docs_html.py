@@ -21,11 +21,14 @@ except ImportError:
 
 def build_docs_html(initial_doc_id: str = "readme", tool_version: str = TOOL_VERSION) -> str:
     """Build a standalone, single-page documentation app with tab switching and search."""
-    if not initial_doc_id or not re.match(r"^[a-zA-Z0-9_-]+$", str(initial_doc_id)) or initial_doc_id not in DOCS_DATA:
+    from vcf_hci.hcl.memory_tiering import namespace_preview_enabled
+    docs = {key: value for key, value in DOCS_DATA.items()
+            if key != 'nvme_namespace' or namespace_preview_enabled()}
+    if not initial_doc_id or not re.match(r"^[a-zA-Z0-9_-]+$", str(initial_doc_id)) or initial_doc_id not in docs:
         initial_doc_id = "readme"
 
     safe_version = html.escape(str(tool_version))
-    docs_json = json.dumps(DOCS_DATA, ensure_ascii=False).replace("</script", "<\\/script")
+    docs_json = json.dumps(docs, ensure_ascii=False).replace("</script", "<\\/script")
     initial_doc_id_json = json.dumps(initial_doc_id)
 
     return f"""<!DOCTYPE html>

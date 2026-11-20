@@ -23,7 +23,10 @@ from vcf_hci.constants import (
     is_unfriendly_nic_name,
     prefer_storage_ctrl_display_name,
 )
+from vcf_hci.drive_counters import nonnegative_io_total
 from vcf_hci.fc_inventory import fc_adapter_count, normalize_fc_ports
+from vcf_hci.report.firmware_readiness import FIRMWARE_HEADERS, firmware_cells, firmware_rows, server_bcg_reference
+from vcf_hci.report.formatting import compact_storage_tier_labels
 from vcf_hci.report.schema_registry import color_for_verdict, strip_html
 from vcf_hci.report.sel_links import (
     normalize_vendor,
@@ -1177,7 +1180,7 @@ def build_compact_fleet_inventory(
                 ep = d.get("endurance_remaining_pct", "")
                 if ep in (255, "255", "255%"):
                     ep = "N/A"
-                tbw_val = d.get("tbw_written") if d.get("tbw_written") is not None else d.get("tbw")
+                tbw_val = nonnegative_io_total(d.get("tbw_written") if d.get("tbw_written") is not None else d.get("tbw"))
                 drives.append({
                     "host_idx": idx,
                     "hostname": h_name,
@@ -1199,7 +1202,7 @@ def build_compact_fleet_inventory(
                     "drive_health": str(d.get("drive_health") or d.get("status") or "OK"),
                     "endurance_pct": ep if ep not in ("", "N/A", None) else None,
                     "tbw_written": tbw_val,
-                    "tbr_read": d.get("tbr_read"),
+                    "tbr_read": nonnegative_io_total(d.get("tbr_read")),
                     "power_on_hours": d.get("power_on_hours"),
                     "power_cycles": d.get("power_cycles"),
                     "critical_warnings": d.get("critical_warnings"),
@@ -1438,10 +1441,9 @@ def build_inventory_sheets(
         "Temp (°C)", "Max Temp (°C)", "Power Brake",
         "VRAM GiB", "PCIe", "Lanes", "Part Number", "Serial", "PCI", "VCF AI Readiness",
     )]
-    fw_rows: List[list] = [_hdr(
-        "Host IP", "Hostname", "Name", "Version", "Component ID", "Description",
-        "Device Context", "Updateable",
-    )]
+    fw_rows: List[list] = [_hdr(*FIRMWARE_HEADERS)]
+    fw_links: Dict[Tuple[int, int], str] = {}
+    bios_links: Dict[Tuple[int, int], str] = {}
     hba_rows: List[list] = [_hdr(
         "Host IP", "Hostname", "Name", "Manufacturer", "Model", "WWPN", "WWNN",
         "Firmware", "Health", "Speed Gbps",
@@ -1450,6 +1452,7 @@ def build_inventory_sheets(
         "Host IP", "Hostname", "Model", "BIOS Version", "Release Date",
         "CPU Power Profile", "Memory RAS", "Intel VMD", "Boot Mode", "BIOS Date Estimate",
         "AMD Performance / NUMA",
+        "BCG Reference",
     )]
     health_rows: List[list] = [_hdr(
         "Host IP", "Hostname", "Severity", "Subsystem", "Target", "Message", "Timestamp",
@@ -1505,7 +1508,7 @@ def build_inventory_sheets(
             ep = d.get("endurance_remaining_pct", "")
             if ep in (255, "255", "255%"):
                 ep = "N/A"
-            hcl = strip_html(d.get("hcl_str") or d.get("status_badge", ""))
+            hcl = compact_storage_tier_labels(strip_html(d.get("hcl_str") or d.get("status_badge", "")))
             ctrl_fw = ctrl.get("ctrl_firmware") or ctrl.get("firmware_version") or ""
             d_fw = str(d.get("firmware") or d.get("firmware_version") or "").strip()
             d_vid = str(d.get("vendor_id") or "").strip()
@@ -1545,9 +1548,9 @@ def build_inventory_sheets(
                     cert_fw = "—"
                     fw_status_cell = ""
 
-            tbw_val = d.get("tbw_written") if d.get("tbw_written") is not None else d.get("tbw")
+            tbw_val = nonnegative_io_total(d.get("tbw_written") if d.get("tbw_written") is not None else d.get("tbw"))
             tbw_str = f"{float(tbw_val):.2f}" if tbw_val is not None and isinstance(tbw_val, (int, float)) else (str(tbw_val) if tbw_val else "")
-            tbr_val = d.get("tbr_read")
+            tbr_val = nonnegative_io_total(d.get("tbr_read"))
             tbr_str = f"{float(tbr_val):.2f}" if tbr_val is not None and isinstance(tbr_val, (int, float)) else (str(tbr_val) if tbr_val else "")
             poh_val = d.get("power_on_hours")
             pwr_cyc = d.get("power_cycles")
@@ -1669,13 +1672,13 @@ def build_inventory_sheets(
                 g.get("pci_quad") or g.get("pci_pair") or "", vcf_ai,
             ])
 
-        for fw in data.get("firmware_inventory") or []:
-            fw_rows.append([
-                ip, hostname, fw.get("name", ""), fw.get("version", ""),
-                fw.get("component_id", ""), fw.get("description", ""),
-                fw.get("device_context", ""),
-                "Yes" if fw.get("updateable") else "No",
-            ])
+        assessments = firmware_rows(data, json_hcl)
+        for offset, assessment in enumerate(assessments, len(fw_rows)):
+            if assessment["bcg_url"]:
+                for col in (5, 7, 10):
+                    if col == 10 or assessment["installed" if col == 5 else "supported"]:
+                        fw_links[(offset, col)] = assessment["bcg_url"]
+        fw_rows.extend(firmware_cells(data, assessments))
 
         for hba in normalize_fc_ports(data.get("fc_hbas")):
             hba_rows.append([
@@ -1749,10 +1752,14 @@ def build_inventory_sheets(
         ]
         amd_perf_cell = "; ".join(amd_perf_items) if amd_perf_items else "—"
 
+        bios_url, bios_link_label = server_bcg_reference(data)
+        if bios_url:
+            bios_links[(len(bios_rows), 3)] = bios_url
+            bios_links[(len(bios_rows), 11)] = bios_url
         bios_rows.append([
             ip, hostname, clean_m, bios_ver, bios_date,
             pwr_cell, ras_label, vmd_cell, boot_cell, cve_cell,
-            amd_perf_cell,
+            amd_perf_cell, bios_link_label,
         ])
 
         # ── Health_Alarms rows ────────────────────────────────────────────────
@@ -1893,8 +1900,8 @@ def build_inventory_sheets(
         {"name": "vStorage", "rows": stor_rows},
         {"name": "vNetwork", "rows": net_rows},
         {"name": "vGPU", "rows": gpu_rows},
-        {"name": "vFirmware", "rows": fw_rows},
+        {"name": "vFirmware", "rows": fw_rows, "hyperlinks": fw_links},
         {"name": "vHBA", "rows": hba_rows},
-        {"name": "vBIOS", "rows": bios_rows},
+        {"name": "vBIOS", "rows": bios_rows, "hyperlinks": bios_links},
         {"name": "Health_Alarms", "rows": health_rows},
     ]

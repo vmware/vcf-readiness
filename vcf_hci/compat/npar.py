@@ -3,6 +3,9 @@ NIC Partitioning (NPAR) compatibility evaluation for VCF 9.1.
 """
 
 
+from vcf_hci.network_partitioning import is_pure_fc_adapter
+
+
 def evaluate_npar(network_adapters: list) -> dict:
     """Evaluate NIC Partitioning (NPAR) status across discovered network adapters.
 
@@ -23,7 +26,7 @@ def evaluate_npar(network_adapters: list) -> dict:
         if nic.get("is_vic_virtual") or nic.get("cna_family") == "cisco_vic" or "VIC" in str(nic.get("name", "")).upper():
             if nic.get("vic_virtual_interfaces") or nic.get("npar_partitions") or nic.get("is_vic_virtual"):
                 vic_adapters.append(nic)
-        elif nic.get("is_npar"):
+        elif nic.get("is_npar") and not is_pure_fc_adapter(nic):
             npar_adapters.append(nic)
 
     vic_detected = bool(vic_adapters)

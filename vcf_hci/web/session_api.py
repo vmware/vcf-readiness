@@ -13,6 +13,7 @@ import os
 import re
 import socket
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -413,6 +414,24 @@ class SessionApiMixin(_ApiMixinBase):
         ca_bundle = body.get("ca_bundle", None) or None
         pinned_thumbprints = body.get("pinned_thumbprints", None) or None
         use_vault = bool(body.get("use_vault", False))
+        is_remote = False
+        try:
+            remote_value = self._is_remote_server()
+            if isinstance(remote_value, bool):
+                is_remote = remote_value
+        except Exception:
+            pass
+        ca_data = None
+        if is_remote and ca_bundle:
+            if not isinstance(ca_bundle, str):
+                self._send_json({"error": "Use PEM text for custom CA trust on an exposed listener."}, 400)
+                return
+            ca_bundle = ca_bundle.strip()
+            if not ca_bundle.startswith("-----BEGIN CERTIFICATE-----"):
+                self._send_json({"error": "Filesystem CA bundle paths are not accepted on an exposed listener."}, 400)
+                return
+            ca_data = ca_bundle
+            ca_bundle = None
         if not raw_ip:
             self._send_json({"error": "ip required"}, 400)
             return
@@ -421,7 +440,7 @@ class SessionApiMixin(_ApiMixinBase):
             return
 
         # Security gate: require pinned thumbprints or CA bundle if TLS verification is requested
-        if verify_ssl and not ca_bundle and not pinned_thumbprints:
+        if verify_ssl and not ca_bundle and not ca_data and not pinned_thumbprints:
             self._send_json(
                 {
                     "ok": False,
@@ -453,6 +472,8 @@ class SessionApiMixin(_ApiMixinBase):
                 body=body,
                 verify_ssl=verify_ssl,
                 ca_bundle=ca_bundle,
+                ca_data=ca_data,
+                is_remote=is_remote,
                 pinned_thumbprints=pinned_thumbprints,
                 use_vault=use_vault,
             )
@@ -497,27 +518,41 @@ class SessionApiMixin(_ApiMixinBase):
             self._send_json({"error": f"Target '{ip}' is a prohibited cloud metadata endpoint."}, 400)
             return
 
-        # Resolve credentials from vault if not supplied or use_vault explicitly set
-        is_remote = False
-        try:
-            rem = self._is_remote_server()
-            if isinstance(rem, bool):
-                is_remote = rem
-        except Exception:
-            pass
-
-        if (not pwd or use_vault) and not is_remote:
+        # Match batch validation and scan start: vault credentials require an explicit choice.
+        v = None
+        vault_match = False
+        if use_vault and not is_remote:
             v = vault_session.get()
             if v is not None:
                 pair = v.resolve(ip)
                 if pair:
                     user, pwd = pair
+                    vault_match = True
+
+        credential_source = "vault" if vault_match else ("fallback" if pwd else "missing")
+        logger.info(
+            "BMC credential test decision: vault_requested=%s vault_unlocked=%s vault_match=%s credential_source=%s",
+            use_vault and not is_remote,
+            v is not None,
+            vault_match,
+            credential_source,
+        )
 
         if not pwd:
-            self._send_json({"ok": False, "code": 0, "detail": "Password is required (or unlock vault to use stored credentials)", "tested_ip": ip})
+            if use_vault and not is_remote:
+                detail = "No saved BMC credential matches this host. Add an exact, CIDR, or default entry, or enter a fallback password."
+                if v is None:
+                    detail = "Credential Vault is locked. Unlock it or enter a BMC password."
+            else:
+                detail = "Password is required. Enter a BMC password or select saved credentials."
+            self._send_json({"ok": False, "code": 0, "detail": detail, "tested_ip": ip})
             return
 
-        ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
+        try:
+            ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle, cadata=ca_data, exposed=is_remote)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, 400)
+            return
         auth_ok, code, detail, ssl_err_info = _probe_bmc_credentials(
             ip=ip,
             user=user,
@@ -525,6 +560,13 @@ class SessionApiMixin(_ApiMixinBase):
             ctx=ctx,
             pinned_thumbprints=pinned_thumbprints,
             timeout=3.5,
+        )
+        logger.info(
+            "BMC credential test completed: credential_source=%s auth_ok=%s http_code=%s tls_error=%s",
+            credential_source,
+            auth_ok,
+            code,
+            bool(ssl_err_info),
         )
         if auth_ok:
             self._send_json({"ok": True, "code": code, "tested_ip": ip})
@@ -549,6 +591,8 @@ class SessionApiMixin(_ApiMixinBase):
         body: dict,
         verify_ssl: bool,
         ca_bundle: Optional[str],
+        ca_data: Optional[str],
+        is_remote: bool,
         pinned_thumbprints: Optional[dict],
         use_vault: bool,
     ) -> None:
@@ -566,15 +610,9 @@ class SessionApiMixin(_ApiMixinBase):
                     p = str(item.get("pass") or default_pwd)
                     creds_map[str(item["ip"])] = (u, p)
 
-        is_remote = False
-        try:
-            rem = self._is_remote_server()
-            if isinstance(rem, bool):
-                is_remote = rem
-        except Exception:
-            pass
-
         v = vault_session.get() if (use_vault and not is_remote) else None
+        credential_source_counts = [0, 0]  # vault matches, non-vault password fallbacks
+        credential_count_lock = threading.Lock()
 
         def _check_tcp_batch(cand: str) -> Tuple[str, bool]:
             try:
@@ -601,14 +639,25 @@ class SessionApiMixin(_ApiMixinBase):
                 except Exception:
                     pass
 
-        ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle)
+        try:
+            ctx = build_ssl_context(verify_ssl=verify_ssl, ca_bundle=ca_bundle, cadata=ca_data, exposed=is_remote)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, 400)
+            return
 
         def _test_single_host_auth(target_ip: str) -> Dict[str, Any]:
             u, p = creds_map.get(target_ip, (default_user, default_pwd))
+            matched_vault = False
             if (not p or use_vault) and v is not None:
                 pair = v.resolve(target_ip)
                 if pair:
                     u, p = pair
+                    matched_vault = True
+            with credential_count_lock:
+                if matched_vault:
+                    credential_source_counts[0] += 1
+                elif p:
+                    credential_source_counts[1] += 1
             if not p:
                 return {
                     "ip": target_ip,
@@ -616,6 +665,7 @@ class SessionApiMixin(_ApiMixinBase):
                     "auth_ok": False,
                     "code": 0,
                     "detail": "Password is required",
+                    "credentials_missing": True,
                 }
 
             auth_ok, code, detail, ssl_err_info = _probe_bmc_credentials(
@@ -666,6 +716,17 @@ class SessionApiMixin(_ApiMixinBase):
         unreachable_count = total - reachable_count
         auth_ok_count = sum(1 for r in host_results if r.get("auth_ok"))
         auth_failed_count = sum(1 for r in host_results if not r.get("auth_ok"))
+        credentials_missing_count = sum(1 for r in host_results if r.get("credentials_missing"))
+        logger.info(
+            "BMC batch credential test decision: targets=%d reachable=%d vault_requested=%s vault_unlocked=%s vault_matches=%d password_fallbacks=%d credentials_missing=%d",
+            total,
+            reachable_count,
+            use_vault and not is_remote,
+            v is not None,
+            credential_source_counts[0],
+            credential_source_counts[1],
+            credentials_missing_count,
+        )
         failed_hosts = [r["ip"] for r in host_results if not r.get("auth_ok")]
         unreachable_hosts = [t for t in target_candidates if t not in reachable_set]
 
@@ -677,6 +738,7 @@ class SessionApiMixin(_ApiMixinBase):
             "unreachable": unreachable_count,
             "auth_ok": auth_ok_count,
             "auth_failed": auth_failed_count,
+            "credentials_missing": credentials_missing_count,
             "results": host_results[:100],
             "failed_hosts": failed_hosts,
             "unreachable_hosts": unreachable_hosts,
@@ -868,6 +930,10 @@ class SessionApiMixin(_ApiMixinBase):
         vault_session.lock()
         self._send_json({"ok": True, **vault_session.status()})
 
+    def _api_vault_services(self, action: str) -> None:
+        from vcf_hci.web.plugin_credentials import service_credentials_api
+        service_credentials_api(self, action)
+
     def _api_vault_entries(self) -> None:
         if not self._vault_guard():
             return
@@ -967,6 +1033,28 @@ class SessionApiMixin(_ApiMixinBase):
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
         self._send_json({"ok": True, **v.coverage(targets)})
+
+    def _api_vault_bmc_pins(self, save: bool = False) -> None:
+        if not self._vault_guard():
+            return
+        v = self._vault_or_423()
+        if v is None:
+            return
+        if not save:
+            self._send_json({"ok": True, "pins": v.bmc_pins()})
+            return
+        body = self._read_json_body()
+        pins = body.get("pins") if isinstance(body, dict) else None
+        if not isinstance(pins, dict) or len(pins) > 2048:
+            self._send_json({"ok": False, "error": "Invalid BMC certificate pins."}, 400)
+            return
+        try:
+            count = v.set_bmc_pins(pins)
+            v.save()
+        except VaultError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        self._send_json({"ok": True, "saved": count})
 
     # ── Folder browsing and open in desktop ───────────────────────────────────
 

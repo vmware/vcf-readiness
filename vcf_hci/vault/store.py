@@ -2,7 +2,7 @@
 VCF Readiness Tool — Encrypted Credential Vault (vcf_hci.vault.store)
 
 Optional, opt-in, stdlib-only encrypted store for per-host / per-subnet /
-default BMC credentials.  Nothing in this module runs unless the user
+default BMC credentials, jump-host profiles and typed plugin service accounts. Nothing in this module runs unless the user
 explicitly creates or opens a vault (``python -m vcf_hci.vault init``,
 ``vcfr_collector.py --vault``, or the Web UI Vault card).
 
@@ -29,8 +29,8 @@ Decrypted payload:
 Credential resolution precedence:  exact host  >  longest-prefix CIDR  >  default.
 
 Guardrails: this module never logs or returns passwords except through
-``resolve()`` / ``resolve_for_targets()``, whose output is handed straight to
-``scan_hosts(creds=...)``.  It never imports ``vcf_hci.web``.
+``resolve()`` / ``resolve_for_targets()`` for scans and explicit typed service
+resolution for plugins.  It never imports ``vcf_hci.web``.
 """
 
 import base64
@@ -261,9 +261,10 @@ def _canonical_header(header: Dict[str, Any]) -> bytes:
 # Vault
 # ---------------------------------------------------------------------------
 from vcf_hci.vault.jump_hosts import JumpHostStore, normalize_jump_host
+from vcf_hci.vault.services import ServiceCredentialStore, normalize_service
 
 
-class CredentialVault(JumpHostStore):
+class CredentialVault(JumpHostStore, ServiceCredentialStore):
     """An unlocked credential vault held in memory.
 
     Construct via :meth:`create` or :meth:`open`; call :meth:`lock` when done.
@@ -271,12 +272,16 @@ class CredentialVault(JumpHostStore):
 
     def __init__(self, path: str, master_key: bytes, header: Dict[str, Any],
                  entries: Dict[str, Dict[str, str]], created: str,
-                 jump_hosts: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+                 jump_hosts: Optional[Dict[str, Dict[str, Any]]] = None,
+                 service_credentials: Optional[Dict[str, Dict[str, str]]] = None,
+                 bmc_pins: Optional[Dict[str, str]] = None) -> None:
         self._path = path
         self._master = master_key
         self._header = header
         self._entries: Dict[str, Dict[str, str]] = entries
         self._jump_hosts: Dict[str, Dict[str, Any]] = dict(jump_hosts or {})
+        self._service_credentials = dict(service_credentials or {})
+        self._bmc_pins = dict(bmc_pins or {})
         self._created = created
         self._locked = False
 
@@ -402,7 +407,23 @@ class CredentialVault(JumpHostStore):
                     logger.warning("Skipping invalid jump host entry in vault")
                     continue
                 jump_hosts[_profile["id"]] = _profile
-        return cls(path, master, header, entries, str(doc.get("created") or _now_iso()), jump_hosts)
+        services = {}
+        raw_services = payload.get("service_credentials", {}) if isinstance(payload, dict) else {}
+        if not isinstance(raw_services, dict):
+            raise VaultFormatError("invalid service credentials")
+        for raw in raw_services.values():
+            try:
+                record = normalize_service(raw)
+            except (ValueError, TypeError, AttributeError):
+                raise VaultFormatError("invalid service credential") from None
+            services[record["id"]] = record
+        raw_pins = payload.get("bmc_pins", {}) if isinstance(payload, dict) else {}
+        if not isinstance(raw_pins, dict):
+            raise VaultFormatError("invalid BMC certificate pins")
+        bmc_pins = {str(target): str(pin).upper().replace(":", "") for target, pin in raw_pins.items()
+                    if isinstance(target, str) and isinstance(pin, str)
+                    and re.fullmatch(r"[0-9A-Fa-f]{64}", pin.replace(":", ""))}
+        return cls(path, master, header, entries, str(doc.get("created") or _now_iso()), jump_hosts, services, bmc_pins)
 
     def _require_unlocked(self) -> None:
         if self._locked:
@@ -410,7 +431,7 @@ class CredentialVault(JumpHostStore):
 
     def save(self) -> None:
         self._require_unlocked()
-        payload = json.dumps({"entries": list(self._entries.values()), "jump_hosts": self._jump_hosts}, separators=(",", ":")).encode("utf-8")
+        payload = json.dumps({"entries": list(self._entries.values()), "jump_hosts": self._jump_hosts, "service_credentials": self._service_credentials, "bmc_pins": self._bmc_pins}, separators=(",", ":")).encode("utf-8")
         nonce, ct, tag = encrypt(self._master, payload, _canonical_header(self._header), cipher=self._header.get("cipher"))
         doc = dict(self._header)
         doc.update({
@@ -441,6 +462,8 @@ class CredentialVault(JumpHostStore):
         """Discard all secret material held by this instance."""
         self._entries = {}
         self._jump_hosts = {}
+        self._service_credentials = {}
+        self._bmc_pins = {}
         self._master = b"\x00" * len(self._master) if self._master else b""
         self._locked = True
 
@@ -564,6 +587,24 @@ class CredentialVault(JumpHostStore):
         if dflt is not None:
             out.setdefault("default", (dflt["username"], dflt["password"]))
         return out
+
+    def set_bmc_pins(self, pins: Dict[str, str]) -> int:
+        """Save reviewed exact-host SHA-256 certificate pins in the encrypted vault."""
+        self._require_unlocked()
+        for target, pin in pins.items():
+            try:
+                kind, canonical = normalize_target(str(target))
+            except VaultError:
+                raise VaultError("invalid BMC pin target") from None
+            normalized = str(pin).upper().replace(":", "")
+            if kind == KIND_DEFAULT or not re.fullmatch(r"[0-9A-F]{64}", normalized):
+                raise VaultError("invalid BMC certificate pin")
+            self._bmc_pins[canonical] = normalized
+        return len(pins)
+
+    def bmc_pins(self) -> Dict[str, str]:
+        self._require_unlocked()
+        return dict(self._bmc_pins)
 
     def coverage(self, targets: List[str]) -> Dict[str, Any]:
         """Password-free coverage summary for a target list (for CLI/UI previews)."""

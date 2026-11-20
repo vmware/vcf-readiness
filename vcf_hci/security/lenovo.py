@@ -30,6 +30,27 @@ OEM_SUPPORT_REASON = (
     "Lenovo XCC SCG evaluates standard DMTF Redfish and Lenovo OEM security telemetry "
     "(Oem.Lenovo.Security, BMCSettings, SystemGuard)."
 )
+OEM_SUPPORT_WITHOUT_EVIDENCE = "experimental"
+OEM_SUPPORT_WITHOUT_EVIDENCE_REASON = (
+    "Lenovo XCC OEM security telemetry was not collected. "
+    "Standard DMTF controls only. Unknowns never count as pass."
+)
+
+
+def lenovo_support_for_evidence(evidence: Dict[str, Any]) -> Dict[str, str]:
+    """Use one label at the evaluator and the audit API.
+
+    OEM telemetry present is supported. Missing OEM evidence stays experimental
+    and is not upgraded to a pass.
+    """
+    oem = evidence.get("oem") if isinstance(evidence, dict) else None
+    if isinstance(oem, dict) and oem:
+        label = OEM_SUPPORT
+        reason = OEM_SUPPORT_REASON
+    else:
+        label = OEM_SUPPORT_WITHOUT_EVIDENCE
+        reason = OEM_SUPPORT_WITHOUT_EVIDENCE_REASON
+    return {"oem_support": label, "oem_support_reason": reason}
 
 DELL_SPECIFIC_RUNBOOK_CONTROLS = {
     "C46", "C47", "C48", "C49", "C50", "C51", "C52", "C57", "C58", "C59"
@@ -47,9 +68,10 @@ def evaluate_lenovo_security_controls(evidence: Dict[str, Any]) -> List[Dict[str
     if not oem:
         # Fallback to standard 8 controls for minimal evidence fixtures
         findings = evaluate_standard_security_controls(evidence)
+        support = lenovo_support_for_evidence(evidence)
         for f in findings:
-            f.setdefault("oem_support", "experimental")
-            f.setdefault("oem_support_reason", OEM_SUPPORT_REASON)
+            f.setdefault("oem_support", support["oem_support"])
+            f.setdefault("oem_support_reason", support["oem_support_reason"])
             f.setdefault("vendor", evidence.get("vendor") or "lenovo")
         return findings
 
@@ -770,8 +792,9 @@ def evaluate_lenovo_security_controls(evidence: Dict[str, Any]) -> List[Dict[str
         cid = f.get("control_id")
         if cid and cid not in seen_cids:
             seen_cids.add(cid)
-            f.setdefault("oem_support", OEM_SUPPORT)
-            f.setdefault("oem_support_reason", OEM_SUPPORT_REASON)
+            support = lenovo_support_for_evidence(evidence)
+            f.setdefault("oem_support", support["oem_support"])
+            f.setdefault("oem_support_reason", support["oem_support_reason"])
             f.setdefault("vendor", evidence.get("vendor") or "lenovo")
             deduped_findings.append(f)
 

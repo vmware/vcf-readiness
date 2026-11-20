@@ -420,16 +420,20 @@ JS_JUMP = r"""
     if (passLabel) passLabel.textContent = isPass ? 'SSH password (required for password auth)' : 'SSH password (optional)';
   }
 
+  var jumpRefreshGeneration = 0;
   function refreshJumpHosts() {
+    var generation = ++jumpRefreshGeneration;
     var body = document.getElementById('jumpHostBody');
     var select = document.getElementById('jumpHostSelect');
     var hint = document.getElementById('jumpSelectHint');
     if (!body) return;
     getJson('/api/vault/jump-hosts').then(function(r) {
+      if (generation !== jumpRefreshGeneration) return;
       body.innerHTML = '';
       var d = (r && r.data) ? r.data : (r || {});
       var isOk = (r && (r.status === 200 || (!r.status && r.ok))) && (d.ok !== false);
       var hosts = d.jump_hosts || [];
+      document.dispatchEvent(new CustomEvent('jump-hosts-change', {detail: isOk ? hosts : []}));
       if (select) {
         var current = select.value;
         select.innerHTML = '<option value="auto">Auto-route by subnet</option>';
@@ -468,6 +472,8 @@ JS_JUMP = r"""
         jumpMsg(d.error || ('Jump hosts unavailable (HTTP ' + (r.status || 'unknown') + ')'), true);
         return;
       }
+      var message = document.getElementById('jumpMsg');
+      if (message && /vault is locked/i.test(message.textContent)) jumpMsg('', false);
       if (hosts.length === 0) {
         var emptyTr = document.createElement('tr');
         emptyTr.innerHTML = '<td colspan="6" class="text-muted text-xs" style="text-align:center;padding:0.75rem;">No jump hosts configured in vault yet.</td>';
@@ -508,6 +514,7 @@ JS_JUMP = r"""
         body.appendChild(tr);
       });
     }).catch(function(err) {
+      if (generation !== jumpRefreshGeneration) return;
       updateJumpTargetHint(null, true);
       jumpMsg('Could not load jump hosts: ' + (err.message || err), true);
     });
@@ -876,6 +883,7 @@ JS_JUMP = r"""
     var box = document.getElementById('jumpSelectRow');
     var on = remote && remote.checked;
     if (box) box.classList.toggle('hidden', !on);
+    syncScanConcurrency();
     if (on) refreshJumpHosts();
     else updateJumpTargetHint();
   }

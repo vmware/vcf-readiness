@@ -708,7 +708,7 @@ def scan_hosts(
 
         try:
             summary_path = os.path.join(outdir, "00_fleet_summary.html")
-            generate_summary_html(results, summary_path, hcl_bundle_metadata=hcl_bundle_metadata, failed_hosts=failed_hosts)
+            generate_summary_html(results, summary_path, hcl_bundle_metadata=hcl_bundle_metadata, failed_hosts=failed_hosts, json_hcl=json_hcl)
             _log("[✓] Fleet summary    →  00_fleet_summary.html")
         except Exception as exc:
             _log(f"[!] Fleet summary failed: {exc}")
@@ -728,6 +728,7 @@ def scan_hosts(
                         _obf_sum,
                         hcl_bundle_metadata=hcl_bundle_metadata,
                         obfuscated=True,
+                        json_hcl=json_hcl,
                         failed_hosts=failed_hosts,
                     )
                     _log("[🔒] Obfuscated fleet summary  →  00_OBFUSCATED_fleet_summary.html")
@@ -778,7 +779,7 @@ def scan_hosts(
 
             try:
                 export_all_csvs(results, outdir, obfuscated=False, failed_hosts=failed_hosts)
-                _log("[✓] CSV exports      →  00_fleet_summary.csv, 00_drives_inventory.csv, 00_nics_inventory.csv")
+                _log("[✓] CSV exports      →  Inventory-files/00_fleet_summary.csv, 00_drives_inventory.csv, 00_nics_inventory.csv")
             except Exception as exc:
                 _log(f"[!] CSV exports failed: {exc}")
 
@@ -798,7 +799,7 @@ def scan_hosts(
 
                 try:
                     export_all_csvs(obf_results, outdir, obfuscated=True, failed_hosts=obf_failed_hosts)
-                    _log("[🔒] Obfuscated CSV exports  →  00_OBFUSCATED_fleet_summary.csv, ...")
+                    _log("[🔒] Obfuscated CSV exports  →  Inventory-files/00_OBFUSCATED_fleet_summary.csv, ...")
                 except Exception as exc:
                     _log(f"[!] Obfuscated CSV exports failed: {exc}")
 
